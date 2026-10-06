@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .bg { fill: #0c0e11; }
+    .ink { stroke: #e7e9ec; }
+    .sig { stroke: #ffb547; }
+    .dot { fill: #ffb547; }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #f4f3ee; }
+      .ink { stroke: #14171c; }
+      .sig { stroke: #a64b00; }
+      .dot { fill: #a64b00; }
+    }
+  </style>
+  <rect class="bg" width="64" height="64" rx="6"/>
+  <!-- corner registration marks -->
+  <g class="sig" fill="none" stroke-width="2" stroke-linecap="square">
+    <path d="M5 12V5h7M52 5h7v7M59 52v7h-7M12 59H5v-7"/>
+  </g>
+  <!-- pjv: x-height 27..41, descenders to 54.5 -->
+  <g class="ink" fill="none" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M10.5 29.5V54.5M10.5 29.5h4.5a4 4 0 0 1 4 4v3.5a4 4 0 0 1-4 4h-4.5"/>
+    <path d="M27 29.5h6.5V50.5a4 4 0 0 1-4 4H26"/>
+    <path d="M41.5 29.5l7 13 7-13"/>
+  </g>
+  <rect class="dot" x="30.5" y="17" width="6" height="6"/>
+</svg>
+

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="title">
+  <title id="title">pjv — datum mark</title>
+  <style>
+    :root {
+      color-scheme: dark light;
+      --bg: #0c0e11;
+      --ink: #e7e9ec;
+      --line: #3a414c;
+      --signal: #ffb547;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f4f3ee;
+        --ink: #14171c;
+        --line: #b9b6ab;
+        --signal: #a64b00;
+      }
+    }
+    .paper { fill: var(--bg); }
+    .grid { fill: none; stroke: var(--ink); stroke-opacity: .045; }
+    .construction { fill: none; stroke: var(--line); stroke-width: 1; }
+    .registration { fill: none; stroke: var(--signal); stroke-width: 1.5; }
+    .ink { fill: var(--ink); }
+    .signal { fill: var(--signal); }
+  </style>
+
+  <rect class="paper" width="64" height="64"/>
+  <path class="grid" d="M16 0V64M32 0V64M48 0V64M0 16H64M0 32H64M0 48H64"/>
+
+  <!-- A cropped drawing frame, with a dimension line aimed at the j's datum. -->
+  <path class="construction" d="M16 6H48M58 16V48M48 58H16M6 48V16M10 16H26M10 13V19M26 13V19M44 16H54M35 8V12"/>
+  <path class="registration" d="M6 14V6H14M50 6H58V14M58 50V58H50M14 58H6V50"/>
+
+  <!-- Lowercase p: a chamfered, closed counter and a full descender. -->
+  <path class="ink" fill-rule="evenodd" d="M9 24H23L27 28V40L23 44H15V52H9ZM15 30V38H21V30Z"/>
+
+  <!-- Lowercase j: the signal square becomes a plumb line and return. -->
+  <rect class="signal" x="32" y="14" width="6" height="6"/>
+  <path class="signal" d="M32 24H38V46L32 52H26V46H29L32 43Z"/>
+
+  <!-- Lowercase v: two stout diagonals converge on the same x-height baseline. -->
+  <path class="ink" d="M42 24H48L51 36L54 24H60L54 44H48Z"/>
+</svg>
