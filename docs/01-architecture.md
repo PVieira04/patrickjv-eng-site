@@ -33,7 +33,7 @@ A fourth Worker, **`patrickjv-did`**, predates this site: it served only `/.well
 
 ### Why assets-only for the site
 
-The first version used one Worker with `run_worker_first: true` to handle redirects. A Codex review pointed out that this meters *every* request, and an exhausted daily quota returns `429` for everything — including `did.json`, which would break sign-in. Splitting into an assets-only site plus a separate redirect Worker removed that failure mode entirely.
+The first version used one Worker with `run_worker_first: true` to handle redirects. A Codex review pointed out that this meters *every* request, and once the account's daily Worker quota is exhausted Cloudflare fails requests with a platform error (1027) — including `did.json`, which would break sign-in. Splitting into an assets-only site plus a separate redirect Worker removed that failure mode entirely.
 
 ## Domains and DNS
 
@@ -42,7 +42,6 @@ The first version used one Worker with `run_worker_first: true` to handle redire
 | `patrickjv.com` | Worker Custom Domain (auto-managed) | Workers |
 | `www.patrickjv.com` | Worker Custom Domain (auto-managed) | Workers |
 | `pvieira.co.uk`, `www.pvieira.co.uk` | Worker Custom Domains (auto-managed). The old proxied A/CNAME records (which caused a 525 error) were deleted in the dashboard first — Custom Domains refuse to overwrite external records (error `100117`). | Workers |
-| `tfp.pvieira.co.uk` | A record, unrelated to this site — deliberately left alone | — |
 | `patrickjv.com` MX | `route1/2/3.mx.cloudflare.net` + SPF `v=spf1 include:_spf.mx.cloudflare.net ~all` | Email Routing (auto) |
 | `patrickjv.com` TXT | `google-site-verification=…` — **keep**, Google re-checks it | Google Search Console |
 

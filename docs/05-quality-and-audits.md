@@ -37,7 +37,8 @@ The CSP allows exactly the page's single inline `<style>` and single inline WebM
 
 ## Privacy
 
-- No analytics or tracking scripts, no cookies, no third-party requests (fonts self-hosted — Google Fonts previously saw every visitor's IP).
+- No analytics or tracking scripts, no cookies, and no third-party requests during page loads (fonts self-hosted — Google Fonts previously saw every visitor's IP).
+- Caveat: Cloudflare adds Network Error Logging headers (`Report-To`/`NEL` → `a.nel.cloudflare.com`), so a browser *may* send a network-error report to Cloudflare if a load fails. This is a zone-level Cloudflare feature, not site code (review R5).
 - The portrait's EXIF metadata was stripped.
 - The MCP server stores only rate-limit counters (sender addresses hashed); messages are forwarded, not stored.
 
@@ -45,7 +46,7 @@ The CSP allows exactly the page's single inline `<style>` and single inline WebM
 
 - Checked in headless Chromium at **1920, 1440, 1366, 1280, 1181, 1180, 1024, 820, 360 px**: no horizontal overflow, and every value in the contact strip fits on one line (the strip uses weighted columns, and a 2×2 grid below 1180 px).
 - Light and dark mode via `prefers-color-scheme`; both pass axe.
-- **Print:** light palette forced, grid and dark panels removed, transitions disabled, nav and buttons hidden, link targets printed after links — usable as a one-page CV. Verified as an A4 PDF.
+- **Print:** light palette forced, grid and dark panels removed, transitions disabled, nav and buttons hidden, link targets printed after links — a printable profile (several A4 pages, not a one-page CV). Verified as an A4 PDF.
 
 ## How to re-run the audits
 

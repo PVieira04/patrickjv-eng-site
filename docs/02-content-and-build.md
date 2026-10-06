@@ -23,7 +23,7 @@ The visible page (`public/index.html`) is **hand-written** — it is the chosen 
 ## Safety checks (the build fails if any is violated)
 
 1. A `content.json` string is missing from the visible HTML (URLs are checked in `href`s).
-2. The page, `index.md` or `llms.txt` names an employer.
+2. The page, `index.md` or `llms.txt` contains a term from a short employer **denylist**. This catches the known names only — it is a tripwire, not a general detector; employer-agnostic copy still depends on review.
 3. The page does not have exactly one `<h1>`.
 4. `public/.well-known/did.json` no longer matches its frozen sha256.
 5. There is not exactly one inline `<style>` and one inline `<script>`, or an inline `style="…"` attribute exists (the CSP would block it).

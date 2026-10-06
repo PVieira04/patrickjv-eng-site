@@ -56,7 +56,7 @@ Working independently, Codex chose directions close to Claude's (editorial, syst
 | MCP server on its own route | Only `/mcp*` runs code; edge rule stops floods before it |
 | Limits-only for `request_intro` | Double opt-in needs Workers Paid or an external sender |
 | No MCP server card / A2A card / `_agent` DNS | Nothing reads them yet; the MCP Registry does the discovery job |
-| No analytics script | Keeps zero third-party requests |
+| No analytics script | Keeps zero third-party requests on page load (Cloudflare NEL aside — see [05](05-quality-and-audits.md#privacy)) |
 | Codex favicon over Claude's | Bolder and clearer at 16 px, where favicons are judged |
 
 ## Lessons worth keeping

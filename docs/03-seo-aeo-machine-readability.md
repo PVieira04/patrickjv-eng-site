@@ -19,7 +19,7 @@ The specific obstacle for this site: **"Patrick Vieira" is a famous footballer.*
 | Semantics | One `h1`, logical heading order, `header`/`main`/`section`/`article`/`footer`, `lang="en-GB"` |
 | Favicon | Full set (Google shows favicons in results; previously `/favicon.ico` was a 404) |
 | Sitemap / robots | `sitemap.xml`, `robots.txt` → sitemap |
-| Speed | Static, ~30 KB HTML, self-hosted fonts, responsive photo — Lighthouse 100 (see [05](05-quality-and-audits.md)) |
+| Speed | Static, ~46 KB HTML (~11 KB gzipped), self-hosted fonts, responsive photo — Lighthouse 100 (see [05](05-quality-and-audits.md)) |
 | Redirects | Aliases 301 to the canonical domain, keeping paths |
 | Off-site links | GitHub profile website → `https://patrickjv.com`, bio "Platform engineer — London"; LinkedIn links to the site. Two-way links tie the profiles to one entity. |
 

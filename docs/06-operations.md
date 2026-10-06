@@ -45,7 +45,7 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`. Wor
 | Thing | Location | Notes |
 |---|---|---|
 | Cloudflare (personal account) | Wrangler OAuth on the dev machine (`~/.config/.wrangler`) | Cannot touch DNS or rulesets — use the dashboard for those |
-| MCP Registry signing key | `~/.config/mcp-registry/key.pem` (600) | **Only copy — back it up.** Public half: `public/.well-known/mcp-registry-auth` (keep deployed) |
+| MCP Registry signing key | `~/.config/mcp-registry/key.pem` (600) | Back it up (password manager). Public half: `public/.well-known/mcp-registry-auth` (keep deployed). **If lost:** generate a new ed25519 key, replace the public key in `mcp-registry-auth`, deploy, then `mcp-publisher login http` with the new key — ownership is proven by the domain, not the old key. |
 | Google Search Console proof | DNS TXT on `patrickjv.com` | Keep it |
 | GitHub | `gh` CLI (has `user` scope, used to set the profile website/bio) | Remove with `gh auth refresh -h github.com -r user` if unwanted |
 
@@ -67,6 +67,8 @@ mcp-publisher publish
 | Item | When | Guard |
 |---|---|---|
 | `security.txt` `Expires` | 2027-10-06 | Build fails from 2027-09-06 |
+| Domain `patrickjv.com` | 2027-04-03 | Check auto-renew and payment method in Cloudflare Registrar |
+| Domain `pvieira.co.uk` | 2027-06-14 | As above |
 | `did.json` | Never edit | Build + daily monitor |
 | Google TXT record | Permanent | — |
 
