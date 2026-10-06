@@ -2,9 +2,12 @@
   "name": "patrickjv-eng-site",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node build.mjs --check && node --test redirect/index.test.mjs mcp/handler.test.mjs",
+    "test": "node build.mjs --check && node --test \"mcp/*.test.mjs\" \"redirect/*.test.mjs\" \"test/*.test.mjs\"",
     "deploy": "npm test && wrangler deploy && wrangler deploy -c redirect/wrangler.jsonc && wrangler deploy -c mcp/wrangler.jsonc",
     "smoke": "node smoke.mjs"
   },

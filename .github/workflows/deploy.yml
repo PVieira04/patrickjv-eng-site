@@ -1,9 +1,13 @@
-# Deploy on push to main: tests (incl. the build drift check) → deploy all three Workers → smoke.
-# Inert until the repo has the CLOUDFLARE_API_TOKEN secret (and CLOUDFLARE_ACCOUNT_ID variable).
+# Deploy on push to main: test job (no secrets) -> deploy all three Workers -> smoke (with retries).
+# The deploy job shows as SKIPPED until the repo variable DEPLOY_ENABLED is 'true' (secrets cannot
+# be read in `if:`); it also needs the CLOUDFLARE_API_TOKEN secret and CLOUDFLARE_ACCOUNT_ID variable.
 name: deploy
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,28 +15,35 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
   deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    needs: test
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - name: Skip when deploy credentials are not configured
-        id: gate
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::notice::CLOUDFLARE_API_TOKEN not set; skipping deploy"; echo "go=false" >> "$GITHUB_OUTPUT"; else echo "go=true" >> "$GITHUB_OUTPUT"; fi
-      - uses: actions/checkout@v4
-        if: steps.gate.outputs.go == 'true'
-      - uses: actions/setup-node@v4
-        if: steps.gate.outputs.go == 'true'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
-      - if: steps.gate.outputs.go == 'true'
-        run: npm ci
-      - if: steps.gate.outputs.go == 'true'
+      # --ignore-scripts verified locally: wrangler (esbuild, workerd) bundles all three Workers without postinstall.
+      - run: npm ci --ignore-scripts
+      - name: Deploy site, redirect and MCP Workers
         run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      # The edge can serve the previous version for a minute or so: retry with backoff.
       - name: Smoke the live site
-        if: steps.gate.outputs.go == 'true'
-        run: node smoke.mjs https://patrickjv.com --aliases --mcp
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5; do
+            node smoke.mjs https://patrickjv.com --aliases --mcp && exit 0
+            echo "::warning::smoke attempt $attempt failed; retrying in $((attempt * 20)) s"
+            sleep $((attempt * 20))
+          done
+          exit 1
