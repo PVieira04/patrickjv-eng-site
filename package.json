@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test src/index.test.mjs",
-    "deploy": "wrangler deploy"
+    "test": "node --test redirect/index.test.mjs",
+    "deploy": "wrangler deploy && wrangler deploy -c redirect/wrangler.jsonc",
+    "smoke": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
   }
 }
