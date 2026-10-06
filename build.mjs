@@ -173,6 +173,10 @@ if ((html.match(/<h1[\s>]/g) || []).length !== 1) errors.push("index.html must h
 const did = createHash("sha256").update(readFileSync("public/.well-known/did.json")).digest("hex");
 if (did !== DID_SHA256) errors.push(`public/.well-known/did.json changed (sha256 ${did}); it backs did:web sign-in`);
 
+// security.txt (RFC 9116) must not expire: fail the build 30 days ahead.
+const secExpires = new Date(read("public/.well-known/security.txt").match(/^Expires: (.+)$/m)?.[1] ?? 0);
+if (!(secExpires - Date.now() > 30 * 864e5)) errors.push(`public/.well-known/security.txt expires ${secExpires.toISOString?.() ?? "?"}: bump Expires (max 1 year ahead)`);
+
 // ---- write or compare ----
 const outputs = { "public/_headers": headers, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots };
 const readOr = (f) => { try { return read(f); } catch { return null; } };
