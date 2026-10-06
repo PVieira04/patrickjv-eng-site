@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Patrick Vieira — Lead Platform Engineer</title>
+<title>Patrick Vieira — Platform Engineer</title>
 <meta name="description" content="I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.">
 <meta name="author" content="Patrick Vieira">
 <meta name="color-scheme" content="dark light">
@@ -11,11 +11,13 @@
 <meta name="theme-color" content="#f4f3ee" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://patrickjv.com/">
 <meta property="og:type" content="profile">
-<meta property="og:title" content="Patrick Vieira — Lead Platform Engineer">
+<meta property="og:title" content="Patrick Vieira — Platform Engineer">
 <meta property="og:description" content="I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.">
 <meta property="og:url" content="https://patrickjv.com/">
 <meta property="og:site_name" content="Patrick Vieira">
 <meta property="og:locale" content="en_GB">
+<meta property="og:image" content="https://patrickjv.com/photo.webp">
+<meta property="og:image:alt" content="Patrick Vieira">
 <meta property="profile:first_name" content="Patrick">
 <meta property="profile:last_name" content="Vieira">
 <meta name="twitter:card" content="summary">
@@ -27,17 +29,14 @@
   "@context": "https://schema.org",
   "@type": "Person",
   "name": "Patrick Vieira",
-  "jobTitle": "Lead Platform Engineer",
+  "jobTitle": "Platform Engineer",
   "description": "I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.",
   "url": "https://patrickjv.com/",
+  "image": "https://patrickjv.com/photo.webp",
   "address": {
     "@type": "PostalAddress",
     "addressLocality": "London",
     "addressCountry": "United Kingdom"
-  },
-  "worksFor": {
-    "@type": "Organization",
-    "name": "Altimist"
   },
   "alumniOf": {
     "@type": "CollegeOrUniversity",
@@ -150,7 +149,8 @@ a:hover { color: var(--signal); text-decoration-color: currentColor; }
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(15rem, 28vw, 20rem);
+  align-items: start;
   padding: clamp(2.5rem, 7vw, 5.5rem) var(--gutter) clamp(2rem, 5vw, 3.5rem);
   gap: 2rem;
 }
@@ -174,6 +174,62 @@ a:hover { color: var(--signal); text-decoration-color: currentColor; }
   line-height: 1.4;
   font-weight: 400;
 }
+
+/* Hero actions */
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 2rem 0 0; padding: 0; list-style: none; }
+.btn {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  min-height: 2.75rem; padding: 0.6rem 1.15rem;
+  font-family: var(--mono); font-size: 0.9375rem; font-weight: 500; letter-spacing: 0.02em;
+  text-decoration: none;
+  border: 1px solid var(--signal);
+}
+.btn svg { width: 1.05rem; height: 1.05rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.btn-solid { background: var(--signal); color: var(--signal-ink); }
+.btn-solid:hover { background: transparent; color: var(--signal); }
+.btn-line { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+.btn-line:hover { border-color: var(--signal); color: var(--signal); }
+.btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+
+/* Plate (portrait) */
+.plate { margin: 0; justify-self: end; width: 100%; }
+.plate-frame {
+  --tick: var(--signal);
+  padding: 10px;
+  background:
+    linear-gradient(var(--tick), var(--tick)) left top / 12px 1px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) left top / 1px 12px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) right top / 12px 1px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) right top / 1px 12px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) left bottom / 12px 1px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) left bottom / 1px 12px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) right bottom / 12px 1px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) right bottom / 1px 12px no-repeat;
+}
+.plate-img {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--line-strong);
+  overflow: hidden;
+}
+/* Neutral fill shown when the photo is absent: panel tone with a faint drafting cross. */
+.plate-img, .plate-img img::after {
+  background:
+    linear-gradient(to top right, transparent calc(50% - 0.5px), var(--line) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom right, transparent calc(50% - 0.5px), var(--line) 50%, transparent calc(50% + 0.5px)),
+    var(--panel);
+}
+.plate-img img {
+  position: relative;
+  display: block;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  color: transparent; /* hide alt text if the file is missing */
+}
+/* A broken image is not a replaced element, so this pseudo-element only paints when
+   the file fails to load — it covers the browser's broken-image icon with the fill. */
+.plate-img img::after { content: ""; position: absolute; inset: 0; }
+.plate figcaption { display: flex; justify-content: space-between; gap: 1rem; margin-top: 0.6rem; padding: 0 10px; }
 
 .spec {
   display: grid;
@@ -211,8 +267,8 @@ section { border-bottom: 1px solid var(--line); }
 }
 .head .idx { display: block; }
 
-.about p { margin: 0 0 1.1rem; max-width: 68ch; }
-.about p:last-child { margin-bottom: 0; }
+.about p, .prose p { margin: 0 0 1.1rem; max-width: 68ch; }
+.about p:last-child, .prose p:last-child { margin-bottom: 0; }
 .about p:first-child { font-size: 1.1875rem; line-height: 1.55; }
 
 /* Readouts */
@@ -308,18 +364,6 @@ section { border-bottom: 1px solid var(--line); }
 .aux h3 { margin: 0.35rem 0 0; font-size: 1.0625rem; font-weight: 600; }
 .aux p { margin: 0.45rem 0 0; color: var(--muted); }
 
-/* Record tables */
-.record { width: 100%; border-collapse: collapse; }
-.record th, .record td { text-align: left; vertical-align: top; padding: 0.9rem 1rem 0.9rem 0; border-bottom: 1px solid var(--line); }
-.record tr:first-child th, .record tr:first-child td { border-top: 1px solid var(--line); }
-.record thead th { border-top: 0; padding-top: 0; padding-bottom: 0.6rem; font-weight: 400; }
-.record td.when { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); white-space: nowrap; width: 13.5rem; padding-top: 1.05rem; }
-.record .what { font-weight: 500; }
-.record .where { display: block; color: var(--muted); font-size: 0.9375rem; margin-top: 0.1rem; }
-.record tbody tr:first-child td { border-top: 1px solid var(--line); }
-.sub { margin: 2rem 0 0.75rem; font-size: 1rem; font-weight: 500; }
-.sub .label { margin-right: 0.75rem; }
-
 /* Skills */
 .skills { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .skills li { padding: 0.75rem 1rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; gap: 0.75rem; align-items: baseline; font-size: 0.9875rem; }
@@ -338,6 +382,8 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
   .readouts li:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
 }
 @media (max-width: 820px) {
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .plate { justify-self: start; max-width: min(18rem, 100%); }
   .row { grid-template-columns: minmax(0, 1fr); }
   .row > .head { border-right: 0; border-bottom: 1px dashed var(--line); padding-bottom: 1rem; display: flex; gap: 1rem; align-items: baseline; }
   .row > .head h2 { margin: 0; }
@@ -349,10 +395,6 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
 }
 @media (max-width: 600px) {
   .diagram { display: none; }
-  .record td.when { width: auto; white-space: normal; display: block; padding: 0.9rem 0 0; border-bottom: 0; }
-  .record td.role { display: block; padding-top: 0.2rem; }
-  .record thead { display: none; }
-  .record tbody tr:first-child td.role { border-top: 0; }
 }
 @media (max-width: 420px) {
   .readouts { grid-template-columns: minmax(0, 1fr); }
@@ -360,11 +402,11 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
   .readouts li:last-child { border-bottom: 0; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  a, .component { transition: color 120ms ease, border-color 120ms ease, text-decoration-color 120ms ease; }
+  a, .component { transition: color 120ms ease, border-color 120ms ease, text-decoration-color 120ms ease, background-color 120ms ease; }
 }
 @media print {
   body { background: #fff; color: #000; }
-  .strip nav, .diagram { display: none; }
+  .strip nav, .diagram, .actions { display: none; }
 }
 </style>
 </head>
@@ -379,7 +421,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
       <ul class="label">
         <li><a href="#about">About</a></li>
         <li><a href="#work">Work</a></li>
-        <li><a href="#experience">Experience</a></li>
+        <li><a href="#background">Background</a></li>
         <li><a href="#skills">Skills</a></li>
       </ul>
     </nav>
@@ -388,9 +430,31 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
     <div>
       <p class="label" style="margin:0"><b>■</b>&nbsp; Profile</p>
       <h1>Patrick Vieira</h1>
-      <p class="role">Lead Platform Engineer</p>
+      <p class="role">Platform Engineer</p>
       <p class="tagline">I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.</p>
+      <ul class="actions">
+        <li>
+          <a class="btn btn-solid" href="https://www.linkedin.com/in/patrickvieira/" rel="me noopener" aria-label="LinkedIn profile">
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="2" y="2" width="16" height="16" rx="2"/><path d="M6.5 9v5.5"/><path d="M6.5 6.2v.1"/><path d="M10 14.5V9m0 2.6c0-1.5 1-2.6 2.2-2.6s2 .9 2 2.4v3.1"/></svg>
+            <span>LinkedIn</span>
+          </a>
+        </li>
+        <li>
+          <a class="btn btn-line" href="https://github.com/PVieira04" rel="me noopener" aria-label="GitHub profile">
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="6" cy="4.5" r="2"/><circle cx="6" cy="15.5" r="2"/><circle cx="14" cy="7.5" r="2"/><path d="M6 6.5v7"/><path d="M14 9.5c0 3-8 2-8 4"/></svg>
+            <span>GitHub</span>
+          </a>
+        </li>
+      </ul>
     </div>
+    <figure class="plate">
+      <div class="plate-frame">
+        <div class="plate-img">
+          <img src="/photo.webp" alt="Patrick Vieira" width="480" height="480" loading="eager" decoding="async">
+        </div>
+      </div>
+      <figcaption class="label"><span>Fig. 01 — P. Vieira</span><span aria-hidden="true">1:1</span></figcaption>
+    </figure>
   </div>
   <dl class="spec">
     <div>
@@ -417,9 +481,9 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
         <h2 id="about-h">About</h2>
       </div>
       <div class="body about">
-        <p>I lead platform engineering at Altimist, a London fintech, reporting to the CEO. I own the architecture, infrastructure, identity and security, and I set the engineering standards the company builds to.</p>
-        <p>I built and run the company's internal developer platform for AI-assisted delivery, and I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.</p>
-        <p>Before software I took a BEng in Electrical and Electronic Engineering and a PGCE at UCL, then taught secondary maths. Teaching shaped how I build tooling: it only counts if people pick it up and use it well.</p>
+        <p>I design and run the foundations other engineers build on: architecture, infrastructure, identity and security, and the engineering standards that hold them together.</p>
+        <p>Much of my recent work is about making AI-assisted delivery trustworthy. I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.</p>
+        <p>I do my best work where a small team needs to operate like a much larger one: setting technical direction through architecture decision records, choosing platforms on measured evidence, and automating the work nobody should do by hand.</p>
       </div>
     </div>
   </section>
@@ -432,10 +496,10 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
       </div>
       <div class="body">
         <ul class="readouts">
-          <li><span class="value">1,400+</span><span class="rlabel">merged pull requests, Dec 2025 – Sep 2026</span></li>
+          <li><span class="value">1,400+</span><span class="rlabel">merged pull requests in ten months</span></li>
           <li><span class="value">40</span><span class="rlabel">repositories</span></li>
-          <li><span class="value">44 of 61</span><span class="rlabel">company architecture decision records authored</span></li>
-          <li><span class="value">~10×</span><span class="rlabel">lower monthly hosting bill after moving to Cloudflare Workers</span></li>
+          <li><span class="value">44</span><span class="rlabel">architecture decision records authored</span></li>
+          <li><span class="value">~10×</span><span class="rlabel">lower monthly hosting bill after a move to Cloudflare Workers</span></li>
         </ul>
       </div>
     </div>
@@ -487,7 +551,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
               <div class="c-head"><span class="label c-id">C-01</span><span class="label">Component</span></div>
               <div class="c-body">
                 <h3 id="c-01-h">Internal developer platform for AI-assisted delivery</h3>
-                <p>The Claude Code platform the company builds with: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.</p>
+                <p>A Claude Code platform for a whole engineering team: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.</p>
               </div>
               <dl class="c-meta">
                 <dt class="label">Tags</dt>
@@ -499,7 +563,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
             <article class="component" id="c-02" aria-labelledby="c-02-h">
               <div class="c-head"><span class="label c-id">C-02</span><span class="label">Component</span></div>
               <div class="c-body">
-                <h3 id="c-02-h">Software Factory</h3>
+                <h3 id="c-02-h">Agent execution and evaluation platform</h3>
                 <p>An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.</p>
               </div>
               <dl class="c-meta">
@@ -513,7 +577,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
               <div class="c-head"><span class="label c-id">C-03</span><span class="label">Component</span></div>
               <div class="c-body">
                 <h3 id="c-03-h">Passkey and verifiable-credential identity</h3>
-                <p>altimist-id, built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, the sign-in for the company's internal applications, with federation to self-hosted DIDs — including this domain.</p>
+                <p>Built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, in production as the sign-in for a suite of internal applications, with federation to self-hosted DIDs — including this domain.</p>
               </div>
               <dl class="c-meta">
                 <dt class="label">Tags</dt>
@@ -579,31 +643,15 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
     </div>
   </section>
 
-  <section id="experience" aria-labelledby="exp-h">
+  <section id="background" aria-labelledby="bg-h">
     <div class="row">
       <div class="head">
         <span class="label idx"><b>05</b> /</span>
-        <h2 id="exp-h">Experience</h2>
+        <h2 id="bg-h">Background</h2>
       </div>
-      <div class="body">
-        <table class="record">
-          <thead>
-            <tr><th scope="col" class="label">Period</th><th scope="col" class="label">Role / Organisation</th></tr>
-          </thead>
-          <tbody>
-            <tr><td class="when">Aug 2023 – present</td><td class="role"><span class="what">Lead Platform Engineer</span><span class="where">Altimist</span></td></tr>
-            <tr><td class="when">Sep 2021 – Aug 2023</td><td class="role"><span class="what">Career transition — self-taught software development</span><span class="where">Self-employed</span></td></tr>
-            <tr><td class="when">Aug 2019 – Jul 2021</td><td class="role"><span class="what">Secondary Mathematics Teacher</span><span class="where">Wimbledon High School GDST</span></td></tr>
-          </tbody>
-        </table>
-
-        <h3 class="sub"><span class="label"><b>05.1</b></span>Education</h3>
-        <table class="record">
-          <tbody>
-            <tr><td class="when">UCL</td><td class="role"><span class="what">PGCE, Secondary Mathematics</span></td></tr>
-            <tr><td class="when" aria-hidden="true">—</td><td class="role"><span class="what">BEng, Electrical and Electronic Engineering</span></td></tr>
-          </tbody>
-        </table>
+      <div class="body prose">
+        <p>I studied Electrical and Electronic Engineering (BEng), then trained as a maths teacher (PGCE, UCL) and taught secondary mathematics for two years. In 2021 I taught myself full-stack development and moved into software, and I have worked in platform engineering since 2023.</p>
+        <p>Teaching shaped how I build tooling: it only counts if people pick it up and use it well.</p>
       </div>
     </div>
   </section>

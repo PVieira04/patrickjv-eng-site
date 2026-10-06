@@ -1,8 +1,8 @@
 {
-  "_status": "APPROVED 2026-10-06. Sourced from ~/.claude/knowledge/linkedin/{about,experience,projects}.md. All six designs render this file unchanged.",
+  "_status": "DRAFT v2 2026-10-06 — employer-agnostic reframe, awaiting approval. No employer names anywhere on the site.",
   "person": {
     "name": "Patrick Vieira",
-    "headline": "Lead Platform Engineer",
+    "headline": "Platform Engineer",
     "tagline": "I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.",
     "location": "London, United Kingdom",
     "links": {
@@ -12,32 +12,32 @@
     }
   },
   "about": [
-    "I lead platform engineering at Altimist, a London fintech, reporting to the CEO. I own the architecture, infrastructure, identity and security, and I set the engineering standards the company builds to.",
-    "I built and run the company's internal developer platform for AI-assisted delivery, and I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.",
-    "Before software I took a BEng in Electrical and Electronic Engineering and a PGCE at UCL, then taught secondary maths. Teaching shaped how I build tooling: it only counts if people pick it up and use it well."
+    "I design and run the foundations other engineers build on: architecture, infrastructure, identity and security, and the engineering standards that hold them together.",
+    "Much of my recent work is about making AI-assisted delivery trustworthy. I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.",
+    "I do my best work where a small team needs to operate like a much larger one: setting technical direction through architecture decision records, choosing platforms on measured evidence, and automating the work nobody should do by hand."
   ],
   "stats": [
     {
       "value": "1,400+",
-      "label": "merged pull requests, Dec 2025 – Sep 2026"
+      "label": "merged pull requests in ten months"
     },
     {
       "value": "40",
       "label": "repositories"
     },
     {
-      "value": "44 of 61",
-      "label": "company architecture decision records authored"
+      "value": "44",
+      "label": "architecture decision records authored"
     },
     {
       "value": "~10×",
-      "label": "lower monthly hosting bill after moving to Cloudflare Workers"
+      "label": "lower monthly hosting bill after a move to Cloudflare Workers"
     }
   ],
   "work": [
     {
       "title": "Internal developer platform for AI-assisted delivery",
-      "summary": "The Claude Code platform the company builds with: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.",
+      "summary": "A Claude Code platform for a whole engineering team: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.",
       "tags": [
         "Agentic AI",
         "Developer Experience",
@@ -45,7 +45,7 @@
       ]
     },
     {
-      "title": "Software Factory",
+      "title": "Agent execution and evaluation platform",
       "summary": "An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.",
       "tags": [
         "AI Agents",
@@ -55,7 +55,7 @@
     },
     {
       "title": "Passkey and verifiable-credential identity",
-      "summary": "altimist-id, built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, the sign-in for the company's internal applications, with federation to self-hosted DIDs — including this domain.",
+      "summary": "Built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, in production as the sign-in for a suite of internal applications, with federation to self-hosted DIDs — including this domain.",
       "tags": [
         "WebAuthn",
         "did:web",
@@ -93,32 +93,9 @@
       "url": null
     }
   ],
-  "experience": [
-    {
-      "role": "Lead Platform Engineer",
-      "org": "Altimist",
-      "dates": "Aug 2023 – present"
-    },
-    {
-      "role": "Career transition — self-taught software development",
-      "org": "Self-employed",
-      "dates": "Sep 2021 – Aug 2023"
-    },
-    {
-      "role": "Secondary Mathematics Teacher",
-      "org": "Wimbledon High School GDST",
-      "dates": "Aug 2019 – Jul 2021"
-    }
-  ],
-  "education": [
-    {
-      "qualification": "PGCE, Secondary Mathematics",
-      "institution": "UCL"
-    },
-    {
-      "qualification": "BEng, Electrical and Electronic Engineering",
-      "institution": null
-    }
+  "background": [
+    "I studied Electrical and Electronic Engineering (BEng), then trained as a maths teacher (PGCE, UCL) and taught secondary mathematics for two years. In 2021 I taught myself full-stack development and moved into software, and I have worked in platform engineering since 2023.",
+    "Teaching shaped how I build tooling: it only counts if people pick it up and use it well."
   ],
   "skills": [
     "Platform Engineering",
