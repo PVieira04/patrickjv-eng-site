@@ -43,6 +43,8 @@ Teaching shaped how I build tooling: it only counts if people pick it up and use
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)
 - [GitHub](https://github.com/PVieira04)
 
+Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here.
+
 ## Machine-readable
 
 - [Markdown version of this page](https://patrickjv.com/index.md): the full profile as clean Markdown

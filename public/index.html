@@ -29,6 +29,8 @@
 <meta property="profile:first_name" content="Patrick">
 <meta property="profile:last_name" content="Vieira">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Patrick Vieira — Platform Engineer, London">
+<meta name="twitter:description" content="I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.">
 <meta name="twitter:image" content="https://patrickjv.com/og-card.jpg">
 <link rel="preload" href="/fonts/ibm-plex-sans-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <script type="application/ld+json">
@@ -84,7 +86,7 @@
       "address": {
         "@type": "PostalAddress",
         "addressLocality": "London",
-        "addressCountry": "United Kingdom"
+        "addressCountry": "GB"
       },
       "alumniOf": {
         "@type": "CollegeOrUniversity",
@@ -216,6 +218,7 @@ body {
   font-size: 1.0625rem;
   line-height: 1.6;
   overflow-x: hidden;
+  overflow-wrap: break-word; /* long words (e.g. the email address) wrap at 320px with large text */
 }
 a { color: inherit; text-decoration-color: var(--line-strong); text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
 a:hover { color: var(--signal); text-decoration-color: currentColor; }
@@ -472,6 +475,7 @@ section { border-bottom: 1px solid var(--line); }
   padding: 0.2rem 0.5rem;
   border: 1px solid var(--line-strong);
   color: var(--ink);
+  min-width: 0; overflow-wrap: anywhere; /* reflow at 320px with large text */
 }
 
 /* Side projects */
@@ -481,7 +485,7 @@ section { border-bottom: 1px solid var(--line); }
 .aux p { margin: 0.45rem 0 0; color: var(--muted); }
 
 /* Skills */
-.skills { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.skills { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .skills li { padding: 0.75rem 1rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; gap: 0.75rem; align-items: baseline; font-size: 0.9875rem; }
 .skills li span { font-family: var(--mono); font-size: 0.75rem; color: var(--signal); }
 
@@ -498,6 +502,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
 .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem 2rem; align-items: baseline; }
 .foot ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
 .foot a { font-family: var(--mono); font-size: 0.9375rem; }
+.privacy { margin: 1rem 0 0; max-width: 68ch; color: var(--muted); font-size: 0.875rem; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
@@ -534,11 +539,11 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
     --grid: transparent; --signal: #8a3d00; --signal-ink: #fff; --signal-soft: transparent;
   }
   html, body { background: #fff !important; color: #000; }
-  body, .frame, section, header, footer, .plate-frame { background-image: none !important; box-shadow: none !important; }
+  body, .sheet, section, header, footer, .plate-frame { background-image: none !important; box-shadow: none !important; }
   .strip nav, .diagram, .actions, .skip { display: none !important; }
   a { color: #000; text-decoration: underline; }
   main a[href^="http"]::after, footer a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #444; }
-  section, article, .row { break-inside: avoid-page; }
+  .component, .aux li, .readouts li, .faq > div, .skills li, .spec > div { break-inside: avoid; }
   h2, h3 { break-after: avoid; }
   *, *::before, *::after { transition: none !important; }
   @page { margin: 14mm; }
@@ -564,7 +569,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
   </div>
   <div class="hero">
     <div>
-      <p class="label m0"><b>■</b>&nbsp; Profile</p>
+      <p class="label m0"><b aria-hidden="true">■</b>&nbsp; Profile</p>
       <h1>Patrick Vieira</h1>
       <p class="role">Platform Engineer</p>
       <p class="tagline">I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.</p>
@@ -873,52 +878,64 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
       <li><a href="https://github.com/PVieira04" rel="me">GitHub</a></li>
     </ul>
   </div>
+  <p class="privacy">Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here.</p>
 </footer>
 
 </div>
 <script>
-/* WebMCP: read-only tools for in-browser agents; does nothing unless navigator.modelContext exists. */
+/* WebMCP: four read-only tools (get_profile, list_work, list_skills, list_faq) plus request_intro,
+   which emails Patrick only after the person confirms every field. Names, descriptions and schemas
+   come from the MCP server (spliced in by build.mjs). Does nothing unless the browser exposes
+   document.modelContext (current draft) or navigator.modelContext (earlier drafts). */
 (function () {
   try {
-    var mc = navigator.modelContext;
+    var mc = document.modelContext || navigator.modelContext;
     if (!mc) return;
-    var d = {"profile":{"name":"Patrick Vieira","headline":"Platform Engineer","tagline":"I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.","location":"London, United Kingdom","links":{"website":"https://patrickjv.com/","linkedin":"https://www.linkedin.com/in/patrickvieira/","github":"https://github.com/PVieira04","email":"hello@patrickjv.com"}},"work":[{"title":"Internal developer platform for AI-assisted delivery","summary":"A Claude Code platform for a whole engineering team: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.","tags":["Agentic AI","Developer Experience","CI/CD"]},{"title":"Agent execution and evaluation platform","summary":"An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.","tags":["AI Agents","Cloudflare Containers","Queues"]},{"title":"Passkey and verifiable-credential identity","summary":"Built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, in production as the sign-in for a suite of internal applications, with federation to self-hosted DIDs — including this domain.","tags":["WebAuthn","did:web","Verifiable Credentials"]},{"title":"Infrastructure as code","summary":"Cloud and SaaS infrastructure run through Terraform Cloud with GitOps — plan on pull request, apply on merge, daily drift detection — across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiners and leavers automated.","tags":["Terraform","GitOps","Cloudflare"]},{"title":"On-premises speech intelligence","summary":"A meeting-transcription pipeline on an NVIDIA DGX Spark — NeMo ASR, diarisation and voiceprint speaker naming — for audio that cannot leave the building.","tags":["NVIDIA NeMo","ASR","On-prem AI"]}],"skills":["Platform Engineering","Agentic AI","Developer Experience","Infrastructure as Code","TypeScript","Python","Cloudflare","Terraform","WebAuthn","Test-Driven Development"],"faq":[{"q":"Who is Patrick Vieira, the engineer?","a":"Patrick Vieira is a platform engineer based in London — not the footballer of the same name. He designs and runs the foundations other engineers build on: architecture, infrastructure, identity and security."},{"q":"What does he specialise in?","a":"Platform engineering, AI-assisted software delivery, infrastructure as code and passkey-based identity, mainly with TypeScript, Python, Cloudflare and Terraform."},{"q":"What has he built?","a":"An internal developer platform for AI-assisted delivery, an agent execution and evaluation platform, a passkey and verifiable-credential identity system, infrastructure as code across cloud and SaaS, and an on-premises speech pipeline."},{"q":"How does he make AI-written code trustworthy?","a":"By holding it to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor."},{"q":"How can I contact him?","a":"Email hello@patrickjv.com, or through LinkedIn or GitHub."}],"introSchema":{"type":"object","additionalProperties":false,"required":["from_name","from_email","reason","message"],"properties":{"from_name":{"type":"string","minLength":1,"maxLength":100,"description":"Full name of the person making the introduction."},"from_email":{"type":"string","maxLength":254,"description":"Email address Patrick should reply to (ASCII)."},"organisation":{"type":"string","maxLength":100,"description":"Optional organisation."},"reason":{"type":"string","enum":["recruiting","collaboration","speaking","other"]},"message":{"type":"string","minLength":20,"maxLength":2000,"description":"The introduction itself, in plain text."},"agent":{"type":"string","maxLength":100,"description":"Optional: name of the AI agent sending this on the person's behalf."}}}};
-    var tools = [
-      ["get_profile", "Patrick Vieira's public profile: name, headline, tagline, location and links.", d.profile],
-      ["list_work", "Selected work: title, summary and tags for each item.", d.work],
-      ["list_skills", "Patrick Vieira's listed skills.", d.skills],
-      ["list_faq", "Quick answers about Patrick Vieira: each question (q) with its answer (a).", d.faq]
-    ].map(function (t) {
-      return {
-        name: t[0],
-        description: t[1],
-        inputSchema: { type: "object", properties: {} },
-        execute: async function () { return { content: [{ type: "text", text: JSON.stringify(t[2]) }] }; }
-      };
-    });
-    // request_intro: emails Patrick via the site's MCP server, only after the person confirms.
-    tools.push({
-      name: "request_intro",
-      description: "Send Patrick Vieira a short introduction by email on behalf of the person using this browser. The person is asked to confirm before anything is sent. Rate-limited; do not retry on error.",
-      inputSchema: d.introSchema,
-      execute: async function (input, client) {
-        var i = input || {};
-        var ask = function () {
-          return window.confirm("Send this introduction to Patrick Vieira?\n\nFrom: " + i.from_name + " <" + i.from_email + ">\nReason: " + i.reason + "\n\n" + i.message);
-        };
-        var ok = client && typeof client.requestUserInteraction === "function" ? await client.requestUserInteraction(ask) : ask();
-        if (!ok) return { content: [{ type: "text", text: "Not sent: the person declined." }], isError: true };
-        var res = await fetch("/mcp", {
+    var d = {"profile":{"name":"Patrick Vieira","headline":"Platform Engineer","tagline":"I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.","location":"London, United Kingdom","links":{"website":"https://patrickjv.com/","linkedin":"https://www.linkedin.com/in/patrickvieira/","github":"https://github.com/PVieira04","email":"hello@patrickjv.com"}},"work":[{"title":"Internal developer platform for AI-assisted delivery","summary":"A Claude Code platform for a whole engineering team: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.","tags":["Agentic AI","Developer Experience","CI/CD"]},{"title":"Agent execution and evaluation platform","summary":"An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.","tags":["AI Agents","Cloudflare Containers","Queues"]},{"title":"Passkey and verifiable-credential identity","summary":"Built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, in production as the sign-in for a suite of internal applications, with federation to self-hosted DIDs — including this domain.","tags":["WebAuthn","did:web","Verifiable Credentials"]},{"title":"Infrastructure as code","summary":"Cloud and SaaS infrastructure run through Terraform Cloud with GitOps — plan on pull request, apply on merge, daily drift detection — across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiners and leavers automated.","tags":["Terraform","GitOps","Cloudflare"]},{"title":"On-premises speech intelligence","summary":"A meeting-transcription pipeline on an NVIDIA DGX Spark — NeMo ASR, diarisation and voiceprint speaker naming — for audio that cannot leave the building.","tags":["NVIDIA NeMo","ASR","On-prem AI"]}],"skills":["Platform Engineering","Agentic AI","Developer Experience","Infrastructure as Code","TypeScript","Python","Cloudflare","Terraform","WebAuthn","Test-Driven Development"],"faq":[{"q":"Who is Patrick Vieira, the engineer?","a":"Patrick Vieira is a platform engineer based in London — not the footballer of the same name. He designs and runs the foundations other engineers build on: architecture, infrastructure, identity and security."},{"q":"What does he specialise in?","a":"Platform engineering, AI-assisted software delivery, infrastructure as code and passkey-based identity, mainly with TypeScript, Python, Cloudflare and Terraform."},{"q":"What has he built?","a":"An internal developer platform for AI-assisted delivery, an agent execution and evaluation platform, a passkey and verifiable-credential identity system, infrastructure as code across cloud and SaaS, and an on-premises speech pipeline."},{"q":"How does he make AI-written code trustworthy?","a":"By holding it to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor."},{"q":"How can I contact him?","a":"Email hello@patrickjv.com, or through LinkedIn or GitHub."}],"tools":[{"name":"get_profile","title":"Profile","description":"Patrick Vieira's public profile (platform engineer, London — not the footballer): name, headline, tagline, location and links.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true},"data":"profile"},{"name":"list_work","title":"Selected work","description":"Selected work: title, summary and tags for each item.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true},"data":"work"},{"name":"list_skills","title":"Skills","description":"Patrick Vieira's listed skills.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true},"data":"skills"},{"name":"list_faq","title":"Quick answers","description":"Quick answers about Patrick Vieira: each question (q) with its answer (a).","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true},"data":"faq"},{"name":"request_intro","title":"Request an introduction","description":"Send Patrick Vieira a short introduction by email on behalf of a person. Only use this when the person has asked you to contact him and has approved the message. Strictly rate-limited; at most a couple per sender per day. Do not retry on error. In this browser, the person is also asked to confirm the exact message before anything is sent.","inputSchema":{"type":"object","additionalProperties":false,"required":["from_name","from_email","reason","message"],"properties":{"from_name":{"type":"string","minLength":1,"maxLength":100,"description":"Full name of the person making the introduction."},"from_email":{"type":"string","maxLength":254,"description":"Email address Patrick should reply to (ASCII)."},"organisation":{"type":"string","maxLength":100,"description":"Optional organisation."},"reason":{"type":"string","enum":["recruiting","collaboration","speaking","other"]},"message":{"type":"string","minLength":20,"maxLength":2000,"description":"The introduction itself, in plain text."},"agent":{"type":"string","maxLength":100,"description":"Optional: name of the AI agent sending this on the person's behalf."}}},"annotations":{"readOnlyHint":false}}]};
+    var reply = function (x, err) { var r = { content: [{ type: "text", text: typeof x === "string" ? x : JSON.stringify(x) }] }; if (err) r.isError = true; return r; };
+    var FIELDS = [["from_name", "From"], ["from_email", "Email"], ["organisation", "Organisation"], ["reason", "Reason"], ["agent", "Agent"], ["message", "Message"]];
+    // execute(input, options): the current draft passes { signal }; earlier drafts passed a client
+    // with requestUserInteraction() instead. Both are handled.
+    var requestIntro = async function (input, options) {
+      var o = options || {};
+      var signal = o.signal;
+      var cancelled = function () { return !!(signal && signal.aborted); };
+      if (cancelled()) return reply("Cancelled: nothing was sent.", true);
+      // Snapshot the input: exactly what is shown is what is sent, even if the caller's object changes.
+      var pick = {};
+      FIELDS.forEach(function (f) { if (input && input[f[0]] != null) pick[f[0]] = input[f[0]]; });
+      var args = JSON.parse(JSON.stringify(pick));
+      var show = function (k) { return k in args ? (typeof args[k] === "string" ? args[k] : JSON.stringify(args[k])) : "(none)"; };
+      var text = "Send this introduction to Patrick Vieira by email?\n\n" +
+        FIELDS.slice(0, 5).map(function (f) { return f[1] + ": " + show(f[0]); }).join("\n") + "\n\nMessage:\n" + show("message");
+      var ask = function () { return Promise.resolve(window.confirm(text)); };
+      var ok = typeof o.requestUserInteraction === "function" ? await o.requestUserInteraction(ask) : await ask();
+      if (!ok) return reply("Not sent: the person declined.", true);
+      if (cancelled()) return reply("Cancelled: nothing was sent.", true);
+      var res;
+      try {
+        res = await fetch("/mcp", {
           method: "POST",
           headers: { "content-type": "application/json", accept: "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "request_intro", arguments: i } })
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "request_intro", arguments: args } }),
+          signal: signal
         });
-        var j = await res.json().catch(function () { return {}; });
-        return j.result || { content: [{ type: "text", text: (j.error && j.error.message) || "Not sent (HTTP " + res.status + "). Please email " + d.profile.links.email + "." }], isError: true };
+      } catch (e) {
+        return reply((cancelled() ? "Cancelled while sending" : "Network error") + ": the introduction may or may not have been delivered. Do not retry; the person can email " + d.profile.links.email + " instead.", true);
       }
+      var j = await res.json().catch(function () { return {}; });
+      return j.result || reply((j.error && j.error.message) || "Not sent (HTTP " + res.status + "). Please email " + d.profile.links.email + ".", true);
+    };
+    var tools = d.tools.map(function (t) {
+      return {
+        name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations,
+        execute: t.data ? async function () { return reply(d[t.data]); } : requestIntro
+      };
     });
-    if (typeof mc.registerTool === "function") tools.forEach(function (t) { mc.registerTool(t); });
-    else if (typeof mc.provideContext === "function") mc.provideContext({ tools: tools });
+    // registerTool returns a promise in the current draft: contain each rejection.
+    var quiet = function () {};
+    if (typeof mc.registerTool === "function") tools.forEach(function (t) { try { Promise.resolve(mc.registerTool(t)).catch(quiet); } catch (e) {} });
+    else if (typeof mc.provideContext === "function") Promise.resolve(mc.provideContext({ tools: tools })).catch(quiet);
   } catch (e) {}
 })();
 </script>
