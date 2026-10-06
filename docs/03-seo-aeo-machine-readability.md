@@ -13,13 +13,13 @@ The specific obstacle for this site: **"Patrick Vieira" is a famous footballer.*
 | Item | Implementation |
 |---|---|
 | Title | `Patrick Vieira — Platform Engineer, London` ("London" added for disambiguation) |
-| Meta description | The tagline |
+| Meta description | The tagline (title, description, Open Graph and Twitter tags are generated from `content.json` by the build) |
 | Canonical | `https://patrickjv.com/` |
 | Open Graph / Twitter | Title, description, URL, `og-card.jpg` 1200×630 with width/height/alt, `summary_large_image` |
 | Semantics | One `h1`, logical heading order, `header`/`main`/`section`/`article`/`footer`, `lang="en-GB"` |
 | Favicon | Full set (Google shows favicons in results; previously `/favicon.ico` was a 404) |
 | Sitemap / robots | `sitemap.xml`, `robots.txt` → sitemap |
-| Speed | Static, ~46 KB HTML (~11 KB gzipped), self-hosted fonts, responsive photo — Lighthouse 100 (see [05](05-quality-and-audits.md)) |
+| Speed | Static, ~49 KB HTML (~12 KB gzipped), self-hosted fonts, responsive photo — Lighthouse 100 (see [05](05-quality-and-audits.md)) |
 | Redirects | Aliases 301 to the canonical domain, keeping paths |
 | Off-site links | GitHub profile website → `https://patrickjv.com`, bio "Platform engineer — London"; LinkedIn links to the site. Two-way links tie the profiles to one entity. |
 
@@ -40,9 +40,9 @@ A visible **Quick answers** section (section 07) with five Q&As written to be qu
 
 | Format | Where |
 |---|---|
-| `llms.txt` | `/llms.txt` — summary, disambiguation, work, Quick answers, links, and a "Machine-readable" section listing `index.md`, the sitemap and the MCP server |
+| `llms.txt` | `/llms.txt` — summary, disambiguation, work, side projects, background, Quick answers, links, privacy note, and a "Machine-readable" section listing `index.md`, the sitemap and the MCP server |
 | Markdown twin | `/index.md`, linked by `<link rel="alternate" type="text/markdown">` and from `llms.txt` |
-| Markdown negotiation | `GET /` with `Accept: text/markdown` → `text/markdown` (Cloudflare URL Rewrite rule, no code). Browsers still get HTML. |
+| Markdown negotiation | `GET /` with `Accept: text/markdown` → `text/markdown; charset=utf-8` (Cloudflare URL Rewrite rule, no code). Browsers still get HTML. `/` and `/index.md` send `Vary: Accept` so caches keep the two apart. The rule matches any `Accept` containing `text/markdown`, even with `q=0` (review R6, open). |
 | WebMCP | Five tools on the page (see [04](04-mcp-and-webmcp.md#webmcp)) |
 | Remote MCP | `/mcp`, listed on the MCP Registry |
 

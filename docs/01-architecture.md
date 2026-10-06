@@ -17,17 +17,17 @@ browser / crawler ────► │ URL Rewrite rule "Markdown for agents"    
                                  (static assets only,    (MCP server: Durable Object quota,
                                   never runs code)        Email Routing send, rate limits)
    www.patrickjv.com ┐
-   pvieira.co.uk     ├──────────► patrickjv-redirect  (always 301 → https://patrickjv.com + path + query)
-   www.pvieira.co.uk ┘
+   pvieira.co.uk     ├──────────► patrickjv-redirect  (301 → https://patrickjv.com + path + query;
+   www.pvieira.co.uk ┘                                308 for non-GET/HEAD, so method and body survive)
 ```
 
 ## The three Workers
 
 | Worker | Attached by | What it does | Config |
 |---|---|---|---|
-| `patrickjv-eng-site` | Custom Domain `patrickjv.com` | Serves `public/` as **static assets with no Worker script**. Asset requests are free and unmetered on the Free plan, so the site and `did.json` cannot be taken down by the 100,000 requests/day Worker quota. `_headers` adds security headers. | `wrangler.jsonc` |
-| `patrickjv-redirect` | Custom Domains `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` | Every request → `301` to the fixed origin `https://patrickjv.com`, keeping path and query. No host list, so no trailing-dot bypass and no open redirect. | `redirect/wrangler.jsonc` |
-| `patrickjv-mcp` | **Route** `patrickjv.com/mcp*` | Remote MCP server (see [04](04-mcp-and-webmcp.md)). A zone route takes precedence over the Custom Domain for matching paths, so only `/mcp*` ever invokes code. | `mcp/wrangler.jsonc` |
+| `patrickjv-eng-site` | Custom Domain `patrickjv.com` | Serves `public/` as **static assets with no Worker script**. Asset requests are free and unmetered on the Free plan, so the site and `did.json` cannot be taken down by the 100,000 requests/day Worker quota. `_headers` adds security headers, a per-path CSP, content types and caching; unknown paths get `public/404.html` with status 404 (`not_found_handling: "404-page"`). `workers_dev` and `preview_urls` are off, so there is no duplicate `*.workers.dev` origin. | `wrangler.jsonc` |
+| `patrickjv-redirect` | Custom Domains `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` | Every request → the fixed origin `https://patrickjv.com`, keeping path and query: `301` for GET/HEAD, `308` for any other method. No host list, so no trailing-dot bypass and no open redirect. Every response carries security headers. `workers_dev` is off. It is a metered Worker with no edge rate limit (review R7, still open). | `redirect/wrangler.jsonc` |
+| `patrickjv-mcp` | **Route** `patrickjv.com/mcp*` | Remote MCP server (see [04](04-mcp-and-webmcp.md)). A zone route takes precedence over the Custom Domain for matching paths, so only `/mcp*` ever invokes code. Workers Logs (observability) are on; `workers_dev` and `preview_urls` are off. One secret, `QUOTA_SALT`. | `mcp/wrangler.jsonc` |
 
 A fourth Worker, **`patrickjv-did`**, predates this site: it served only `/.well-known/did.json`. It is **kept deployed as the rollback** until the new site is proven (see [06](06-operations.md#rollback)).
 
