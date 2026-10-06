@@ -3,16 +3,17 @@
 import { EmailMessage } from "cloudflare:email";
 import { DurableObject } from "cloudflare:workers";
 import content from "../content.json" with { type: "json" };
-import { handle, reserveQuota } from "./handler.js";
+import { handle, reserveIntro, pruneQuota } from "./handler.js";
 
-// One instance holds the day's counters. Durable Objects run one call at a time, and the
-// get/put below completes before the next call starts, so reservations are atomic.
+// One instance holds the day's counters. The logic lives in handler.js (reserveIntro, pruneQuota)
+// so the unit tests run the same code against an in-memory storage.
 export class IntroQuota extends DurableObject {
-  async reserve(ipKey, senderKey) {
-    const day = new Date().toISOString().slice(0, 10);
-    const r = reserveQuota(await this.ctx.storage.get("counters"), day, ipKey, senderKey);
-    if (r.ok) await this.ctx.storage.put("counters", r.state);
-    return { ok: r.ok, which: r.which };
+  reserve(ipKey, senderKey) {
+    return reserveIntro(this.ctx.storage, new Date(), ipKey, senderKey);
+  }
+  // Fires at the next UTC midnight after a reservation: storage keeps only today's counters.
+  alarm() {
+    return pruneQuota(this.ctx.storage, new Date());
   }
 }
 

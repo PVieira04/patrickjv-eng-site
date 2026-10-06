@@ -7,17 +7,25 @@
   "workers_dev": false,
   "preview_urls": false,
   "routes": [{ "pattern": "patrickjv.com/mcp*", "zone_name": "patrickjv.com" }],
+  // Workers Logs: the handler logs redacted failure events (subsystem only, no personal data).
+  "observability": { "enabled": true },
   "vars": { "INTRO_FROM": "intro@patrickjv.com", "INTRO_TO": "vieira.pjpv@gmail.com" },
+  // Secret, not a var: QUOTA_SALT keys the HMAC of the IP and sender keys held by IntroQuota.
+  // Set with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc`; without it a fixed fallback
+  // is used and a warning logged.
   // Email Routing send_email can only deliver to verified destination addresses (free plan).
   "send_email": [{ "name": "EMAIL", "destination_address": "vieira.pjpv@gmail.com" }],
   // Atomic daily quota for request_intro (SQLite-backed Durable Objects are on the Free plan).
   "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "IntroQuota" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IntroQuota"] }],
   // Per-client limits (IPv4 address or IPv6 /64), counted per Cloudflare location.
-  // An MCP session is ~4 requests: initialize, initialized, tools/list, tools/call.
+  // An MCP session is ~4 requests: initialize, initialized, tools/list, tools/call. RL_MCP counts
+  // every request; RL_BURST counts only tools/call and other real work, so a handshake never uses
+  // up the burst allowance of a shared egress address (e.g. a hosted MCP client). The edge WAF
+  // rule (6 / 10 s per IP) still bounds everything before the Worker runs.
   "ratelimits": [
-    { "name": "RL_BURST", "namespace_id": "4103", "simple": { "limit": 5, "period": 10 } },
-    { "name": "RL_MCP", "namespace_id": "4101", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_BURST", "namespace_id": "4103", "simple": { "limit": 10, "period": 10 } },
+    { "name": "RL_MCP", "namespace_id": "4101", "simple": { "limit": 30, "period": 60 } },
     { "name": "RL_INTRO", "namespace_id": "4102", "simple": { "limit": 1, "period": 60 } }
   ]
 }

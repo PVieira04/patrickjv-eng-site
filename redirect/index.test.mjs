@@ -19,3 +19,23 @@ for (const [from, to] of cases) {
     assert.equal(new URL(res.headers.get("location")).host, "patrickjv.com");
   });
 }
+
+test("GET and HEAD get 301; every other method gets 308, so the method and body survive", async () => {
+  for (const method of ["GET", "HEAD"]) assert.equal((await worker.fetch(new Request("https://pvieira.co.uk/x", { method }))).status, 301, method);
+  for (const method of ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"]) {
+    const res = await worker.fetch(new Request("https://www.patrickjv.com/mcp?a=1", { method }));
+    assert.equal(res.status, 308, method);
+    assert.equal(res.headers.get("location"), "https://patrickjv.com/mcp?a=1");
+  }
+});
+
+test("redirects carry the security headers", async () => {
+  for (const method of ["GET", "POST"]) {
+    const h = (await worker.fetch(new Request("https://pvieira.co.uk/", { method }))).headers;
+    assert.equal(h.get("x-content-type-options"), "nosniff", method);
+    assert.equal(h.get("strict-transport-security"), "max-age=31536000; includeSubDomains", method);
+    assert.equal(h.get("x-frame-options"), "DENY", method);
+    assert.equal(h.get("referrer-policy"), "no-referrer", method);
+    assert.equal(h.get("content-security-policy"), "default-src 'none'; frame-ancestors 'none'", method);
+  }
+});
