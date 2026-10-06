@@ -10,6 +10,7 @@
 <meta name="theme-color" content="#0c0e11" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f4f3ee" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="https://patrickjv.com/">
+<link rel="alternate" type="text/markdown" href="/index.md" title="Markdown version">
 <meta property="og:type" content="profile">
 <meta property="og:title" content="Patrick Vieira — Platform Engineer">
 <meta property="og:description" content="I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.">
@@ -27,36 +28,75 @@
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "Person",
-  "name": "Patrick Vieira",
-  "jobTitle": "Platform Engineer",
-  "description": "I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.",
-  "url": "https://patrickjv.com/",
-  "image": "https://patrickjv.com/photo.webp",
-  "address": {
-    "@type": "PostalAddress",
-    "addressLocality": "London",
-    "addressCountry": "United Kingdom"
-  },
-  "alumniOf": {
-    "@type": "CollegeOrUniversity",
-    "name": "UCL"
-  },
-  "sameAs": [
-    "https://www.linkedin.com/in/patrickvieira/",
-    "https://github.com/PVieira04"
-  ],
-  "knowsAbout": [
-    "Platform Engineering",
-    "Agentic AI",
-    "Developer Experience",
-    "Infrastructure as Code",
-    "TypeScript",
-    "Python",
-    "Cloudflare",
-    "Terraform",
-    "WebAuthn",
-    "Test-Driven Development"
+  "@graph": [
+    {
+      "@type": "ProfilePage",
+      "@id": "https://patrickjv.com/#profilepage",
+      "url": "https://patrickjv.com/",
+      "name": "Patrick Vieira — Platform Engineer",
+      "inLanguage": "en-GB",
+      "dateModified": "2026-10-06",
+      "mainEntity": {
+        "@id": "https://patrickjv.com/#person"
+      },
+      "isPartOf": {
+        "@id": "https://patrickjv.com/#website"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://patrickjv.com/#website",
+      "url": "https://patrickjv.com/",
+      "name": "Patrick Vieira",
+      "inLanguage": "en-GB"
+    },
+    {
+      "@type": "Person",
+      "@id": "https://patrickjv.com/#person",
+      "name": "Patrick Vieira",
+      "alternateName": [
+        "patrickjv",
+        "PatrickJV"
+      ],
+      "disambiguatingDescription": "Patrick Vieira, platform engineer based in London — not the footballer of the same name.",
+      "jobTitle": "Platform Engineer",
+      "hasOccupation": {
+        "@type": "Occupation",
+        "name": "Platform Engineer",
+        "occupationLocation": {
+          "@type": "City",
+          "name": "London"
+        }
+      },
+      "description": "I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.",
+      "url": "https://patrickjv.com/",
+      "image": "https://patrickjv.com/photo.webp",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "London",
+        "addressCountry": "United Kingdom"
+      },
+      "alumniOf": {
+        "@type": "CollegeOrUniversity",
+        "name": "UCL"
+      },
+      "sameAs": [
+        "https://www.linkedin.com/in/patrickvieira/",
+        "https://github.com/PVieira04"
+      ],
+      "knowsAbout": [
+        "Platform Engineering",
+        "Agentic AI",
+        "Developer Experience",
+        "Infrastructure as Code",
+        "TypeScript",
+        "Python",
+        "Cloudflare",
+        "Terraform",
+        "WebAuthn",
+        "Test-Driven Development"
+      ]
+    }
   ]
 }
 </script>
@@ -692,5 +732,29 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
 </footer>
 
 </div>
+<script>
+/* WebMCP: read-only tools for in-browser agents; does nothing unless navigator.modelContext exists. */
+(function () {
+  try {
+    var mc = navigator.modelContext;
+    if (!mc) return;
+    var d = {"profile":{"name":"Patrick Vieira","headline":"Platform Engineer","tagline":"I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.","location":"London, United Kingdom","links":{"website":"https://patrickjv.com/","linkedin":"https://www.linkedin.com/in/patrickvieira/","github":"https://github.com/PVieira04"}},"work":[{"title":"Internal developer platform for AI-assisted delivery","summary":"A Claude Code platform for a whole engineering team: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.","tags":["Agentic AI","Developer Experience","CI/CD"]},{"title":"Agent execution and evaluation platform","summary":"An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.","tags":["AI Agents","Cloudflare Containers","Queues"]},{"title":"Passkey and verifiable-credential identity","summary":"Built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, in production as the sign-in for a suite of internal applications, with federation to self-hosted DIDs — including this domain.","tags":["WebAuthn","did:web","Verifiable Credentials"]},{"title":"Infrastructure as code","summary":"Cloud and SaaS infrastructure run through Terraform Cloud with GitOps — plan on pull request, apply on merge, daily drift detection — across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiners and leavers automated.","tags":["Terraform","GitOps","Cloudflare"]},{"title":"On-premises speech intelligence","summary":"A meeting-transcription pipeline on an NVIDIA DGX Spark — NeMo ASR, diarisation and voiceprint speaker naming — for audio that cannot leave the building.","tags":["NVIDIA NeMo","ASR","On-prem AI"]}],"skills":["Platform Engineering","Agentic AI","Developer Experience","Infrastructure as Code","TypeScript","Python","Cloudflare","Terraform","WebAuthn","Test-Driven Development"]};
+    var tools = [
+      ["get_profile", "Patrick Vieira's public profile: name, headline, tagline, location and links.", d.profile],
+      ["list_work", "Selected work: title, summary and tags for each item.", d.work],
+      ["list_skills", "Patrick Vieira's listed skills.", d.skills]
+    ].map(function (t) {
+      return {
+        name: t[0],
+        description: t[1],
+        inputSchema: { type: "object", properties: {} },
+        execute: async function () { return { content: [{ type: "text", text: JSON.stringify(t[2]) }] }; }
+      };
+    });
+    if (typeof mc.registerTool === "function") tools.forEach(function (t) { mc.registerTool(t); });
+    else if (typeof mc.provideContext === "function") mc.provideContext({ tools: tools });
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>

@@ -2,6 +2,8 @@
 
 > Platform Engineer, London, United Kingdom. I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.
 
+Platform engineer in London (not the footballer of the same name). Canonical page: https://patrickjv.com/
+
 I design and run the foundations other engineers build on: architecture, infrastructure, identity and security, and the engineering standards that hold them together.
 
 Much of my recent work is about making AI-assisted delivery trustworthy. I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.
@@ -31,3 +33,8 @@ Teaching shaped how I build tooling: it only counts if people pick it up and use
 
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)
 - [GitHub](https://github.com/PVieira04)
+
+## Machine-readable
+
+- [Markdown version of this page](https://patrickjv.com/index.md): the full profile as clean Markdown
+- [Sitemap](https://patrickjv.com/sitemap.xml)

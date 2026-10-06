@@ -13,7 +13,7 @@ check(did.status === 200, `did.json status ${did.status}`);
 check(did.headers.get("content-type") === "application/json", `did.json content-type ${did.headers.get("content-type")}`);
 check(sha(body) === sha(readFileSync("public/.well-known/did.json")), "did.json bytes identical to public/.well-known/did.json");
 
-for (const p of ["/", "/photo.webp", "/robots.txt", "/sitemap.xml", "/llms.txt"]) {
+for (const p of ["/", "/index.md", "/photo.webp", "/robots.txt", "/sitemap.xml", "/llms.txt"]) {
   const r = await fetch(base + p, { redirect: "manual" });
   check(r.status === 200, `${p} status ${r.status}`);
 }
