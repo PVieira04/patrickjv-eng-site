@@ -14,12 +14,12 @@
 # The page: "/" is negotiated (HTML, or Markdown for Accept: text/markdown), hence Vary.
 /
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-lwaJiqz+qjxWVjnHBlG2oLKGnVXX1ut2QT1VvembL7A='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-E8gYRBy/dIXo0HXYtW0Zvu3anA5s5vE6I9pSDO4pscQ='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   Vary: Accept
 
 /index.html
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-lwaJiqz+qjxWVjnHBlG2oLKGnVXX1ut2QT1VvembL7A='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-E8gYRBy/dIXo0HXYtW0Zvu3anA5s5vE6I9pSDO4pscQ='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /index.md
   Content-Type: text/markdown; charset=utf-8
