@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node build.mjs --check && node --test redirect/index.test.mjs",
-    "deploy": "npm test && wrangler deploy && wrangler deploy -c redirect/wrangler.jsonc",
+    "test": "node build.mjs --check && node --test redirect/index.test.mjs mcp/handler.test.mjs",
+    "deploy": "npm test && wrangler deploy && wrangler deploy -c redirect/wrangler.jsonc && wrangler deploy -c mcp/wrangler.jsonc",
     "smoke": "node smoke.mjs"
   },
   "devDependencies": {

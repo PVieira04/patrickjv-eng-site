@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
+import { agentData } from "./lib/agent-data.mjs";
 
 const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -60,15 +61,7 @@ const jsonld = {
 };
 
 // ---- WebMCP data ----
-const webmcp = {
-  profile: {
-    name: c.person.name, headline: c.person.headline, tagline: c.person.tagline, location: c.person.location,
-    links: { website: SITE, linkedin: c.person.links.linkedin, github: c.person.links.github, email: c.person.links.email },
-  },
-  work: c.work.map(({ title, summary, tags }) => ({ title, summary, tags })),
-  skills: c.skills,
-  faq: c.faq,
-};
+const webmcp = agentData(c);
 
 // Splice both into the hand-written HTML. Each regex must match exactly once.
 function splice(html, re, replacement, what) {
@@ -110,7 +103,8 @@ const llms = [
   "## Links", "", `- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, "",
   "## Machine-readable", "",
   `- [Markdown version of this page](${SITE}index.md): the full profile as clean Markdown`,
-  `- [Sitemap](${SITE}sitemap.xml)`, "",
+  `- [Sitemap](${SITE}sitemap.xml)`,
+  `- [MCP server](${SITE}mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day)`, "",
 ].join("\n");
 
 // ---- sitemap.xml ----

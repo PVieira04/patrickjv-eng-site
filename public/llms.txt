@@ -47,3 +47,4 @@ Teaching shaped how I build tooling: it only counts if people pick it up and use
 
 - [Markdown version of this page](https://patrickjv.com/index.md): the full profile as clean Markdown
 - [Sitemap](https://patrickjv.com/sitemap.xml)
+- [MCP server](https://patrickjv.com/mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day)

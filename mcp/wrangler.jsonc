@@ -1,0 +1,23 @@
+{
+  // Remote MCP server. Runs ONLY on patrickjv.com/mcp*; the rest of the site stays on the
+  // assets-only patrickjv-eng-site Worker, so ordinary page views never invoke code.
+  "name": "patrickjv-mcp",
+  "main": "index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "patrickjv.com/mcp*", "zone_name": "patrickjv.com" }],
+  "vars": { "INTRO_FROM": "intro@patrickjv.com", "INTRO_TO": "vieira.pjpv@gmail.com" },
+  // Email Routing send_email can only deliver to verified destination addresses (free plan).
+  "send_email": [{ "name": "EMAIL", "destination_address": "vieira.pjpv@gmail.com" }],
+  // Atomic daily quota for request_intro (SQLite-backed Durable Objects are on the Free plan).
+  "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "IntroQuota" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IntroQuota"] }],
+  // Per-client limits (IPv4 address or IPv6 /64), counted per Cloudflare location.
+  // An MCP session is ~4 requests: initialize, initialized, tools/list, tools/call.
+  "ratelimits": [
+    { "name": "RL_BURST", "namespace_id": "4103", "simple": { "limit": 5, "period": 10 } },
+    { "name": "RL_MCP", "namespace_id": "4101", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_INTRO", "namespace_id": "4102", "simple": { "limit": 1, "period": 60 } }
+  ]
+}
