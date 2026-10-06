@@ -52,6 +52,7 @@ const decodeWords = (h) => new TextDecoder().decode(new Uint8Array(
 test("initialize: negotiates, defaults unknown versions, requires protocolVersion", async () => {
   const { call } = harness();
   assert.equal((await (await call(rpc("initialize", { protocolVersion: "2025-06-18" }))).json()).result.protocolVersion, "2025-06-18");
+  assert.equal((await (await call(rpc("initialize", { protocolVersion: "2025-11-25" }))).json()).result.serverInfo.icons[0].mimeType, "image/png");
   assert.equal((await (await call(rpc("initialize", { protocolVersion: "2025-03-26" }))).json()).result.protocolVersion, "2025-11-25");
   assert.equal((await (await call(rpc("initialize", {}))).json()).error.code, -32602);
 });
@@ -66,6 +67,7 @@ test("tools/list: four read-only tools and request_intro", async () => {
   const r = await (await harness().call(rpc("tools/list"))).json();
   assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
   for (const t of r.result.tools.slice(0, 4)) assert.equal(t.annotations.readOnlyHint, true);
+  for (const t of r.result.tools) assert.equal(t.icons[0].src, "https://patrickjv.com/icon-192.png");
 });
 
 test("read tools: text is the serialised structuredContent, matching content.json", async () => {

@@ -25,15 +25,20 @@ const corsFor = (origin) => (origin === ALLOWED_ORIGIN ? {
   vary: "Origin",
 } : {});
 
+// MCP 2025-11-25 icons: shown by clients (e.g. the Claude connector list) instead of a letter.
+const ICONS = [
+  { src: "https://patrickjv.com/icon-192.png", mimeType: "image/png", sizes: ["192x192"] },
+  { src: "https://patrickjv.com/favicon.svg", mimeType: "image/svg+xml", sizes: ["any"] },
+];
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
 export function tools() {
   const empty = { type: "object", properties: {}, additionalProperties: false };
   return [
-    { name: "get_profile", title: "Profile", description: "Patrick Vieira's public profile (platform engineer, London — not the footballer): name, headline, tagline, location and links.", inputSchema: empty, annotations: READ_ONLY },
-    { name: "list_work", title: "Selected work", description: "Selected work: title, summary and tags for each item.", inputSchema: empty, annotations: READ_ONLY },
-    { name: "list_skills", title: "Skills", description: "Patrick Vieira's listed skills.", inputSchema: empty, annotations: READ_ONLY },
-    { name: "list_faq", title: "Quick answers", description: "Quick answers about Patrick Vieira: each question (q) with its answer (a).", inputSchema: empty, annotations: READ_ONLY },
+    { name: "get_profile", title: "Profile", description: "Patrick Vieira's public profile (platform engineer, London — not the footballer): name, headline, tagline, location and links.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    { name: "list_work", title: "Selected work", description: "Selected work: title, summary and tags for each item.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    { name: "list_skills", title: "Skills", description: "Patrick Vieira's listed skills.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    { name: "list_faq", title: "Quick answers", description: "Quick answers about Patrick Vieira: each question (q) with its answer (a).", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
     {
       name: "request_intro",
       title: "Request an introduction",
@@ -53,6 +58,7 @@ export function tools() {
         },
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      icons: ICONS,
     },
   ];
 }
@@ -292,7 +298,7 @@ export async function handle(request, env, deps) {
         return ok({
           protocolVersion: PROTOCOL_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "patrickjv.com", title: "Patrick Vieira — platform engineer", version: "1.0.0" },
+          serverInfo: { name: "patrickjv.com", title: "Patrick Vieira — platform engineer", version: "1.1.0", websiteUrl: "https://patrickjv.com/", icons: ICONS },
           instructions:
             "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.",
         });
