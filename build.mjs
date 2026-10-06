@@ -8,8 +8,9 @@
 // the design); the build parses it and fails unless every content.json item appears, as a whole
 // visible element, in its own section, and every contact link points at the approved target.
 //
-// Nothing is written unless every check passes.
-import { readFileSync, writeFileSync, renameSync, readdirSync } from "node:fs";
+// Nothing is written unless every check passes. Writing itself is staged (temporary files, then
+// renames) with a best-effort rollback; it is not transactional — see writeStaged().
+import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -148,21 +149,26 @@ export function inlineCode(html, { styles: wantStyles, scripts: wantScripts }) {
 // Section-aware check of the hand-written page against content.json. Every item must be the whole
 // visible text of its own element in its own section; contact links must hit the approved targets.
 // Also fails if any content.json string is not covered by some check (so new fields get one).
+// Coverage is tracked by field PATH (e.g. "work.2.tags.1"), not by value, so a new field is
+// reported even when its value happens to equal one that is already checked.
 export function checkPage(html, c) {
   const errors = [];
-  const used = new Set();
+  const used = new Set(); // content.json paths that some check below compares with the page
   const doc = parseHtml(html);
   const visible = elements(doc);
   const L = c.person.links;
   const mailto = "mailto:" + L.email;
   const bare = (u) => u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+  const LINK_PATHS = (k) => ["person.links.linkedin", "person.links.github", "person.links.email"][k];
 
-  const list = (what, actual, expected) => {
-    expected.forEach((e) => used.add(e));
+  // `path` names the content.json field of each expected item: a base path (the index is appended)
+  // or a function of the index.
+  const list = (what, actual, expected, path) => {
+    expected.forEach((e, k) => used.add(typeof path === "function" ? path(k) : `${path}.${k}`));
     if (actual.length !== expected.length) errors.push(`${what}: expected ${expected.length} item(s), found ${actual.length}`);
     expected.forEach((e, k) => { if (actual[k] !== e) errors.push(`${what}[${k}]: expected "${e}", found ${actual[k] === undefined ? "nothing" : `"${actual[k]}"`}`); });
   };
-  const one = (what, actual, expected) => list(what, [actual].filter((x) => x !== undefined), [expected]);
+  const one = (what, actual, expected, path) => list(what, [actual].filter((x) => x !== undefined), [expected], () => path);
   const within = (el, pred) => (el ? elements(el).filter(pred) : []);
   const byTag = (t) => (el) => el.tag === t;
   const byClass = (k) => (el) => hasClass(el, k);
@@ -179,46 +185,46 @@ export function checkPage(html, c) {
   // Masthead: name, headline, tagline, location, and the contact buttons and spec links.
   const head = visible.find(byClass("masthead"));
   if (!head) errors.push("masthead is missing or hidden");
-  one("h1", texts(within(head, byTag("h1")))[0], c.person.name);
-  one("headline (.role)", texts(within(head, byClass("role")))[0], c.person.headline);
-  one("tagline", texts(within(head, byClass("tagline")))[0], c.person.tagline);
-  list("hero contact links", hrefs(within(head, byClass("actions"))[0]), [L.linkedin, L.github, mailto]);
+  one("h1", texts(within(head, byTag("h1")))[0], c.person.name, "person.name");
+  one("headline (.role)", texts(within(head, byClass("role")))[0], c.person.headline, "person.headline");
+  one("tagline", texts(within(head, byClass("tagline")))[0], c.person.tagline, "person.tagline");
+  list("hero contact links", hrefs(within(head, byClass("actions"))[0]), [L.linkedin, L.github, mailto], LINK_PATHS);
   const spec = within(head, byClass("spec"))[0];
-  list("contact strip links", hrefs(spec), [L.linkedin, L.github, mailto]);
+  list("contact strip links", hrefs(spec), [L.linkedin, L.github, mailto], LINK_PATHS);
   const dd = Object.fromEntries(within(spec, byTag("dt")).map((dt) => {
     const sib = dt.parent.children.filter((n) => n.tag);
     return [textOf(dt), sib[sib.indexOf(dt) + 1]];
   }).filter(([, v]) => v && v.tag === "dd").map(([k, v]) => [k, textOf(v)]));
-  one("contact strip Location", dd.Location, c.person.location);
-  one("contact strip LinkedIn", dd.LinkedIn, bare(L.linkedin));
-  one("contact strip GitHub", dd.GitHub, bare(L.github));
-  one("contact strip Email", dd.Email, L.email);
+  one("contact strip Location", dd.Location, c.person.location, "person.location");
+  one("contact strip LinkedIn", dd.LinkedIn, bare(L.linkedin), "person.links.linkedin");
+  one("contact strip GitHub", dd.GitHub, bare(L.github), "person.links.github");
+  one("contact strip Email", dd.Email, L.email, "person.links.email");
 
-  list("About", texts(within(section("about"), byTag("p"))), c.about);
+  list("About", texts(within(section("about"), byTag("p"))), c.about, "about");
 
   const readouts = within(section("figures"), byClass("readouts")).flatMap((ul) => within(ul, byTag("li")));
-  list("In figures values", readouts.map((li) => texts(within(li, byClass("value")))[0]), c.stats.map((s) => s.value));
-  list("In figures labels", readouts.map((li) => texts(within(li, byClass("rlabel")))[0]), c.stats.map((s) => s.label));
+  list("In figures values", readouts.map((li) => texts(within(li, byClass("value")))[0]), c.stats.map((s) => s.value), (k) => `stats.${k}.value`);
+  list("In figures labels", readouts.map((li) => texts(within(li, byClass("rlabel")))[0]), c.stats.map((s) => s.label), (k) => `stats.${k}.label`);
 
   const work = within(section("work"), byTag("article"));
-  list("Work titles", work.map((a) => texts(within(a, byTag("h3")))[0]), c.work.map((w) => w.title));
-  list("Work summaries", work.map((a) => texts(within(a, byTag("p")))[0]), c.work.map((w) => w.summary));
-  c.work.forEach((w, k) => list(`Work[${k}] tags`, texts(within(work[k], byClass("tags")).flatMap((ul) => within(ul, byTag("li")))), w.tags));
+  list("Work titles", work.map((a) => texts(within(a, byTag("h3")))[0]), c.work.map((w) => w.title), (k) => `work.${k}.title`);
+  list("Work summaries", work.map((a) => texts(within(a, byTag("p")))[0]), c.work.map((w) => w.summary), (k) => `work.${k}.summary`);
+  c.work.forEach((w, k) => list(`Work[${k}] tags`, texts(within(work[k], byClass("tags")).flatMap((ul) => within(ul, byTag("li")))), w.tags, `work.${k}.tags`));
 
   const side = within(section("side-projects"), byTag("article"));
-  list("Side project titles", side.map((a) => texts(within(a, byTag("h3")))[0]), c.side_projects.map((p) => p.title));
-  list("Side project summaries", side.map((a) => texts(within(a, byTag("p")))[0]), c.side_projects.map((p) => p.summary));
+  list("Side project titles", side.map((a) => texts(within(a, byTag("h3")))[0]), c.side_projects.map((p) => p.title), (k) => `side_projects.${k}.title`);
+  list("Side project summaries", side.map((a) => texts(within(a, byTag("p")))[0]), c.side_projects.map((p) => p.summary), (k) => `side_projects.${k}.summary`);
 
-  list("Background", texts(within(section("background"), byTag("p"))), c.background);
-  list("Skills", texts(within(section("skills"), byClass("skills")).flatMap((ul) => within(ul, byTag("li")))), c.skills);
+  list("Background", texts(within(section("background"), byTag("p"))), c.background, "background");
+  list("Skills", texts(within(section("skills"), byClass("skills")).flatMap((ul) => within(ul, byTag("li")))), c.skills, "skills");
 
   const faq = within(section("faq"), byClass("faq")).flatMap((f) => f.children.filter((n) => n.tag === "div" && !isHidden(n)));
-  list("Quick answers questions", faq.map((q) => texts(within(q, byTag("h3")))[0]), c.faq.map((f) => f.q));
-  list("Quick answers answers", faq.map((q) => texts(within(q, byTag("p")))[0]), c.faq.map((f) => f.a));
+  list("Quick answers questions", faq.map((q) => texts(within(q, byTag("h3")))[0]), c.faq.map((f) => f.q), (k) => `faq.${k}.q`);
+  list("Quick answers answers", faq.map((q) => texts(within(q, byTag("p")))[0]), c.faq.map((f) => f.a), (k) => `faq.${k}.a`);
 
   const footer = visible.find(byTag("footer"));
-  list("footer links", hrefs(footer), [L.linkedin, L.github]);
-  one("footer privacy note", texts(within(footer, byClass("privacy")))[0], c.privacy);
+  list("footer links", hrefs(footer), [L.linkedin, L.github], LINK_PATHS);
+  one("footer privacy note", texts(within(footer, byClass("privacy")))[0], c.privacy, "privacy");
 
   // Every link to a contact channel anywhere on the page must use the exact approved target.
   for (const a of elements(doc, { visible: false }).filter(byTag("a"))) {
@@ -227,11 +233,14 @@ export function checkPage(html, c) {
     if (/linkedin\.com/i.test(h) && h !== L.linkedin) errors.push(`LinkedIn link points at ${h}, expected ${L.linkedin}`);
     if (/github\.com/i.test(h) && h !== L.github) errors.push(`GitHub link points at ${h}, expected ${L.github}`);
   }
-  [L.linkedin, L.github, L.email].forEach((s) => used.add(s));
 
   const unchecked = [];
-  (function walk(o, k) { if (k === "_status") return; if (typeof o === "string") { if (!used.has(o)) unchecked.push(o); } else if (o && typeof o === "object") for (const [kk, v] of Object.entries(o)) walk(v, kk); })(c);
-  if (unchecked.length) errors.push("content.json string(s) not checked against the page (add a check in checkPage):\n  - " + unchecked.map((s) => s.slice(0, 80)).join("\n  - "));
+  (function walk(o, path) {
+    if (path.split(".").at(-1) === "_status") return;
+    if (typeof o === "string") { if (!used.has(path)) unchecked.push(`${path}: ${o.slice(0, 80)}`); }
+    else if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) walk(v, path ? `${path}.${k}` : k);
+  })(c, "");
+  if (unchecked.length) errors.push("content.json field(s) not checked against the page (add a check in checkPage):\n  - " + unchecked.join("\n  - "));
   return errors;
 }
 
@@ -264,10 +273,26 @@ const setMeta = (html, kind, key, value) =>
 
 const cspHash = (s) => "'sha256-" + sha256(Buffer.from(s, "utf8")).toString("base64") + "'";
 
+// The _headers guard. Workers static assets apply EVERY matching rule and do not honour "! Header"
+// detach lines, so: no detach lines; no Content-Security-Policy on "/*"; and every CSP rule is an
+// exact path (no "*" or ":placeholder"), set once — then no path, not even a missing one that
+// falls through to 404.html, can receive a CSP from two rules or from a wildcard.
+export function checkHeaders(headers) {
+  const errors = [];
+  const blocks = headers.split(/\n(?=\S)/).filter((blk) => !/^\s*#/.test(blk));
+  const cspRules = blocks.filter((blk) => /^\s+Content-Security-Policy:/m.test(blk)).map((blk) => blk.split("\n")[0].trim());
+  if (/^\s*!/m.test(headers)) errors.push("_headers must not use \"! Header\" detach lines (not honoured in production)");
+  if (cspRules.includes("/*")) errors.push("_headers must not set Content-Security-Policy on /* (it would combine with per-path policies)");
+  const wild = cspRules.filter((r) => r !== "/*" && /[*:]/.test(r));
+  if (wild.length) errors.push(`_headers sets Content-Security-Policy on a wildcard rule (${wild.join(", ")}); use exact paths so a missing file gets only the 404 page's policy`);
+  if (new Set(cspRules).size !== cspRules.length) errors.push("_headers sets Content-Security-Policy twice for one path pattern");
+  return errors;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Rendering: every generated file, as a function of the content and the dateModified value.
 // ---------------------------------------------------------------------------------------------
-function render(c, html0, html404, imageFiles, date) {
+function render(c, html0, html404, imageFiles, fontFiles, date) {
   const city = c.person.location.split(",")[0].trim();
   const title = `${c.person.name} — ${c.person.headline}, ${city}`;
 
@@ -436,18 +461,12 @@ ${types.map(([p, t]) => `${p}\n  Content-Type: ${t}\n  Content-Security-Policy: 
 
 # Fonts keep their names (no fingerprint), so they are not "immutable": 30 days, then revalidated
 # by ETag. A changed font should get a new file name. Images change rarely and are small: one day.
-/fonts/*
-  Cache-Control: public, max-age=2592000
-  Content-Security-Policy: ${baseCsp}
+# One exact rule per file (no "/fonts/*"): a missing path must get only the 404 page's own policy.
+${fontFiles.map((f) => `/fonts/${f}\n  Cache-Control: public, max-age=2592000\n  Content-Security-Policy: ${baseCsp}`).join("\n\n")}
 
 ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Content-Security-Policy: ${baseCsp}`).join("\n\n")}
 `;
-  // Guard: no rule may detach headers, and no path may receive a CSP from two rules.
-  const cspRules = headers.split(/\n(?=\S)/).filter((blk) => /Content-Security-Policy:/.test(blk)).map((blk) => blk.split("\n")[0].trim());
-  const headerErrors = [];
-  if (/^\s*!/m.test(headers)) headerErrors.push("_headers must not use \"! Header\" detach lines (not honoured in production)");
-  if (cspRules.includes("/*")) headerErrors.push("_headers must not set Content-Security-Policy on /* (it would combine with per-path policies)");
-  if (new Set(cspRules).size !== cspRules.length) headerErrors.push("_headers sets Content-Security-Policy twice for one path pattern");
+  const headerErrors = checkHeaders(headers);
   // The 404 page's own policy, as a <meta> tag the build keeps in sync with its inline style.
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${notFoundCsp}">`;
   const html404Out = /<meta http-equiv="Content-Security-Policy"[^>]*>/.test(html404)
@@ -463,11 +482,36 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 
 // ---------------------------------------------------------------------------------------------
 // The build. dateModified is content-addressed: build-state.json records the hash of every
-// generated output (rendered with a placeholder date) and the date that hash was first built.
-// The date moves only when the output changes, so a rebuild converges in one run and --check never
-// depends on git or the clock.
+// generated output (rendered with a placeholder date) plus the sha256 of every served static asset
+// that is content (portrait, share card, icons, fonts, security.txt, mcp-registry-auth), and the
+// date that hash was first built. The date moves only when the output or those assets change, so a
+// rebuild converges in one run and --check never depends on git or the clock. did.json is left out:
+// it is frozen and has its own hash check.
 // ---------------------------------------------------------------------------------------------
-export function build({ root = process.cwd(), check = false, today = new Date().toISOString().slice(0, 10), now = Date.now() } = {}) {
+const WELL_KNOWN_CONTENT = [".well-known/security.txt", ".well-known/mcp-registry-auth"];
+
+// Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
+// over the original. This is NOT transactional: a failure part-way through the renames leaves some
+// outputs new and some old. On any failure it removes the temporary files and restores the files
+// it had already replaced (from `previous`, name -> old text or null if absent), then rethrows with
+// `rolledBack` (true if every restore succeeded). `io` exists so tests can inject failures.
+export function writeStaged(root, files, previous, io = { writeFileSync, renameSync, unlinkSync }) {
+  const p = (f) => join(root, f);
+  const staged = [], replaced = [];
+  try {
+    for (const f of Object.keys(files)) { io.writeFileSync(p(f) + ".tmp", files[f]); staged.push(f); }
+    for (const f of Object.keys(files)) { io.renameSync(p(f) + ".tmp", p(f)); replaced.push(f); }
+  } catch (e) {
+    let rolledBack = true;
+    for (const f of staged.filter((f) => !replaced.includes(f))) { try { io.unlinkSync(p(f) + ".tmp"); } catch { rolledBack = false; } }
+    for (const f of replaced) {
+      try { if (previous[f] === null) io.unlinkSync(p(f)); else io.writeFileSync(p(f), previous[f]); } catch { rolledBack = false; }
+    }
+    throw Object.assign(e, { writePhase: true, rolledBack });
+  }
+}
+
+export function build({ root = process.cwd(), check = false, today = new Date().toISOString().slice(0, 10), now = Date.now(), io } = {}) {
   const p = (f) => join(root, f);
   const read = (f) => readFileSync(p(f), "utf8");
   const readOr = (f) => { try { return read(f); } catch { return null; } };
@@ -477,9 +521,12 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const html0 = read("public/index.html");
   const html404 = read("public/404.html");
   const imageFiles = readdirSync(p("public")).filter((f) => /\.(webp|jpe?g|png|ico|svg|avif|gif)$/i.test(f)).sort();
+  const fontFiles = readdirSync(p("public/fonts")).filter((f) => !f.startsWith(".")).sort();
+  const assets = [...imageFiles, ...fontFiles.map((f) => `fonts/${f}`), ...WELL_KNOWN_CONTENT].sort();
+  const assetDigests = assets.map((f) => [f, sha256(readFileSync(p(`public/${f}`))).toString("hex")]);
 
-  const probe = render(c, html0, html404, imageFiles, "0000-00-00").files;
-  const hash = sha256(JSON.stringify(Object.entries(probe).sort())).toString("hex");
+  const probe = render(c, html0, html404, imageFiles, fontFiles, "0000-00-00").files;
+  const hash = sha256(JSON.stringify({ outputs: Object.entries(probe).sort(), assets: assetDigests })).toString("hex");
   let state = null;
   try { state = JSON.parse(readOr("build-state.json") ?? "null"); } catch { state = null; }
   let date;
@@ -487,7 +534,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   else if (check) { errors.push("build-state.json does not match the generated output (run npm run build)"); date = state?.date ?? today; }
   else date = today;
 
-  const { files, inlineErrors, md, llms } = render(c, html0, html404, imageFiles, date);
+  const { files, inlineErrors, md, llms } = render(c, html0, html404, imageFiles, fontFiles, date);
   files["build-state.json"] = JSON.stringify({ hash, date }, null, 2) + "\n";
 
   // ---- checks (all before any write) ----
@@ -504,18 +551,24 @@ export function build({ root = process.cwd(), check = false, today = new Date().
 
   const stale = Object.entries(files).filter(([f, t]) => readOr(f) !== t).map(([f]) => f);
   if (check && stale.length) errors.push(`out of date (run npm run build): ${stale.join(", ")}`);
-  if (!check && !errors.length) {
-    // Write every file to a temporary name first, then rename, so a failed write leaves no mix.
-    for (const f of stale) writeFileSync(p(f) + ".tmp", files[f]);
-    for (const f of stale) renameSync(p(f) + ".tmp", p(f));
-  }
+  // Validation failures return before anything is written. An I/O failure while writing throws
+  // (see writeStaged: staged, with a best-effort rollback, but not transactional).
+  if (!check && !errors.length) writeStaged(root, Object.fromEntries(stale.map((f) => [f, files[f]])), Object.fromEntries(stale.map((f) => [f, readOr(f)])), io);
   return { errors, stale, date };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const CHECK = process.argv.includes("--check");
   let r;
-  try { r = build({ check: CHECK }); } catch (e) { r = { errors: [e.message], stale: [] }; }
-  if (r.errors.length) { console.error("BUILD FAILED (nothing written)\n" + r.errors.join("\n")); process.exit(1); }
+  try { r = build({ check: CHECK }); } catch (e) {
+    if (e.writePhase) {
+      console.error(e.rolledBack
+        ? `BUILD FAILED while writing (${e.message}); the files already replaced were restored — fix the cause and rerun the build`
+        : `BUILD FAILED while writing (${e.message}); rollback incomplete, so outputs may be partially written — rerun the build`);
+      process.exit(1);
+    }
+    r = { errors: [e.message], stale: [] }; // raised before any write
+  }
+  if (r.errors.length) { console.error(`BUILD FAILED (${CHECK ? "check" : "validation failed — nothing written"})\n` + r.errors.join("\n")); process.exit(1); }
   console.log(CHECK ? "build check passed" : `built (dateModified ${r.date}); ${r.stale.length ? "updated: " + r.stale.join(", ") : "no changes"}`);
 }

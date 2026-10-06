@@ -12,11 +12,11 @@
 
 # The page: "/" is negotiated (HTML, or Markdown for Accept: text/markdown), hence Vary.
 /
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-E8gYRBy/dIXo0HXYtW0Zvu3anA5s5vE6I9pSDO4pscQ='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-IKM5jV7q3zG2K4F7N+WFcfE/63+SfrpH55eZZ0Wbnbo='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   Vary: Accept
 
 /index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-E8gYRBy/dIXo0HXYtW0Zvu3anA5s5vE6I9pSDO4pscQ='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-IKM5jV7q3zG2K4F7N+WFcfE/63+SfrpH55eZZ0Wbnbo='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /index.md
   Content-Type: text/markdown; charset=utf-8
@@ -48,7 +48,20 @@
 
 # Fonts keep their names (no fingerprint), so they are not "immutable": 30 days, then revalidated
 # by ETag. A changed font should get a new file name. Images change rarely and are small: one day.
-/fonts/*
+# One exact rule per file (no "/fonts/*"): a missing path must get only the 404 page's own policy.
+/fonts/OFL.txt
+  Cache-Control: public, max-age=2592000
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/fonts/ibm-plex-mono-latin-400.woff2
+  Cache-Control: public, max-age=2592000
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/fonts/ibm-plex-mono-latin-500.woff2
+  Cache-Control: public, max-age=2592000
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/fonts/ibm-plex-sans-latin-var.woff2
   Cache-Control: public, max-age=2592000
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 

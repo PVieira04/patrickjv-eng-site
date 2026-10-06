@@ -226,16 +226,14 @@ export function clientKey(ip) {
 }
 
 // Keys stored in the quota Durable Object are HMAC-SHA256(QUOTA_SALT, key): a plain hash of an
-// IPv4 address or an email address is trivially reversed by guessing, a keyed hash is not.
-// Without the secret a fixed fallback is used (still never the raw value), with one warning.
-const FALLBACK_SALT = "patrickjv.com/mcp quota — set QUOTA_SALT";
-let warnedNoSalt = false;
+// IPv4 address or an email address is trivially reversed by guessing, a keyed hash is not — but
+// only while the key is secret. There is no fallback key (a key in public source protects
+// nothing): without a QUOTA_SALT of at least 32 characters, request_intro is refused.
+export const MIN_SALT_LENGTH = 32;
+export const saltConfigured = (env) => typeof env.QUOTA_SALT === "string" && env.QUOTA_SALT.length >= MIN_SALT_LENGTH;
 export async function quotaHash(env, kind, key) {
-  let salt = env.QUOTA_SALT;
-  if (!salt) {
-    if (!warnedNoSalt) { warnedNoSalt = true; console.warn(JSON.stringify({ event: "mcp_config", warning: "QUOTA_SALT not set; using the fallback" })); }
-    salt = FALLBACK_SALT;
-  }
+  if (!saltConfigured(env)) throw new Error("QUOTA_SALT is missing or too short");
+  const salt = env.QUOTA_SALT;
   const enc = new TextEncoder();
   const k = await crypto.subtle.importKey("raw", enc.encode(salt), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const d = await crypto.subtle.sign("HMAC", k, enc.encode(`${kind}:${key}`));
@@ -255,26 +253,40 @@ export function reserveQuota(state, day, ipKey, senderKey) {
 }
 
 const utcDay = (now) => now.toISOString().slice(0, 10);
-const nextUtcMidnight = (now) => Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
 
 // The body of the IntroQuota Durable Object's reserve(), over any storage with get/put/delete
 // (and, optionally, getAlarm/setAlarm). The Durable Object runs one call at a time and only
 // storage operations are awaited here, so the read-modify-write is atomic. It computes the day
 // itself, from one clock. Only today's counters are kept: a new day replaces the old state, and an
-// alarm at the next UTC midnight deletes it even if no one asks again.
+// alarm at the end of the stored day deletes it even if no one asks again.
+//
+// Invariant: whenever counters are stored, an alarm is set no earlier than the end of their day.
+// A Durable Object has ONE alarm, so a reservation just after midnight must move a still-pending
+// alarm from the old day forward (otherwise that delayed alarm would fire, keep today's counters
+// and leave nothing scheduled), and counters stored before alarms existed get one on the next call.
+const endOfDay = (day) => Date.parse(`${day}T00:00:00Z`) + 864e5;
+async function ensureAlarm(storage, day) {
+  if (!storage.setAlarm) return;
+  const end = endOfDay(day);
+  const current = await storage.getAlarm();
+  if (current == null || current < end) await storage.setAlarm(end);
+}
+
 export async function reserveIntro(storage, now, ipKey, senderKey) {
-  const r = reserveQuota(await storage.get("counters"), utcDay(now), ipKey, senderKey);
-  if (r.ok) {
-    await storage.put("counters", r.state);
-    if (storage.setAlarm && (await storage.getAlarm()) == null) await storage.setAlarm(nextUtcMidnight(now));
-  }
+  const stored = await storage.get("counters");
+  const r = reserveQuota(stored, utcDay(now), ipKey, senderKey);
+  if (r.ok) await storage.put("counters", r.state);
+  if (r.ok || stored) await ensureAlarm(storage, r.state.day);
   return { ok: r.ok, which: r.which };
 }
 
-// The alarm handler: drop counters from any day before today.
+// The alarm handler: drop counters from any day before today; if today's survive (the alarm ran
+// late, or early), schedule the next one at the end of today.
 export async function pruneQuota(storage, now) {
   const s = await storage.get("counters");
-  if (s && s.day < utcDay(now)) await storage.delete("counters");
+  if (!s) return;
+  if (s.day < utcDay(now)) await storage.delete("counters");
+  else await ensureAlarm(storage, s.day);
 }
 
 // Read at most `max` bytes; null if the body is larger (stream cancelled early).
@@ -337,6 +349,12 @@ async function callTool(name, args, ctx) {
     case "request_intro": {
       const { value: v, error } = validateIntro(args);
       if (error) return toolError(`Invalid request_intro arguments: ${error}`);
+      // Fail closed on missing configuration: without a secret quota key the counters would be
+      // keyed by a guessable value, so nothing is counted, reserved or sent.
+      if (!saltConfigured(ctx.env)) {
+        logFailure("config");
+        return toolError(`request_intro is temporarily unavailable. Please do not retry; email ${d.profile.links.email} instead.`);
+      }
       let success;
       try { ({ success } = await ctx.env.RL_INTRO.limit({ key: ctx.ipKey })); } catch (e) { throw tagged("ratelimit_intro", e); }
       if (!success) return toolError("Rate limited: one introduction per minute. Please do not retry automatically.");

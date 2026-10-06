@@ -2,8 +2,13 @@
 //   node smoke.mjs [base-url] [--aliases] [--mcp] [--registry] [--strict-https]
 // Every check prints PASS / WARN / FAIL; the run exits 1 if any check FAILs (WARN is non-fatal).
 // No redirects are followed anywhere. Each request has a 10 s deadline. Never calls request_intro.
+// Every check requires its exact success status and exact media type (parameters ignored).
+// "deployed = repo" checks compare the live bytes with this checkout, so they also FAIL when
+// commits are not deployed yet.
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict } from "./lib/smoke-lib.mjs";
 
 // The frozen did.json (also enforced by build.mjs). Production AND the repo copy must match it.
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -49,7 +54,7 @@ async function req(url, { read: readBody = false, ...init } = {}) {
   let buf = null;
   if (readBody) buf = Buffer.from(await r.arrayBuffer());
   else await r.body?.cancel();
-  return { status: r.status, headers: r.headers, buf, type: r.headers.get("content-type") ?? "" };
+  return { status: r.status, headers: r.headers, buf, type: mediaType(r.headers.get("content-type")) };
 }
 const at = (p) => base + p;
 
@@ -63,56 +68,35 @@ await check("did.json: 200, application/json, no redirect, bytes = repo = frozen
   return expect(live === DID_SHA256, `live sha256 ${live}`);
 });
 
-// ---- pages: exact status + content-type prefix ----
-const PAGES = {
-  "/": ["text/html"],
-  "/index.md": ["text/markdown"],
-  "/llms.txt": ["text/plain"],
-  "/robots.txt": ["text/plain"],
-  "/sitemap.xml": ["application/xml", "text/xml"],
-  "/photo.webp": ["image/webp"],
-  "/favicon.ico": ["image/x-icon", "image/vnd.microsoft.icon"],
-  "/og-card.jpg": ["image/jpeg"],
-};
-for (const [p, types] of Object.entries(PAGES)) {
-  await check(`${p}: 200 ${types.join("|")}`, async () => {
-    const r = await req(at(p), { headers: { accept: p === "/" ? "text/html" : "*/*" } });
-    return expect(r.status === 200 && types.some((t) => r.type.startsWith(t)), `${r.status} ${r.type}`);
+// ---- pages: exact status + exact media type; deterministic files byte-compared with the repo ----
+// [path, accepted media types, repo file whose bytes the live body must equal]
+const PAGES = [
+  ["/", ["text/html"], "public/index.html"],
+  ["/index.md", ["text/markdown"], "public/index.md"],
+  ["/llms.txt", ["text/plain"], "public/llms.txt"],
+  ["/robots.txt", ["text/plain"], "public/robots.txt"],
+  ["/sitemap.xml", ["application/xml", "text/xml"], "public/sitemap.xml"],
+  ["/.well-known/security.txt", ["text/plain"], "public/.well-known/security.txt"],
+  ["/photo.webp", ["image/webp"], "public/photo.webp"],
+  ["/og-card.jpg", ["image/jpeg"], "public/og-card.jpg"],
+  ["/favicon.ico", ["image/x-icon", "image/vnd.microsoft.icon"], "public/favicon.ico"],
+];
+for (const [p, types, file] of PAGES) {
+  await check(`${p}: 200 ${types.join("|")}, deployed = repo ${file}`, async () => {
+    const r = await req(at(p), { read: true, headers: { accept: p === "/" ? "text/html" : "*/*" } });
+    if (r.status !== 200 || !types.includes(r.type)) return FAIL(`${r.status} ${r.type || "(no content-type)"}`);
+    const live = sha(r.buf), local = sha(read(file));
+    return expect(live === local, `live sha256 ${live.slice(0, 12)} vs repo ${local.slice(0, 12)}${live === local ? "" : " (undeployed commits, or production drifted)"}`);
   });
 }
 
-// Deployed-vs-repo: fails when commits are not deployed yet (or production drifted).
-await check("deployed / matches repo public/index.html (undeployed commits?)", async () => {
-  const r = await req(at("/"), { read: true, headers: { accept: "text/html" } });
-  const live = sha(r.buf), local = sha(read("public/index.html"));
-  return expect(r.status === 200 && live === local, `status ${r.status}, live ${live.slice(0, 12)} vs repo ${local.slice(0, 12)}`);
-});
-
 // ---- security headers on / ----
-// Expected CSP for "/" from the generated public/_headers. Cloudflare applies every block whose
-// path matches ("/*" and "/"), joining repeated headers with ", "; "! Header" detaches it.
-function expectedCsp() {
-  const blocks = [];
-  for (const line of read("public/_headers").toString().split("\n")) {
-    if (!line.trim() || line.trim().startsWith("#")) continue;
-    if (!/^\s/.test(line)) blocks.push({ path: line.trim(), lines: [] });
-    else blocks.at(-1)?.lines.push(line.trim());
-  }
-  let values = [];
-  for (const b of blocks.filter((b) => b.path === "/*" || b.path === "/")) {
-    for (const l of b.lines) {
-      if (/^!\s*Content-Security-Policy\s*$/i.test(l)) values = [];
-      const m = l.match(/^Content-Security-Policy:\s*(.+)$/i);
-      if (m) values.push(m[1].trim());
-    }
-  }
-  return values.length ? values.join(", ") : null;
-}
-await check("/ security headers: HSTS, nosniff, CSP = public/_headers", async () => {
+await check("/ security headers: 200, HSTS, nosniff, CSP = public/_headers", async () => {
   const r = await req(at("/"), { headers: { accept: "text/html" } });
   const h = (n) => r.headers.get(n);
-  const want = expectedCsp();
+  const want = expectedCsp(read("public/_headers").toString());
   const problems = [];
+  if (r.status !== 200) problems.push(`status ${r.status}`);
   if (!h("strict-transport-security")) problems.push("no HSTS");
   if (h("x-content-type-options") !== "nosniff") problems.push(`x-content-type-options ${h("x-content-type-options")}`);
   if (!want) problems.push("no CSP for / in public/_headers");
@@ -121,16 +105,33 @@ await check("/ security headers: HSTS, nosniff, CSP = public/_headers", async ()
   return expect(!problems.length, problems.join("; "));
 });
 
-await check("Accept: text/markdown on / -> text/markdown", async () => {
-  const r = await req(at("/"), { headers: { accept: "text/markdown" } });
-  return expect(r.status === 200 && r.type.startsWith("text/markdown"), `${r.status} ${r.type}`);
+await check("Accept: text/markdown on / -> 200 text/markdown, deployed = repo public/index.md", async () => {
+  const r = await req(at("/"), { read: true, headers: { accept: "text/markdown" } });
+  if (r.status !== 200 || r.type !== "text/markdown") return FAIL(`${r.status} ${r.type || "(no content-type)"}`);
+  const live = sha(r.buf), local = sha(read("public/index.md"));
+  return expect(live === local, `live sha256 ${live.slice(0, 12)} vs repo ${local.slice(0, 12)}`);
 });
 
-await check("security.txt: 200, Expires > 30 days ahead", async () => {
+await check("security.txt: 200 text/plain, Expires > 30 days ahead", async () => {
   const r = await req(at("/.well-known/security.txt"), { read: true });
+  if (r.status !== 200 || r.type !== "text/plain") return FAIL(`${r.status} ${r.type || "(no content-type)"}`);
   const exp = new Date(r.buf.toString().match(/^Expires:\s*(.+)$/m)?.[1] ?? NaN);
   const days = Math.floor((exp - Date.now()) / 864e5);
-  return expect(r.status === 200 && days > 30, `status ${r.status}, expires in ${Number.isFinite(days) ? days : "?"} days`);
+  return expect(days > 30, `expires in ${Number.isFinite(days) ? days : "?"} days`);
+});
+
+// A missing file under a path that has real files next to it (fonts have exact per-file rules):
+// the 404 page must arrive with at most one CSP header (its own policy is a <meta> tag) and
+// without the fonts' 30-day cache policy.
+await check("missing /fonts/does-not-exist.woff2: 404, at most one CSP, no 30-day cache", async () => {
+  const r = await req(at("/fonts/does-not-exist.woff2"));
+  const n = cspCount(r.headers.get("content-security-policy"));
+  const cache = r.headers.get("cache-control") ?? "";
+  const problems = [];
+  if (r.status !== 404) problems.push(`status ${r.status}`);
+  if (n > 1) problems.push(`${n} CSP headers`);
+  if (/max-age=2592000/.test(cache)) problems.push(`cache-control ${cache}`);
+  return expect(!problems.length, problems.join("; ") || `404, ${n} CSP header(s)`);
 });
 
 // HTTP -> HTTPS on the primary host. Not yet enabled by the owner (Cloudflare "Always Use HTTPS"
@@ -150,49 +151,45 @@ if (flags.has("--aliases")) {
   for (const host of ALIASES) {
     await check(`${host} GET -> 301 ${target}`, async () => {
       const r = await req(`https://${host}/a/b?x=1`);
-      return expect(r.status === 301 && r.headers.get("location") === target, `${r.status} ${r.headers.get("location")}`);
+      const loc = r.headers.get("location");
+      return expect(redirectVerdict("GET", r.status, loc, target).ok, `${r.status} ${loc}`);
     });
   }
-  // Non-GET must be 308 so the method/body survive. Until the 308 change is deployed a 301 is a WARN.
+  // Non-GET must be 308 so the method and body survive (deployed since 6 Oct; a 301 is a FAIL).
   await check(`${ALIASES[0]} POST -> 308 ${target}`, async () => {
     const r = await req(`https://${ALIASES[0]}/a/b?x=1`, { method: "POST" });
     const loc = r.headers.get("location");
-    if (r.status === 308 && loc === target) return PASS(`${r.status} ${loc}`);
-    if (r.status === 301 && loc === target) return WARN(`${r.status} ${loc} (308 not deployed yet)`);
-    return FAIL(`${r.status} ${loc}`);
+    return expect(redirectVerdict("POST", r.status, loc, target).ok, `${r.status} ${loc}`);
   });
 }
 
 // ---- MCP lifecycle (read-only) ----
 if (flags.has("--mcp")) {
   const serverJson = JSON.parse(read("mcp/server.json"));
-  const faqCount = JSON.parse(read("content.json")).faq.length;
+  const faq = JSON.parse(read("content.json")).faq;
   let protocol = null;
   let first = true;
-  // The edge allows 6 req / 10 s on /mcp: keep requests ~1.2 s apart.
+  // Rate limits on /mcp: the edge WAF rule allows 6 requests per 10 s per IP; the Worker allows
+  // 30 per minute and 10 tools/call per 10 s. This sequence is 4 requests, so it fits whatever the
+  // spacing; the 1.2 s gap is only margin. A longer sequence must keep any 10 s window to at most
+  // 6 requests (about 1.7 s apart) — and the deploy workflow's retries add another 4 per attempt.
   const mcp = async (msg) => {
     if (!first) await sleep(1200);
     first = false;
     const headers = { "content-type": "application/json", accept: "application/json, text/event-stream" };
     if (protocol) headers["mcp-protocol-version"] = protocol;
     const r = await req(at("/mcp"), { method: "POST", headers, body: JSON.stringify(msg), read: true });
-    let json = null;
-    const text = r.buf.toString();
-    if (r.type.startsWith("text/event-stream")) {
-      const data = text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).at(-1);
-      json = data ? JSON.parse(data) : null;
-    } else if (text) json = JSON.parse(text);
-    return { status: r.status, json };
+    return { status: r.status, json: parseMcpBody(r.type, r.buf.toString()) };
   };
   const envelope = (res, id) => res.status === 200 && res.json?.jsonrpc === "2.0" && res.json?.id === id && !res.json?.error;
 
-  await check(`mcp initialize (2025-11-25, serverInfo.version = ${serverJson.version})`, async () => {
+  await check(`mcp initialize (2025-11-25, serverInfo = patrickjv.com ${serverJson.version})`, async () => {
     const res = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "patrickjv-smoke", version: "1.0.0" } } });
     const result = res.json?.result;
     if (!envelope(res, 1)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     protocol = result?.protocolVersion ?? null;
     return expect(
-      protocol === "2025-11-25" && result?.serverInfo?.version === serverJson.version,
+      protocol === "2025-11-25" && result?.serverInfo?.name === "patrickjv.com" && result?.serverInfo?.version === serverJson.version,
       `protocol ${protocol}, server ${result?.serverInfo?.name} ${result?.serverInfo?.version}`,
     );
   });
@@ -209,12 +206,13 @@ if (flags.has("--mcp")) {
     const icons = tools.every((t) => Array.isArray(t.icons) && t.icons.length > 0);
     return expect(exact && icons, `${names.join(", ")}${icons ? "" : " (missing icons)"}`);
   });
-  await check(`mcp tools/call list_faq -> ${faqCount} items (= content.json)`, async () => {
+  await check(`mcp tools/call list_faq -> items = content.json faq (${faq.length})`, async () => {
     const res = await mcp({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_faq", arguments: {} } });
     if (!envelope(res, 3)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     const result = res.json.result;
-    const n = result?.structuredContent?.items?.length;
-    return expect(result?.isError !== true && n === faqCount, `${n} items${result?.isError ? ", isError" : ""}`);
+    const items = result?.structuredContent?.items;
+    const same = isDeepStrictEqual(items, faq);
+    return expect(result?.isError !== true && same, `${items?.length ?? 0} items${same ? "" : ", differ from content.json"}${result?.isError ? ", isError" : ""}`);
   });
 }
 

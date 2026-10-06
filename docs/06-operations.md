@@ -2,7 +2,7 @@
 
 ## Deploying
 
-Manual (current): `npm ci`, then `npm run deploy` — runs `npm test` (build drift check + 68 unit tests), then `wrangler deploy` for the site, the redirect Worker and the MCP Worker. **Before deploying, record the current version of each Worker** (`npx wrangler deployments list`, with `-c redirect/wrangler.jsonc` and `-c mcp/wrangler.jsonc` for the others) so a rollback target is known. Then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry` — and check response headers on the live site, not just under `wrangler dev` (see [Incidents](#incidents)).
+Manual (current): `npm ci`, then `npm run deploy` — runs `npm test` (build drift check + 87 unit tests), then `wrangler deploy` for the site, the redirect Worker and the MCP Worker. **Before deploying, record the current version of each Worker** (`npx wrangler deployments list`, with `-c redirect/wrangler.jsonc` and `-c mcp/wrangler.jsonc` for the others) so a rollback target is known. Then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry` — and check response headers on the live site, not just under `wrangler dev` (see [Incidents](#incidents)).
 
 Right after a deploy, Cloudflare can briefly serve the previous version from some locations (a minute or so); re-check before assuming a regression.
 
@@ -13,12 +13,12 @@ All workflows use actions pinned to commit SHAs (`actions/checkout` and `actions
 | Workflow | When | What |
 |---|---|---|
 | `test.yml` | Every push and pull request (also called by `deploy.yml`) | `npm test`. No secrets. |
-| `deploy.yml` | Push to `main` (docs-only changes — `docs/**`, `**/*.md` — are skipped) and on demand | Calls `test.yml`; then the `deploy` job runs `npm run deploy` and a post-deploy smoke (`--aliases --mcp`) with up to 5 attempts and growing back-off (the edge can serve the old version briefly). One deploy at a time (`concurrency: deploy`). |
+| `deploy.yml` | Push to `main` (docs-only changes — `docs/**`, `**/*.md` — are skipped) and on demand | Calls `test.yml` (the only place tests run); then the `deploy` job — on `main` only, including manual dispatch — runs the three `npx wrangler deploy` commands directly (not `npm run deploy`, which would rerun the tests with the token in their environment) and a post-deploy smoke (`--aliases --mcp`) with up to 5 attempts and growing back-off (the edge can serve the old version briefly). One deploy at a time (`concurrency: deploy`). |
 | `monitor.yml` | Every 6 hours and on demand | Live smoke (see [Monitoring](#monitoring)). No secrets. |
 
 ### Deploy on push (ready, not yet enabled)
 
-The `deploy` job shows as **skipped** unless the repository variable `DEPLOY_ENABLED` is `true` (secrets cannot be read in an `if:`). The Cloudflare token is exposed **only to the deploy step**, not to the job or the tests. To enable:
+The `deploy` job shows as **skipped** unless the repository variable `DEPLOY_ENABLED` is `true` (secrets cannot be read in an `if:`). The job also requires `github.ref == 'refs/heads/main'`, so a manual dispatch from another branch cannot deploy. The Cloudflare token is exposed **only to the deploy step**, which runs nothing but `wrangler deploy` — not to the job or the tests (`test/workflows.test.mjs` guards both). To enable:
 
 1. Cloudflare → My Profile → API Tokens → Create Token → template **"Edit Cloudflare Workers"**; account resources: this account only; zone resources: `patrickjv.com`, `pvieira.co.uk`.
 2. `gh secret set CLOUDFLARE_API_TOKEN -R PVieira04/patrickjv-eng-site` (paste when prompted; never in chat).
@@ -28,20 +28,20 @@ The repo variable `CLOUDFLARE_ACCOUNT_ID` is already set. As of 6 Oct 2026 neith
 
 ## Monitoring
 
-`.github/workflows/monitor.yml` runs **every 6 hours** at 00:17, 06:17, 12:17 and 18:17 UTC (and on demand): `node smoke.mjs https://patrickjv.com --aliases --mcp --registry` — **23 checks**, each reported as **PASS**, **WARN** or **FAIL**, with the output written to the run's step summary. The run fails only on a FAIL. No redirects are followed, each request has a 10 s deadline, and one failing check never stops the rest.
+`.github/workflows/monitor.yml` runs **every 6 hours** at 00:17, 06:17, 12:17 and 18:17 UTC (and on demand): `node smoke.mjs https://patrickjv.com --aliases --mcp --registry` — **24 checks**, each reported as **PASS**, **WARN** or **FAIL**, with the output written to the run's step summary. The run fails only on a FAIL. Every check requires its exact success status, and media types are compared exactly (`type/subtype`, parameters ignored). No redirects are followed, each request has a 10 s deadline, and one failing check never stops the rest. The checks marked "deployed = repo" compare live bytes with the checkout, so they FAIL while commits are undeployed. `test/smoke.test.mjs` runs the script against a local mock of the site, correct by default and broken one way at a time.
 
 - `did.json`: 200, `application/json`, no redirect; live bytes and the repo copy both match the frozen sha256
-- `/`, `/index.md`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/photo.webp`, `/favicon.ico`, `/og-card.jpg`: 200 with the expected content type
-- The live `/` is byte-identical to the repo's `public/index.html` (fails if commits are not deployed yet)
-- `/` sends HSTS, `nosniff`, and exactly the CSP that `public/_headers` sets for `/`
-- `Accept: text/markdown` on `/` returns `text/markdown`
-- `security.txt`: 200 and `Expires` more than 30 days ahead
+- `/`, `/index.md`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt`, `/photo.webp`, `/og-card.jpg`, `/favicon.ico`: 200, the expected media type, and **deployed = repo** (sha256 of the live body equals the repo file)
+- `/` returns 200 with HSTS, `nosniff`, and exactly the CSP that `public/_headers` sets for `/`
+- `Accept: text/markdown` on `/` returns 200 `text/markdown` whose body equals `public/index.md`
+- `security.txt`: 200 `text/plain` and `Expires` more than 30 days ahead
+- A missing font path (`/fonts/does-not-exist.woff2`) returns 404 with at most one CSP header and without the fonts' 30-day cache
 - `http://patrickjv.com/` redirects to HTTPS — **WARN** until Always Use HTTPS is turned on; `--strict-https` makes it a FAIL
-- `--aliases`: `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` GET → 301 to `https://patrickjv.com/a/b?x=1`; POST → 308
-- `--mcp`: `initialize` (version `2025-11-25`, `serverInfo.version` = `server.json`), `notifications/initialized` → 202, `tools/list` = exactly the five tools, each with icons, `tools/call list_faq` = the `content.json` count (read-only; never calls `request_intro`)
+- `--aliases`: `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` GET → 301 to `https://patrickjv.com/a/b?x=1`; POST → 308 (a 301 is a FAIL)
+- `--mcp`: `initialize` (version `2025-11-25`, `serverInfo.name` = `patrickjv.com`, `serverInfo.version` = `server.json`), `notifications/initialized` → 202, `tools/list` = exactly the five tools, each with icons, `tools/call list_faq` items deep-equal to `content.json`'s `faq` (read-only; never calls `request_intro`). Four requests in all, well inside the edge limit of 6 per 10 s per IP; a longer sequence would need to stay within it
 - `--registry`: `com.patrickjv/profile` is active on the MCP Registry with the same version and remote
 
-On 6 Oct after the fixes, a local run gave **22 passed, 1 warned (HTTP→HTTPS), 0 failed**.
+On 6 Oct after the first fixes, a local run of the then 23-check smoke gave **22 passed, 1 warned (HTTP→HTTPS), 0 failed**. The round-2 smoke (24 checks) has not yet been run against production; until the round-2 commit is deployed its "deployed = repo" checks for `/` and the missing-font check are expected to FAIL.
 
 A failed scheduled run notifies according to GitHub's Actions notification settings — GitHub sends scheduled-run notifications to the user who last modified the cron schedule, and only if that user has Actions notifications on. Check those settings rather than assuming an email will arrive.
 
@@ -79,7 +79,7 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 - **Detection.** The new strict smoke check (`/ security headers … CSP = public/_headers`) failed straight after the deploy — the live CSP header did not equal the one policy `_headers` was expected to produce.
 - **Mitigation.** `npx wrangler rollback` of the site Worker to the previous (pre-review) version at 22:25 UTC, which served until the fix. About two minutes of broken styling, four minutes in all.
 - **Fix** (`8c90261`, deployed 22:27 UTC). No CSP on `/*`; the page policy only on `/` and `/index.html`; the baseline set explicitly on each known non-HTML path; `404.html` (served at arbitrary paths) carries its own policy in a build-maintained `<meta http-equiv>`.
-- **Guard.** The build now fails on any `! Header` line, any CSP on `/*`, and any path pattern given a CSP by two rules (revert-and-fail verified). The smoke check still compares the live CSP on `/`.
+- **Guard.** The build now fails on any `! Header` line, any CSP on `/*` or on a wildcard rule, and any path pattern given a CSP by two rules — unit-tested with fixtures since round 2 (revert-and-fail verified). The smoke check still compares the live CSP on `/`, and checks a missing font path for a doubled CSP.
 - **Lessons.** Local dev is not production: verify response headers on the live site after every header change. A strict monitor that compares against the repo catches real regressions within minutes. Record every Worker's version before deploying, so rollback is one command.
 
 ## Credentials, keys and where they live
@@ -89,7 +89,7 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 | Cloudflare (personal account) | Wrangler OAuth on the dev machine (`~/.config/.wrangler`) | Cannot touch DNS or rulesets — use the dashboard for those |
 | MCP Registry signing key | `~/.config/mcp-registry/key.pem` (600) | Back it up (password manager). Public half: `public/.well-known/mcp-registry-auth` (keep deployed). **If lost:** generate a new ed25519 key, replace the public key in `mcp-registry-auth`, deploy, then `mcp-publisher login http` with the new key — ownership is proven by the domain, not the old key. |
 | Google Search Console proof | DNS TXT on `patrickjv.com` | Keep it |
-| `QUOTA_SALT` | Worker secret on `patrickjv-mcp` (set 6 Oct 2026 with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc`) | Keys the HMAC of the quota counters' IP and sender keys. Not stored anywhere else and not needed elsewhere; if it is changed, the day's per-IP and per-sender counts restart (the global count does not). |
+| `QUOTA_SALT` | Worker secret on `patrickjv-mcp` (set 6 Oct 2026 with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc`) | Keys the HMAC of the quota counters' IP and sender keys. **Required**: if it is missing or shorter than 32 characters, `request_intro` is refused (tool error, logged as subsystem `config`); the read tools carry on. Not stored anywhere else and not needed elsewhere; if it is changed, the day's per-IP and per-sender counts restart (the global count does not). |
 | Cloudflare API token for CI | Not created yet (GitHub secret `CLOUDFLARE_API_TOKEN`) | See [Deploy on push](#deploy-on-push-ready-not-yet-enabled) |
 | GitHub | `gh` CLI (has `user` scope, used to set the profile website/bio) | Remove with `gh auth refresh -h github.com -r user` if unwanted |
 

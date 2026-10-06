@@ -916,7 +916,9 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
       try {
         res = await fetch("/mcp", {
           method: "POST",
-          headers: { "content-type": "application/json", accept: "application/json" },
+          // One stateless request (the server needs no initialize), but with the headers a
+          // Streamable HTTP client sends after negotiating 2025-11-25.
+          headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25" },
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "request_intro", arguments: args } }),
           signal: signal
         });

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { handle, LIMITS, reserveQuota, reserveIntro, pruneQuota, clientKey, encodeHeaderText, validateIntro, senderQuotaKey, quotaHash, SECURITY_HEADERS } from "./handler.js";
 
+const SALT = "test-salt-0123456789abcdef0123456789"; // >= 32 characters, as production requires
 const content = JSON.parse(readFileSync(new URL("../content.json", import.meta.url), "utf8"));
 const serverJson = JSON.parse(readFileSync(new URL("./server.json", import.meta.url), "utf8"));
 
@@ -39,7 +40,7 @@ async function capturingLogs(fn) {
   return lines;
 }
 
-function harness({ burst = 1e9, minute = 1e9, intro = 1e9, sendFails = false, reserveFails = false, salt = "test-salt" } = {}) {
+function harness({ burst = 1e9, minute = 1e9, intro = 1e9, sendFails = false, reserveFails = false, salt = SALT } = {}) {
   const sent = [];
   const storage = memoryStorage(); // the Durable Object's storage
   const reserved = []; // the keys the handler handed to the Durable Object
@@ -256,20 +257,31 @@ test("the quota Durable Object only ever sees keyed hashes, never an IP or an ad
   }
   assert.doesNotMatch(stored, /203\.0\.113\.7|jane|example\.com/);
   // Keyed: the same input under a different secret gives a different key, and neither is a plain hash.
-  const a = await quotaHash({ QUOTA_SALT: "one" }, "ip", "203.0.113.7");
-  const b = await quotaHash({ QUOTA_SALT: "two" }, "ip", "203.0.113.7");
+  const a = await quotaHash({ QUOTA_SALT: "one".repeat(11) }, "ip", "203.0.113.7");
+  const b = await quotaHash({ QUOTA_SALT: "two".repeat(11) }, "ip", "203.0.113.7");
   assert.notEqual(a, b);
   const plain = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("203.0.113.7")))].map((x) => x.toString(16).padStart(2, "0")).join("");
   assert.notEqual(a, plain);
-  assert.equal(reserved[0].ipKey, await quotaHash({ QUOTA_SALT: "test-salt" }, "ip", "203.0.113.7"));
+  assert.equal(reserved[0].ipKey, await quotaHash({ QUOTA_SALT: SALT }, "ip", "203.0.113.7"));
 });
 
-test("without QUOTA_SALT: still hashed, with a single warning", async () => {
-  const s = harness({ salt: null });
-  const lines = await capturingLogs(async () => { await s.call(intro({ from_email: "a@example.com" })); await s.call(intro({ from_email: "b@example.com" }), { ip: "198.51.100.1" }); });
-  assert.equal(s.sent.length, 2);
-  assert.match(s.reserved[0].ipKey, /^[0-9a-f]{64}$/);
-  assert.equal(lines.filter((l) => l.includes("QUOTA_SALT")).length, 1, lines.join("\n"));
+test("QUOTA_SALT missing or shorter than 32 characters: request_intro fails closed; read tools still work", async () => {
+  for (const salt of [null, "", "x".repeat(31)]) {
+    const s = harness({ salt });
+    let r;
+    const lines = await capturingLogs(async () => { r = await (await s.call(intro())).json(); });
+    assert.equal(r.result?.isError, true, `salt ${JSON.stringify(salt)}: ${JSON.stringify(r)}`);
+    assert.match(r.result.content[0].text, /unavailable/);
+    assert.equal(s.sent.length, 0, "nothing sent");
+    assert.equal(s.reserved.length, 0, "nothing reserved");
+    assert.equal(s.rl.burst.calls(), 1, "only the burst limiter ran");
+    assert.ok(lines.some((l) => l.includes('"subsystem":"config"')), lines.join("\n"));
+    const faq = await (await s.call(rpc("tools/call", { name: "list_faq", arguments: {} }))).json();
+    assert.deepEqual(faq.result.structuredContent, { items: content.faq });
+  }
+  // The hash itself also refuses a weak key rather than falling back to a public one.
+  await assert.rejects(quotaHash({}, "ip", "203.0.113.7"));
+  await assert.rejects(quotaHash({ QUOTA_SALT: "short" }, "ip", "203.0.113.7"));
 });
 
 test("reserveIntro: real storage path keeps only today, and an alarm prunes yesterday", async () => {
@@ -287,6 +299,46 @@ test("reserveIntro: real storage path keeps only today, and an alarm prunes yest
   await reserveIntro(storage, new Date("2026-10-07T08:00:00Z"), "ip2", "s2");
   assert.deepEqual(storage.map.get("counters"), { day: "2026-10-07", g: 1, ip: { ip2: 1 }, from: { s2: 1 } });
   assert.equal(storage.alarm(), Date.UTC(2026, 9, 8));
+});
+
+test("quota alarm: a delayed midnight alarm cannot leave the new day's counters without one", async () => {
+  // Codex's sequence: reserve before midnight; reserve after midnight before the old alarm fires;
+  // then the delayed alarm fires.
+  const storage = memoryStorage();
+  await reserveIntro(storage, new Date("2026-10-06T23:59:00Z"), "ip", "s");
+  assert.equal(storage.alarm(), Date.UTC(2026, 9, 7));
+  await reserveIntro(storage, new Date("2026-10-07T00:00:30Z"), "ip", "s");
+  assert.equal(storage.map.get("counters").day, "2026-10-07");
+  assert.equal(storage.alarm(), Date.UTC(2026, 9, 8), "the stale alarm is moved to the end of the new day");
+  storage.fireAlarm();
+  await pruneQuota(storage, new Date("2026-10-07T00:01:00Z"));
+  assert.equal(storage.map.get("counters").day, "2026-10-07", "today's counters survive");
+  assert.equal(storage.alarm(), Date.UTC(2026, 9, 8), "and still have a cleanup alarm");
+});
+
+test("quota alarm: an alarm that finds today's counters schedules the next midnight", async () => {
+  const storage = memoryStorage();
+  await storage.put("counters", { day: "2026-10-07", g: 1, ip: { a: 1 }, from: { b: 1 } });
+  await pruneQuota(storage, new Date("2026-10-07T00:00:05Z"));
+  assert.ok(storage.map.has("counters"));
+  assert.equal(storage.alarm(), Date.UTC(2026, 9, 8));
+  // Once yesterday's counters are deleted nothing is left to clean up: no alarm needed.
+  storage.fireAlarm();
+  await pruneQuota(storage, new Date("2026-10-08T00:00:05Z"));
+  assert.equal(storage.map.has("counters"), false);
+  assert.equal(storage.alarm(), null);
+});
+
+test("quota alarm: legacy counters with no alarm get one on the next reservation, even a refused one", async () => {
+  const now = new Date("2026-10-06T12:00:00Z");
+  const legacy = memoryStorage();
+  await legacy.put("counters", { day: "2026-10-06", g: 1, ip: { old: 1 }, from: { old: 1 } });
+  assert.equal((await reserveIntro(legacy, now, "ip", "s")).ok, true);
+  assert.equal(legacy.alarm(), Date.UTC(2026, 9, 7));
+  const full = memoryStorage();
+  await full.put("counters", { day: "2026-10-06", g: LIMITS.introGlobalPerDay, ip: {}, from: {} });
+  assert.deepEqual(await reserveIntro(full, now, "ip", "s"), { ok: false, which: "global" });
+  assert.equal(full.alarm(), Date.UTC(2026, 9, 7));
 });
 
 test("reserveIntro: a refused reservation writes nothing", async () => {

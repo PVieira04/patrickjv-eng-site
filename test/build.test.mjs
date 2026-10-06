@@ -2,11 +2,11 @@
 // embedding, security.txt validation, content-hash dates and validate-before-write.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, cpSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, cpSync, mkdtempSync, writeFileSync, rmSync, readdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, checkPage, inlineCode, safeJson, checkSecurityTxt } from "../build.mjs";
+import { build, checkPage, inlineCode, safeJson, checkSecurityTxt, checkHeaders, writeStaged } from "../build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const content = JSON.parse(readFileSync(join(ROOT, "content.json"), "utf8"));
@@ -69,6 +69,47 @@ test("removing the privacy note fails", () => {
 test("a content.json string with no check fails", () => {
   const errors = checkPage(page, { ...content, extra: "A new field nobody checks" });
   assert.ok(errors.some((e) => /not checked against the page/.test(e)));
+});
+
+test("a new field is unchecked even when its value duplicates a checked one (coverage is by path)", () => {
+  const top = checkPage(page, { ...content, new_field: content.person.name });
+  assert.ok(top.some((e) => /not checked against the page/.test(e) && /new_field/.test(e)), top.join("\n"));
+  const nested = checkPage(page, { ...content, person: { ...content.person, nickname: content.person.name } });
+  assert.ok(nested.some((e) => /person\.nickname/.test(e)), nested.join("\n"));
+  const inList = checkPage(page, { ...content, work: content.work.map((w, k) => (k ? w : { ...w, subtitle: w.title })) });
+  assert.ok(inList.some((e) => /work\.0\.subtitle/.test(e)), inList.join("\n"));
+});
+
+test("_headers guard: CSP on /*, detach lines, a wildcard CSP rule or a duplicate CSP path all fail", () => {
+  const csp = "  Content-Security-Policy: default-src 'none'";
+  const ok = `# comment\n/*\n  X-Frame-Options: DENY\n\n/\n${csp}\n\n/fonts/a.woff2\n  Cache-Control: public, max-age=2592000\n${csp}\n`;
+  assert.deepEqual(checkHeaders(ok), []);
+  assert.match(checkHeaders(ok.replace("  X-Frame-Options: DENY", `  X-Frame-Options: DENY\n${csp}`)).join(), /on \/\*/);
+  assert.match(checkHeaders(ok + "\n/index.md\n  ! Content-Security-Policy\n").join(), /detach/);
+  assert.match(checkHeaders(ok + `\n/fonts/*\n${csp}\n`).join(), /wildcard/);
+  assert.match(checkHeaders(ok + `\n/blog/:slug\n${csp}\n`).join(), /wildcard/);
+  assert.match(checkHeaders(ok + `\n/\n${csp}\n`).join(), /twice/);
+});
+
+test("generated _headers: one exact rule per font file, no /fonts/* (a missing font gets only the 404 page's policy)", () => {
+  const headers = readFileSync(join(ROOT, "public/_headers"), "utf8");
+  assert.deepEqual(checkHeaders(headers), []);
+  assert.doesNotMatch(headers, /^\/fonts\/\*/m);
+  for (const f of readdirSync(join(ROOT, "public/fonts"))) {
+    const rule = headers.split("\n\n").map((b) => b.replace(/^(#.*\n)+/, "")).find((b) => b.startsWith(`/fonts/${f}\n`));
+    assert.ok(rule, `no rule for /fonts/${f}`);
+    assert.match(rule, /Cache-Control: public, max-age=2592000/);
+    assert.match(rule, /Content-Security-Policy: default-src 'none'/);
+  }
+});
+
+test("the page's WebMCP request_intro fetch sends the MCP protocol version and Streamable HTTP Accept", async () => {
+  const { PROTOCOL_VERSIONS } = await import("../mcp/handler.js");
+  const script = inlineCode(page, { styles: 1, scripts: 1 }).scripts[0];
+  const call = script.slice(script.indexOf('fetch("/mcp"'), script.indexOf("signal: signal", script.indexOf('fetch("/mcp"')));
+  assert.match(call, new RegExp(`"mcp-protocol-version": "${PROTOCOL_VERSIONS[0]}"`));
+  assert.match(call, /accept: "application\/json, text\/event-stream"/);
+  assert.equal(script.split('fetch("/mcp"').length - 1, 1, "one request, no initialize round-trip");
 });
 
 test("inline-code guards: attributes, case and quoting cannot hide inline code", () => {
@@ -149,6 +190,67 @@ test("a failing build writes nothing", () => {
     assert.ok(r.stale.length > 0, "there was something to write");
     const after = ["public/index.md", "public/llms.txt", "public/index.html", "build-state.json"].map((f) => readFileSync(join(dir, f), "utf8"));
     assert.deepEqual(after, before);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("changing a served asset's bytes moves dateModified (portrait, card, icon, font, .well-known text)", () => {
+  for (const [f, change] of [
+    ["public/photo.webp", (b) => Buffer.concat([b, Buffer.from([0])])],
+    ["public/og-card.jpg", (b) => Buffer.concat([b, Buffer.from([0])])],
+    ["public/favicon.ico", (b) => Buffer.concat([b, Buffer.from([0])])],
+    ["public/fonts/ibm-plex-mono-latin-400.woff2", (b) => Buffer.concat([b, Buffer.from([0])])],
+    ["public/.well-known/security.txt", (b) => Buffer.from(b.toString().replace(/^Expires:.*$/m, "Expires: 2027-06-01T00:00:00.000Z"))],
+    ["public/.well-known/mcp-registry-auth", (b) => Buffer.concat([b, Buffer.from("\n")])],
+  ]) {
+    const dir = scratch();
+    try {
+      // Converge the scratch tree first, so the check below can only fail because of the asset.
+      assert.deepEqual(build({ root: dir, today: "2098-01-01", now: NOW }).errors, []);
+      assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, [], "baseline");
+      const p = join(dir, f);
+      const changed = change(readFileSync(p));
+      assert.notDeepEqual(changed, readFileSync(p), `${f}: fixture did not change the file`);
+      writeFileSync(p, changed);
+      assert.ok(build({ root: dir, check: true, now: NOW }).errors.some((e) => /build-state\.json does not match/.test(e)), `${f}: --check did not notice`);
+      const r = build({ root: dir, today: "2099-01-01", now: NOW });
+      assert.deepEqual(r.errors, [], f);
+      assert.equal(r.date, "2099-01-01", f);
+      assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, [], `${f}: does not converge`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test("writeStaged: a failed rename rolls back the files already replaced and leaves no temp files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "site-write-"));
+  try {
+    for (const f of ["a", "b", "c"]) writeFileSync(join(dir, f), `old ${f}`);
+    const previous = { a: "old a", b: "old b", c: "old c", d: null };
+    let renames = 0;
+    const io = { writeFileSync, unlinkSync, renameSync: (x, y) => { if (++renames === 3) throw new Error("disk full"); renameSync(x, y); } };
+    assert.throws(() => writeStaged(dir, { a: "new a", b: "new b", c: "new c", d: "new d" }, previous, io), (e) => e.writePhase && e.rolledBack === true);
+    assert.deepEqual(["a", "b", "c"].map((f) => readFileSync(join(dir, f), "utf8")), ["old a", "old b", "old c"]);
+    assert.deepEqual(readdirSync(dir).sort(), ["a", "b", "c"], "no temp files and no new file left behind");
+    // A rollback that cannot complete says so.
+    renames = 0;
+    const stuck = { ...io, writeFileSync: (f, t) => { if (!f.endsWith(".tmp")) throw new Error("read-only"); writeFileSync(f, t); } };
+    assert.throws(() => writeStaged(dir, { a: "new a", b: "new b", c: "new c" }, previous, stuck), (e) => e.writePhase && e.rolledBack === false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a build whose write fails throws a write-phase error after restoring the tree", () => {
+  const dir = scratch();
+  try {
+    const p = join(dir, "content.json");
+    writeFileSync(p, readFileSync(p, "utf8").replace('"Python"', '"Python 3"'));
+    const h = join(dir, "public/index.html");
+    writeFileSync(h, readFileSync(h, "utf8").replace("</span>Python</li>", "</span>Python 3</li>"));
+    const outs = ["public/index.md", "public/llms.txt", "public/index.html", "build-state.json"];
+    const before = outs.map((f) => readFileSync(join(dir, f), "utf8"));
+    let renames = 0;
+    const io = { writeFileSync, unlinkSync, renameSync: (x, y) => { if (++renames === 2) throw new Error("EIO"); renameSync(x, y); } };
+    assert.throws(() => build({ root: dir, today: "2099-01-01", now: NOW, io }), (e) => e.writePhase && e.rolledBack);
+    assert.deepEqual(outs.map((f) => readFileSync(join(dir, f), "utf8")), before);
+    assert.ok(!outs.some((f) => existsSync(join(dir, f) + ".tmp")));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

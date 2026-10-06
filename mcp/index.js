@@ -11,7 +11,7 @@ export class IntroQuota extends DurableObject {
   reserve(ipKey, senderKey) {
     return reserveIntro(this.ctx.storage, new Date(), ipKey, senderKey);
   }
-  // Fires at the next UTC midnight after a reservation: storage keeps only today's counters.
+  // Fires at the end (UTC midnight) of the stored counters' day: storage keeps only today's counters.
   alarm() {
     return pruneQuota(this.ctx.storage, new Date());
   }
