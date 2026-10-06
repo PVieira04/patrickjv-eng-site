@@ -3,6 +3,9 @@
   // Free plan, so the site and /.well-known/did.json can't be taken down by request quota.
   "name": "patrickjv-eng-site",
   "compatibility_date": "2026-10-01",
-  "workers_dev": true,
-  "assets": { "directory": "./public" }
+  // Serve only on the custom domain: no duplicate *.workers.dev origin, no preview URLs.
+  "workers_dev": false,
+  "preview_urls": false,
+  // Unknown paths get public/404.html with a real 404 status.
+  "assets": { "directory": "./public", "not_found_handling": "404-page" }
 }

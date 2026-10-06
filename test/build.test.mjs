@@ -1,0 +1,164 @@
+// Tests for build.mjs: the section-aware page check, the inline-code (CSP) guards, safe JSON
+// embedding, security.txt validation, content-hash dates and validate-before-write.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync, cpSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build, checkPage, inlineCode, safeJson, checkSecurityTxt } from "../build.mjs";
+
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const content = JSON.parse(readFileSync(join(ROOT, "content.json"), "utf8"));
+const page = readFileSync(join(ROOT, "public/index.html"), "utf8");
+
+// Replace exactly one occurrence, so a fixture can never silently fail to apply.
+function mutate(html, from, to) {
+  const n = html.split(from).length - 1;
+  assert.equal(n, 1, `fixture: expected exactly one "${from}", found ${n}`);
+  return html.replace(from, to);
+}
+const fails = (html, pattern) => {
+  const errors = checkPage(html, content);
+  assert.ok(errors.length > 0, "expected the page check to fail");
+  assert.ok(errors.some((e) => pattern.test(e)), `no error matched ${pattern}:\n${errors.join("\n")}`);
+};
+
+test("the real page passes the section-aware check", () => {
+  assert.deepEqual(checkPage(page, content), []);
+});
+
+test("a hidden Skills section fails", () => {
+  fails(mutate(page, '<section id="skills"', '<section hidden id="skills"'), /section #skills is missing or hidden/);
+});
+
+test("an aria-hidden About section fails", () => {
+  fails(mutate(page, '<section id="about"', '<section aria-hidden="true" id="about"'), /section #about/);
+});
+
+test("a changed mailto target fails even when the visible text is unchanged", () => {
+  fails(mutate(page, '<dd><a href="mailto:hello@patrickjv.com">', '<dd><a href="mailto:someone@example.com">'), /mailto/);
+});
+
+test("a changed LinkedIn target fails", () => {
+  fails(mutate(page, '<li><a href="https://www.linkedin.com/in/patrickvieira/" rel="me">LinkedIn</a></li>', '<li><a href="https://www.linkedin.com/in/someone-else/" rel="me">LinkedIn</a></li>'), /LinkedIn/);
+});
+
+test("removing one skill fails", () => {
+  fails(mutate(page, '<li><span aria-hidden="true">06</span>Python</li>', ""), /Skills/);
+});
+
+test("a skill commented out fails", () => {
+  fails(mutate(page, '<li><span aria-hidden="true">06</span>Python</li>', '<!-- <li><span aria-hidden="true">06</span>Python</li> -->'), /Skills/);
+});
+
+test("changing the stat 40 to 4 fails (no substring match inside 1,400+)", () => {
+  fails(mutate(page, '<span class="value">40</span>', '<span class="value">4</span>'), /In figures values/);
+});
+
+test("a skill moved into another section fails", () => {
+  let html = mutate(page, '<li><span aria-hidden="true">06</span>Python</li>', "");
+  html = mutate(html, "<p>Teaching shaped how I build tooling", "<p>Python</p><p>Teaching shaped how I build tooling");
+  fails(html, /Skills|Background/);
+});
+
+test("removing the privacy note fails", () => {
+  fails(mutate(page, '<p class="privacy">', '<p class="privacy" hidden>'), /privacy/);
+});
+
+test("a content.json string with no check fails", () => {
+  const errors = checkPage(page, { ...content, extra: "A new field nobody checks" });
+  assert.ok(errors.some((e) => /not checked against the page/.test(e)));
+});
+
+test("inline-code guards: attributes, case and quoting cannot hide inline code", () => {
+  const base = '<script type="application/ld+json">{}</script><style>a{}</style><script>1</script>';
+  assert.deepEqual(inlineCode(base, { styles: 1, scripts: 1 }).errors, [], "JSON-LD is a data block, not a script");
+  assert.equal(inlineCode(base, { styles: 1, scripts: 1 }).scripts[0], "1");
+  assert.match(inlineCode(base + '<STYLE media="all">b{}</STYLE>', { styles: 1, scripts: 1 }).errors.join(), /found 2 and 1/);
+  assert.match(inlineCode(base + '<script type="module">2</script>', { styles: 1, scripts: 1 }).errors.join(), /found 1 and 2/);
+  for (const a of [`style="color:red"`, `style='color:red'`, "style=color:red", 'STYLE="x"', 'Style = "x"'])
+    assert.match(inlineCode(base + `<p ${a}>x</p>`, { styles: 1, scripts: 1 }).errors.join(), /inline style attribute/, a);
+  assert.match(inlineCode(base + '<a ONCLICK="x()">x</a>', { styles: 1, scripts: 1 }).errors.join(), /onclick/);
+  assert.match(inlineCode(base + '<script src="/x.js"></script>', { styles: 1, scripts: 1 }).errors.join(), /external scripts/);
+});
+
+test("JSON spliced into a script cannot close it", () => {
+  const s = safeJson({ a: "</script><script>alert(1)</script>", b: "line\u2028sep\u2029" });
+  assert.ok(!s.includes("<"));
+  assert.ok(!/[\u2028\u2029]/.test(s));
+  assert.deepEqual(JSON.parse(s), { a: "</script><script>alert(1)</script>", b: "line\u2028sep\u2029" });
+});
+
+test("security.txt Expires: invalid, too soon and too far all fail with a clear message", () => {
+  const now = Date.parse("2026-10-06T00:00:00Z");
+  assert.match(checkSecurityTxt("Expires: next year\n", now).join(), /not a valid date/);
+  assert.match(checkSecurityTxt("Contact: mailto:x@y\n", now).join(), /no Expires/);
+  assert.match(checkSecurityTxt("Expires: 2026-10-20T00:00:00Z\n", now).join(), /bump Expires/);
+  assert.match(checkSecurityTxt("Expires: 2029-01-01T00:00:00Z\n", now).join(), /more than a year/);
+  assert.deepEqual(checkSecurityTxt("Expires: 2027-10-06T00:00:00.000Z\n", now), []);
+});
+
+// ---- whole-build tests, on a scratch copy of the inputs ----
+function scratch() {
+  const dir = mkdtempSync(join(tmpdir(), "site-build-"));
+  cpSync(join(ROOT, "content.json"), join(dir, "content.json"));
+  cpSync(join(ROOT, "build-state.json"), join(dir, "build-state.json"));
+  cpSync(join(ROOT, "public"), join(dir, "public"), { recursive: true });
+  return dir;
+}
+const NOW = Date.parse("2026-10-06T12:00:00Z");
+
+test("the committed tree is up to date, and --check does not depend on the date", () => {
+  const dir = scratch();
+  try {
+    assert.deepEqual(build({ root: dir, check: true, today: "2099-01-01", now: NOW }).errors, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("building twice is a no-op, and the date moves only when the output changes", () => {
+  const dir = scratch();
+  try {
+    const first = build({ root: dir, today: "2099-01-01", now: NOW });
+    assert.deepEqual(first.errors, []);
+    assert.deepEqual(first.stale, [], "a clean tree must not be rewritten (not even its date)");
+    // Change the copy (content.json and the page together): the date becomes "today".
+    const swap = (f, a, b) => { const p = join(dir, f); const t = readFileSync(p, "utf8"); assert.ok(t.includes(a)); writeFileSync(p, t.replace(a, b)); };
+    swap("content.json", '"Python"', '"Python 3"');
+    swap("public/index.html", "</span>Python</li>", "</span>Python 3</li>");
+    const changed = build({ root: dir, today: "2099-01-02", now: NOW });
+    assert.deepEqual(changed.errors, []);
+    assert.equal(changed.date, "2099-01-02");
+    assert.ok(changed.stale.includes("build-state.json"));
+    // ...and a second run converges immediately, on any later day.
+    const again = build({ root: dir, today: "2099-01-03", now: NOW });
+    assert.deepEqual(again, { errors: [], stale: [], date: "2099-01-02" });
+    assert.deepEqual(build({ root: dir, check: true, today: "2099-02-01", now: NOW }).errors, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a failing build writes nothing", () => {
+  const dir = scratch();
+  try {
+    // A skill changed in content.json only: index.md/llms.txt would change, but the page check fails.
+    const p = join(dir, "content.json");
+    writeFileSync(p, readFileSync(p, "utf8").replace('"Python"', '"Rust"'));
+    const before = ["public/index.md", "public/llms.txt", "public/index.html", "build-state.json"].map((f) => readFileSync(join(dir, f), "utf8"));
+    const r = build({ root: dir, today: "2099-01-01", now: NOW });
+    assert.ok(r.errors.some((e) => /Skills/.test(e)));
+    assert.ok(r.stale.length > 0, "there was something to write");
+    const after = ["public/index.md", "public/llms.txt", "public/index.html", "build-state.json"].map((f) => readFileSync(join(dir, f), "utf8"));
+    assert.deepEqual(after, before);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("head metadata is generated from content.json", () => {
+  const dir = scratch();
+  try {
+    const p = join(dir, "public/index.html");
+    writeFileSync(p, readFileSync(p, "utf8").replace(/(<meta property="og:description" content=")[^"]*/, "$1Obsolete description"));
+    assert.ok(build({ root: dir, check: true, now: NOW }).errors.some((e) => /out of date.*index\.html/.test(e)));
+    assert.deepEqual(build({ root: dir, now: NOW }).errors, []);
+    assert.ok(readFileSync(p, "utf8").includes(`<meta property="og:description" content="${content.person.tagline}">`));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
