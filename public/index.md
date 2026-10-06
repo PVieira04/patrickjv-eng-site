@@ -102,9 +102,10 @@ By holding it to the same standard as anyone's: a written spec before code, test
 
 ### How can I contact him?
 
-Through LinkedIn or GitHub — links at the top of this page.
+Email hello@patrickjv.com, or through LinkedIn or GitHub.
 
 ## Links
 
+- [Email](mailto:hello@patrickjv.com): hello@patrickjv.com
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)
 - [GitHub](https://github.com/PVieira04)

@@ -48,6 +48,7 @@ const jsonld = {
       address: { "@type": "PostalAddress", addressLocality: "London", addressCountry: "United Kingdom" },
       alumniOf: { "@type": "CollegeOrUniversity", name: "UCL" },
       sameAs: [c.person.links.linkedin, c.person.links.github],
+      email: "mailto:" + c.person.links.email,
       knowsAbout: c.skills,
     },
     {
@@ -62,7 +63,7 @@ const jsonld = {
 const webmcp = {
   profile: {
     name: c.person.name, headline: c.person.headline, tagline: c.person.tagline, location: c.person.location,
-    links: { website: SITE, linkedin: c.person.links.linkedin, github: c.person.links.github },
+    links: { website: SITE, linkedin: c.person.links.linkedin, github: c.person.links.github, email: c.person.links.email },
   },
   work: c.work.map(({ title, summary, tags }) => ({ title, summary, tags })),
   skills: c.skills,
@@ -93,7 +94,7 @@ const md = [
   "## Background", "", ...c.background.flatMap((p) => [p, ""]),
   "## Skills", "", ...c.skills.map((s) => `- ${s}`), "",
   "## Quick answers", "", ...c.faq.flatMap((f) => [`### ${f.q}`, "", f.a, ""]),
-  "## Links", "", `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, "",
+  "## Links", "", `- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, "",
 ].join("\n");
 
 // ---- llms.txt ----
@@ -106,7 +107,7 @@ const llms = [
   "## Side projects", "", ...c.side_projects.map((p) => `- **${p.title}**: ${p.summary}`), "",
   "## Background", "", ...c.background.flatMap((p) => [p, ""]),
   "## Quick answers", "", ...c.faq.map((f) => `- **${f.q}**: ${f.a}`), "",
-  "## Links", "", `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, "",
+  "## Links", "", `- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, "",
   "## Machine-readable", "",
   `- [Markdown version of this page](${SITE}index.md): the full profile as clean Markdown`,
   `- [Sitemap](${SITE}sitemap.xml)`, "",
