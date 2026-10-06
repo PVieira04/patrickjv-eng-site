@@ -39,6 +39,7 @@ const jsonld = {
     { "@type": "WebSite", "@id": SITE + "#website", url: SITE, name: c.person.name, inLanguage: "en-GB" },
     {
       "@type": "Person", "@id": SITE + "#person", name: c.person.name,
+      identifier: "did:web:patrickjv.com",
       alternateName: ["patrickjv", "PatrickJV"],
       disambiguatingDescription: DISAMBIGUATION,
       jobTitle: c.person.headline,
