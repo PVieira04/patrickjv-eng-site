@@ -1,0 +1,9 @@
+{
+  "name": "patrickjv-eng-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/index.test.mjs",
+    "deploy": "wrangler deploy"
+  }
+}

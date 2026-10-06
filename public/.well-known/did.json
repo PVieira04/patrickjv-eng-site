@@ -1,0 +1,74 @@
+{
+  "@context": ["https://www.w3.org/ns/did/v1"],
+  "id": "did:web:patrickjv.com",
+  "verificationMethod": [
+    {
+      "id": "did:web:patrickjv.com#0-Nkr9b-scfZpoqXylgf3ugyP_BfZGmHYbnEmGesM3o",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:patrickjv.com",
+      "publicKeyJwk": {
+        "x": "-42xgudcZm7AUIsheAEjTbI7BQWgWxVnP2grFtiYhOs",
+        "y": "ogZBWVAHiOxHKaen1RW91KHhrIxa7sYMK0gpKtFFlXc",
+        "alg": "ES256",
+        "crv": "P-256",
+        "kty": "EC",
+        "use": "sig"
+      }
+    },
+    {
+      "id": "did:web:patrickjv.com#gIKqE4ybxZCYCKSULuiEVg",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:patrickjv.com",
+      "publicKeyJwk": {
+        "x": "TBsy5D9ihBODMIGOSzHDok_8URHti6uy-kVlwLw0lF0",
+        "y": "6fHxY5MUEB5uBMXVKsfn98rJj82HidiA2vsio3-KpWc",
+        "alg": "ES256",
+        "crv": "P-256",
+        "kty": "EC",
+        "use": "sig"
+      }
+    },
+    {
+      "id": "did:web:patrickjv.com#D9H2lhwtwwIYyHMekjVTkhWwox0SSUvcj1Nmpz0KXGJm4HmDXH273zyJO2XU8zo",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:patrickjv.com",
+      "publicKeyJwk": {
+        "x": "xz5GLSv-MEcdwTd9Rmd5dqe9I0F0Yq7SChL0JoXAMsM",
+        "y": "s3gFNmApz-LVAGjNXI_sJGrWcrVgwBsmplPg37O6U7M",
+        "alg": "ES256",
+        "crv": "P-256",
+        "kty": "EC",
+        "use": "sig"
+      }
+    },
+    {
+      "id": "did:web:patrickjv.com#ytXIn6YUjPHk4Up7ytPpuw",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:patrickjv.com",
+      "publicKeyJwk": {
+        "x": "H94kat1GGudHSga-Kss-v8I2hFYULj6eXshQExIOBaE",
+        "y": "l2Vu1bruor3sdWY3LBuWuRUm1rOwbjMfurOK8_NIdK0",
+        "alg": "ES256",
+        "crv": "P-256",
+        "kty": "EC",
+        "use": "sig"
+      }
+    }
+  ],
+  "authentication": [
+    "did:web:patrickjv.com#0-Nkr9b-scfZpoqXylgf3ugyP_BfZGmHYbnEmGesM3o",
+    "did:web:patrickjv.com#gIKqE4ybxZCYCKSULuiEVg",
+    "did:web:patrickjv.com#D9H2lhwtwwIYyHMekjVTkhWwox0SSUvcj1Nmpz0KXGJm4HmDXH273zyJO2XU8zo",
+    "did:web:patrickjv.com#ytXIn6YUjPHk4Up7ytPpuw"
+  ],
+  "assertionMethod": [
+    "did:web:patrickjv.com#0-Nkr9b-scfZpoqXylgf3ugyP_BfZGmHYbnEmGesM3o",
+    "did:web:patrickjv.com#gIKqE4ybxZCYCKSULuiEVg",
+    "did:web:patrickjv.com#D9H2lhwtwwIYyHMekjVTkhWwox0SSUvcj1Nmpz0KXGJm4HmDXH273zyJO2XU8zo",
+    "did:web:patrickjv.com#ytXIn6YUjPHk4Up7ytPpuw"
+  ],
+  "alsoKnownAs": [
+    "did:web:patrickjv.altimist.com",
+    "did:web:patrick.altimist.dev"
+  ]
+}

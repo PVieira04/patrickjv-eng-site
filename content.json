@@ -1,0 +1,135 @@
+{
+  "_status": "APPROVED 2026-10-06. Sourced from ~/.claude/knowledge/linkedin/{about,experience,projects}.md. All six designs render this file unchanged.",
+  "person": {
+    "name": "Patrick Vieira",
+    "headline": "Lead Platform Engineer",
+    "tagline": "I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.",
+    "location": "London, United Kingdom",
+    "links": {
+      "linkedin": "https://www.linkedin.com/in/patrickvieira/",
+      "github": "https://github.com/PVieira04",
+      "email": null
+    }
+  },
+  "about": [
+    "I lead platform engineering at Altimist, a London fintech, reporting to the CEO. I own the architecture, infrastructure, identity and security, and I set the engineering standards the company builds to.",
+    "I built and run the company's internal developer platform for AI-assisted delivery, and I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.",
+    "Before software I took a BEng in Electrical and Electronic Engineering and a PGCE at UCL, then taught secondary maths. Teaching shaped how I build tooling: it only counts if people pick it up and use it well."
+  ],
+  "stats": [
+    {
+      "value": "1,400+",
+      "label": "merged pull requests, Dec 2025 – Sep 2026"
+    },
+    {
+      "value": "40",
+      "label": "repositories"
+    },
+    {
+      "value": "44 of 61",
+      "label": "company architecture decision records authored"
+    },
+    {
+      "value": "~10×",
+      "label": "lower monthly hosting bill after moving to Cloudflare Workers"
+    }
+  ],
+  "work": [
+    {
+      "title": "Internal developer platform for AI-assisted delivery",
+      "summary": "The Claude Code platform the company builds with: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.",
+      "tags": [
+        "Agentic AI",
+        "Developer Experience",
+        "CI/CD"
+      ]
+    },
+    {
+      "title": "Software Factory",
+      "summary": "An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.",
+      "tags": [
+        "AI Agents",
+        "Cloudflare Containers",
+        "Queues"
+      ]
+    },
+    {
+      "title": "Passkey and verifiable-credential identity",
+      "summary": "altimist-id, built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, the sign-in for the company's internal applications, with federation to self-hosted DIDs — including this domain.",
+      "tags": [
+        "WebAuthn",
+        "did:web",
+        "Verifiable Credentials"
+      ]
+    },
+    {
+      "title": "Infrastructure as code",
+      "summary": "Cloud and SaaS infrastructure run through Terraform Cloud with GitOps — plan on pull request, apply on merge, daily drift detection — across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiners and leavers automated.",
+      "tags": [
+        "Terraform",
+        "GitOps",
+        "Cloudflare"
+      ]
+    },
+    {
+      "title": "On-premises speech intelligence",
+      "summary": "A meeting-transcription pipeline on an NVIDIA DGX Spark — NeMo ASR, diarisation and voiceprint speaker naming — for audio that cannot leave the building.",
+      "tags": [
+        "NVIDIA NeMo",
+        "ASR",
+        "On-prem AI"
+      ]
+    }
+  ],
+  "side_projects": [
+    {
+      "title": "Kaizen Kingdom",
+      "summary": "An adaptive maths learning platform, built from what I saw in the classroom: the gap between what teachers need and what edtech actually provides.",
+      "url": null
+    },
+    {
+      "title": "Marine-weather agent",
+      "summary": "An agent that emails forecasts to a sailing yacht at sea.",
+      "url": null
+    }
+  ],
+  "experience": [
+    {
+      "role": "Lead Platform Engineer",
+      "org": "Altimist",
+      "dates": "Aug 2023 – present"
+    },
+    {
+      "role": "Career transition — self-taught software development",
+      "org": "Self-employed",
+      "dates": "Sep 2021 – Aug 2023"
+    },
+    {
+      "role": "Secondary Mathematics Teacher",
+      "org": "Wimbledon High School GDST",
+      "dates": "Aug 2019 – Jul 2021"
+    }
+  ],
+  "education": [
+    {
+      "qualification": "PGCE, Secondary Mathematics",
+      "institution": "UCL"
+    },
+    {
+      "qualification": "BEng, Electrical and Electronic Engineering",
+      "institution": null
+    }
+  ],
+  "skills": [
+    "Platform Engineering",
+    "Agentic AI",
+    "Developer Experience",
+    "Infrastructure as Code",
+    "TypeScript",
+    "Python",
+    "Cloudflare",
+    "Terraform",
+    "WebAuthn",
+    "Test-Driven Development"
+  ]
+}

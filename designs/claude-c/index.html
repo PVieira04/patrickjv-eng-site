@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patrick Vieira — Lead Platform Engineer</title>
+<meta name="description" content="I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.">
+<meta name="author" content="Patrick Vieira">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f5efe4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://patrickjv.com/">
+<meta property="og:type" content="profile">
+<meta property="og:title" content="Patrick Vieira — Lead Platform Engineer">
+<meta property="og:description" content="I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.">
+<meta property="og:url" content="https://patrickjv.com/">
+<meta property="og:locale" content="en_GB">
+<meta property="profile:first_name" content="Patrick">
+<meta property="profile:last_name" content="Vieira">
+<meta name="twitter:card" content="summary">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": "Patrick Vieira",
+  "jobTitle": "Lead Platform Engineer",
+  "description": "I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.",
+  "url": "https://patrickjv.com/",
+  "address": {
+    "@type": "PostalAddress",
+    "addressLocality": "London",
+    "addressCountry": "GB"
+  },
+  "worksFor": {
+    "@type": "Organization",
+    "name": "Altimist"
+  },
+  "alumniOf": {
+    "@type": "CollegeOrUniversity",
+    "name": "UCL"
+  },
+  "sameAs": [
+    "https://www.linkedin.com/in/patrickvieira/",
+    "https://github.com/PVieira04"
+  ],
+  "knowsAbout": [
+    "Platform Engineering",
+    "Agentic AI",
+    "Developer Experience",
+    "Infrastructure as Code",
+    "TypeScript",
+    "Python",
+    "Cloudflare",
+    "Terraform",
+    "WebAuthn",
+    "Test-Driven Development"
+  ]
+}
+</script>
+<style>
+  :root {
+    --paper: #f5efe4;
+    --paper-deep: #ece3d3;
+    --card: #fbf8f2;
+    --ink: #2a221b;
+    --ink-soft: #4d4238;
+    --muted: #6b5d50;
+    --rule: #dccfbb;
+    --clay: #9a4927;
+    --clay-soft: #f0dccf;
+    --sage: #56653f;
+    --sage-soft: #e3e6d3;
+    --focus: #9a4927;
+    --grain-opacity: .05;
+    --radius: 14px;
+    --radius-sm: 9px;
+    --measure: 64ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #1c1814;
+      --paper-deep: #241f1a;
+      --card: #27211c;
+      --ink: #efe6d8;
+      --ink-soft: #d6cbbb;
+      --muted: #b4a593;
+      --rule: #3d342b;
+      --clay: #e6926b;
+      --clay-soft: #3a2a21;
+      --sage: #b2c194;
+      --sage-soft: #2b2e22;
+      --focus: #f0a37f;
+      --grain-opacity: .06;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--paper);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.4  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>");
+    background-blend-mode: multiply;
+    color: var(--ink);
+    font-family: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.65;
+    font-feature-settings: "ss01", "kern";
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background-blend-mode: soft-light; }
+  }
+
+  a { color: inherit; text-decoration-color: color-mix(in srgb, var(--clay) 55%, transparent); text-decoration-thickness: 1.5px; text-underline-offset: .2em; }
+  a:hover { color: var(--clay); text-decoration-color: currentColor; }
+  :focus-visible { outline: 2.5px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+
+  .skip {
+    position: absolute; left: 1rem; top: -4rem; z-index: 10;
+    background: var(--ink); color: var(--paper); padding: .6rem 1rem; border-radius: var(--radius-sm);
+    text-decoration: none; font-weight: 600;
+  }
+  .skip:focus { top: 1rem; }
+
+  .wrap { width: 100%; max-width: 68rem; margin: 0 auto; padding: 0 1.25rem; }
+  @media (min-width: 48rem) { .wrap { padding: 0 2.5rem; } }
+
+  /* ---------- Header ---------- */
+  .site-header { padding: 1.5rem 0 0; }
+  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .mark { display: inline-flex; align-items: center; gap: .65rem; text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
+  .mark svg { width: 34px; height: 34px; flex: none; }
+  .site-nav ul { list-style: none; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: 0; padding: 0; font-size: .95rem; }
+  .site-nav a { text-decoration: none; color: var(--ink-soft); padding: .25rem 0; }
+  .site-nav a:hover { color: var(--clay); }
+
+  /* ---------- Intro ---------- */
+  .intro { padding: clamp(3.5rem, 10vw, 7.5rem) 0 clamp(3rem, 7vw, 5rem); }
+  .kicker {
+    display: inline-flex; align-items: center; gap: .55rem;
+    font-size: .9rem; font-weight: 500; color: var(--muted); margin: 0 0 1.4rem;
+  }
+  .kicker::before { content: ""; width: .55rem; height: .55rem; border-radius: 50%; background: var(--clay); }
+  h1 {
+    font-size: clamp(2.6rem, 8vw, 5.4rem); line-height: 1.02; letter-spacing: -.035em;
+    font-weight: 700; margin: 0;
+  }
+  .role { display: block; font-size: clamp(1.15rem, 2.6vw, 1.55rem); font-weight: 500; letter-spacing: -.01em; color: var(--clay); margin-top: .9rem; line-height: 1.3; }
+  .tagline {
+    font-size: clamp(1.25rem, 2.8vw, 1.75rem); line-height: 1.45; letter-spacing: -.012em;
+    color: var(--ink-soft); max-width: 34ch; margin: 2rem 0 0; font-weight: 400;
+  }
+  .links { display: flex; flex-wrap: wrap; gap: .75rem; margin: 2.25rem 0 0; padding: 0; list-style: none; }
+  .links a {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .6rem 1.05rem; border-radius: 999px; text-decoration: none; font-weight: 500; font-size: .95rem;
+    border: 1.5px solid var(--rule); background: var(--card);
+    transition: border-color .2s, color .2s, transform .2s;
+  }
+  .links a:hover { border-color: var(--clay); color: var(--clay); transform: translateY(-1px); }
+  .links svg { width: 1.05em; height: 1.05em; flex: none; }
+
+  /* ---------- Sections ---------- */
+  section { padding: clamp(3rem, 7vw, 5.5rem) 0; }
+  .section-head { display: grid; gap: .4rem; margin-bottom: 2.25rem; }
+  .eyebrow { font-size: .82rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--clay); margin: 0; }
+  h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.15; letter-spacing: -.025em; font-weight: 600; margin: 0; }
+  h3 { font-size: 1.22rem; line-height: 1.3; letter-spacing: -.012em; font-weight: 600; margin: 0; }
+  p { margin: 0; }
+
+  .band { background: var(--paper-deep); border-block: 1px solid var(--rule); }
+
+  /* About */
+  .about-grid { display: grid; gap: 2.5rem; }
+  @media (min-width: 60rem) { .about-grid { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 4rem; align-items: start; } }
+  .prose { display: grid; gap: 1.15rem; max-width: var(--measure); color: var(--ink-soft); }
+  .prose p:first-child { font-size: 1.18rem; color: var(--ink); line-height: 1.6; }
+
+  .stats { list-style: none; margin: 0; padding: 0; display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
+  .stats li {
+    background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: 1.1rem 1.25rem 1.2rem; display: grid; gap: .3rem;
+  }
+  .stats .value { font-size: 1.85rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .stats .label { font-size: .93rem; color: var(--muted); line-height: 1.45; }
+  @media (min-width: 60rem) { .stats { grid-template-columns: 1fr 1fr; } }
+
+  /* Path / timeline */
+  .path { list-style: none; margin: 0; padding: 0; position: relative; max-width: 46rem; }
+  .path::before {
+    content: ""; position: absolute; left: 11px; top: .7rem; bottom: .7rem; width: 2px;
+    background: linear-gradient(to bottom, var(--sage), var(--clay));
+    border-radius: 2px; opacity: .55;
+  }
+  .step { position: relative; padding: 0 0 2.1rem 3rem; }
+  .step:last-child { padding-bottom: 0; }
+  .step::before {
+    content: ""; position: absolute; left: 4px; top: .42rem; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--paper-deep); border: 2.5px solid var(--sage);
+  }
+  .step.work::before { border-color: var(--clay); }
+  .step.now::before { background: var(--clay); border-color: var(--clay); box-shadow: 0 0 0 5px var(--clay-soft); }
+  .step .kind { display: inline-block; font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--sage); margin-bottom: .2rem; }
+  .step.work .kind { color: var(--clay); }
+  .step h3 { font-size: 1.15rem; }
+  .step .meta { color: var(--muted); font-size: .97rem; margin-top: .15rem; }
+  .step .meta span + span::before { content: "·"; margin: 0 .5rem; color: var(--rule); }
+
+  /* Work */
+  .work-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+  @media (min-width: 52rem) {
+    .work-list { grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    .work-list > li:first-child { grid-column: 1 / -1; }
+    .work-list > li:first-child article { padding: 2.1rem 2.25rem; }
+    .work-list > li:first-child h3 { font-size: 1.5rem; }
+    .work-list > li:first-child p { font-size: 1.08rem; max-width: 62ch; }
+  }
+  .card {
+    height: 100%;
+    background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: 1.5rem 1.6rem 1.6rem; display: flex; flex-direction: column; gap: .8rem;
+  }
+  .card p { color: var(--ink-soft); }
+  .num { font-size: .85rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tags { list-style: none; margin: auto 0 0; padding: .4rem 0 0; display: flex; flex-wrap: wrap; gap: .45rem; }
+  .tags li {
+    font-size: .82rem; font-weight: 500; padding: .22rem .7rem; border-radius: 999px;
+    background: var(--clay-soft); color: var(--ink-soft);
+  }
+
+  /* Side projects */
+  .side-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+  @media (min-width: 52rem) { .side-grid { grid-template-columns: 1.4fr 1fr; gap: 1.25rem; } }
+  .side { background: var(--sage-soft); border-color: color-mix(in srgb, var(--sage) 25%, var(--rule)); }
+  .side h3 { font-size: 1.35rem; }
+  .side .tags li { background: var(--card); }
+
+  /* Skills */
+  .skills { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .6rem; max-width: 52rem; }
+  .skills li {
+    padding: .5rem 1rem; border-radius: var(--radius-sm); border: 1.5px solid var(--rule);
+    background: var(--card); font-weight: 500; font-size: .97rem;
+  }
+
+  /* Footer */
+  .site-footer { padding: 3rem 0 3.5rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: .95rem; }
+  .site-footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem 2rem; justify-content: space-between; align-items: center; }
+  .site-footer ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.25rem; flex-wrap: wrap; }
+  .site-footer strong { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="mark" href="#top" aria-label="Patrick Vieira, back to top">
+      <svg viewBox="0 0 34 34" aria-hidden="true" focusable="false">
+        <circle cx="17" cy="17" r="16" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5"/>
+        <path d="M7 24 C 12 24, 13 12, 17 12 S 22 20, 27 10" fill="none" style="stroke:var(--clay)" stroke-width="2.2" stroke-linecap="round"/>
+        <circle cx="27" cy="10" r="2.6" style="fill:var(--clay)"/>
+      </svg>
+      <span>Patrick Vieira</span>
+    </a>
+    <nav class="site-nav" aria-label="Sections">
+      <ul>
+        <li><a href="#about">About</a></li>
+        <li><a href="#path">Path</a></li>
+        <li><a href="#work">Work</a></li>
+        <li><a href="#side-projects">Side projects</a></li>
+        <li><a href="#skills">Skills</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="intro" id="top">
+    <div class="wrap">
+      <p class="kicker">London, United Kingdom</p>
+      <h1>Patrick Vieira<span class="role">Lead Platform Engineer</span></h1>
+      <p class="tagline">I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.</p>
+      <ul class="links">
+        <li><a href="https://www.linkedin.com/in/patrickvieira/" rel="me">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM3 9.75h4v11H3v-11Zm6.5 0h3.8v1.5h.06c.53-.95 1.83-1.95 3.77-1.95 4.03 0 4.77 2.5 4.77 5.75v5.7h-4v-5.05c0-1.2-.02-2.75-1.7-2.75-1.7 0-1.95 1.3-1.95 2.65v5.15h-4v-11Z"/></svg>
+          LinkedIn</a></li>
+        <li><a href="https://github.com/PVieira04" rel="me">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.46-1.11-1.46-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.3 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+          GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <section id="about" class="band" aria-labelledby="about-title">
+    <div class="wrap about-grid">
+      <div>
+        <div class="section-head">
+          <p class="eyebrow">About</p>
+          <h2 id="about-title">How I work</h2>
+        </div>
+        <div class="prose">
+          <p>I lead platform engineering at Altimist, a London fintech, reporting to the CEO. I own the architecture, infrastructure, identity and security, and I set the engineering standards the company builds to.</p>
+          <p>I built and run the company's internal developer platform for AI-assisted delivery, and I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.</p>
+          <p>Before software I took a BEng in Electrical and Electronic Engineering and a PGCE at UCL, then taught secondary maths. Teaching shaped how I build tooling: it only counts if people pick it up and use it well.</p>
+        </div>
+      </div>
+      <div>
+        <h3 class="eyebrow" id="stats-title" style="margin-bottom:1rem">In numbers</h3>
+        <ul class="stats" aria-labelledby="stats-title">
+          <li><span class="value">1,400+</span><span class="label">merged pull requests, Dec 2025 – Sep 2026</span></li>
+          <li><span class="value">40</span><span class="label">repositories</span></li>
+          <li><span class="value">44 of 61</span><span class="label">company architecture decision records authored</span></li>
+          <li><span class="value">~10×</span><span class="label">lower monthly hosting bill after moving to Cloudflare Workers</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="path" aria-labelledby="path-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Experience and education</p>
+        <h2 id="path-title">The path here</h2>
+      </div>
+      <ol class="path">
+        <li class="step">
+          <span class="kind">Education</span>
+          <h3>BEng, Electrical and Electronic Engineering</h3>
+        </li>
+        <li class="step">
+          <span class="kind">Education</span>
+          <h3>PGCE, Secondary Mathematics</h3>
+          <p class="meta"><span>UCL</span></p>
+        </li>
+        <li class="step work">
+          <span class="kind">Experience</span>
+          <h3>Secondary Mathematics Teacher</h3>
+          <p class="meta"><span>Wimbledon High School GDST</span><span><time>Aug 2019 – Jul 2021</time></span></p>
+        </li>
+        <li class="step work">
+          <span class="kind">Experience</span>
+          <h3>Career transition — self-taught software development</h3>
+          <p class="meta"><span>Self-employed</span><span><time>Sep 2021 – Aug 2023</time></span></p>
+        </li>
+        <li class="step work now">
+          <span class="kind">Experience</span>
+          <h3>Lead Platform Engineer</h3>
+          <p class="meta"><span>Altimist</span><span><time>Aug 2023 – present</time></span></p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="work" class="band" aria-labelledby="work-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Work</p>
+        <h2 id="work-title">What I've built</h2>
+      </div>
+      <ol class="work-list">
+        <li>
+          <article class="card" aria-labelledby="w1">
+            <span class="num" aria-hidden="true">01</span>
+            <h3 id="w1">Internal developer platform for AI-assisted delivery</h3>
+            <p>The Claude Code platform the company builds with: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.</p>
+            <ul class="tags" aria-label="Tags"><li>Agentic AI</li><li>Developer Experience</li><li>CI/CD</li></ul>
+          </article>
+        </li>
+        <li>
+          <article class="card" aria-labelledby="w2">
+            <span class="num" aria-hidden="true">02</span>
+            <h3 id="w2">Software Factory</h3>
+            <p>An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.</p>
+            <ul class="tags" aria-label="Tags"><li>AI Agents</li><li>Cloudflare Containers</li><li>Queues</li></ul>
+          </article>
+        </li>
+        <li>
+          <article class="card" aria-labelledby="w3">
+            <span class="num" aria-hidden="true">03</span>
+            <h3 id="w3">Passkey and verifiable-credential identity</h3>
+            <p>altimist-id, built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, the sign-in for the company's internal applications, with federation to self-hosted DIDs — including this domain.</p>
+            <ul class="tags" aria-label="Tags"><li>WebAuthn</li><li>did:web</li><li>Verifiable Credentials</li></ul>
+          </article>
+        </li>
+        <li>
+          <article class="card" aria-labelledby="w4">
+            <span class="num" aria-hidden="true">04</span>
+            <h3 id="w4">Infrastructure as code</h3>
+            <p>Cloud and SaaS infrastructure run through Terraform Cloud with GitOps — plan on pull request, apply on merge, daily drift detection — across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiners and leavers automated.</p>
+            <ul class="tags" aria-label="Tags"><li>Terraform</li><li>GitOps</li><li>Cloudflare</li></ul>
+          </article>
+        </li>
+        <li>
+          <article class="card" aria-labelledby="w5">
+            <span class="num" aria-hidden="true">05</span>
+            <h3 id="w5">On-premises speech intelligence</h3>
+            <p>A meeting-transcription pipeline on an NVIDIA DGX Spark — NeMo ASR, diarisation and voiceprint speaker naming — for audio that cannot leave the building.</p>
+            <ul class="tags" aria-label="Tags"><li>NVIDIA NeMo</li><li>ASR</li><li>On-prem AI</li></ul>
+          </article>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="side-projects" aria-labelledby="side-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Side projects</p>
+        <h2 id="side-title">On the side</h2>
+      </div>
+      <ul class="side-grid">
+        <li>
+          <article class="card side" aria-labelledby="s1">
+            <h3 id="s1">Kaizen Kingdom</h3>
+            <p>An adaptive maths learning platform, built from what I saw in the classroom: the gap between what teachers need and what edtech actually provides.</p>
+          </article>
+        </li>
+        <li>
+          <article class="card side" aria-labelledby="s2">
+            <h3 id="s2">Marine-weather agent</h3>
+            <p>An agent that emails forecasts to a sailing yacht at sea.</p>
+          </article>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="skills" class="band" aria-labelledby="skills-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Skills</p>
+        <h2 id="skills-title">What I work with</h2>
+      </div>
+      <ul class="skills">
+        <li>Platform Engineering</li>
+        <li>Agentic AI</li>
+        <li>Developer Experience</li>
+        <li>Infrastructure as Code</li>
+        <li>TypeScript</li>
+        <li>Python</li>
+        <li>Cloudflare</li>
+        <li>Terraform</li>
+        <li>WebAuthn</li>
+        <li>Test-Driven Development</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p><strong>Patrick Vieira</strong> · Lead Platform Engineer · London, United Kingdom</p>
+    <ul>
+      <li><a href="https://www.linkedin.com/in/patrickvieira/" rel="me">LinkedIn</a></li>
+      <li><a href="https://github.com/PVieira04" rel="me">GitHub</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

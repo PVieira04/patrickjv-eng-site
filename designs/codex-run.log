@@ -1,0 +1,565 @@
+Reading additional input from stdin...
+OpenAI Codex v0.160.1
+--------
+workdir: /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+model: gpt-6.1-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1118e-401c-7993-8a73-51521c9a2842
+--------
+user
+Read designs/BRIEF.md and content.json, then follow the brief exactly. Your assignment: choose THREE genuinely different design directions yourself and build one design for each, writing designs/codex-1/index.html, designs/codex-2/index.html and designs/codex-3/index.html. Do not create or modify any other file. At the end, print one line per design naming its direction.
+codex
+I’ll read the brief and content, then build three distinct designs in the requested HTML files.
+exec
+/bin/bash -lc "pwd && rg --files -g AGENTS.md -g BRIEF.md -g content.json -g 'designs/**'" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ succeeded in 0ms:
+/home/patrickjv/projects/pvieira04/patrickjv-eng-site
+content.json
+designs/codex-run.log
+designs/BRIEF.md
+
+exec
+/bin/bash -lc 'for f in /AGENTS.md /home/AGENTS.md /home/patrickjv/AGENTS.md /home/patrickjv/projects/AGENTS.md /home/patrickjv/projects/pvieira04/AGENTS.md /home/patrickjv/projects/pvieira04/patrickjv-eng-site/AGENTS.md; do if [ -f "$f" ]; then printf '"'\\n%s\\n' \""'$f"; cat "$f"; fi; done' in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'cat designs/BRIEF.md content.json' in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ succeeded in 0ms:
+# Design brief — patrickjv.com
+
+You are designing a personal website for Patrick Vieira, a Lead Platform Engineer in London.
+Six candidate designs are being made; Patrick will compare them side by side and pick one.
+
+## Content
+
+`../content.json` (repo root) is the **only** source of text. Use every section it contains
+(person, about, stats, work, side_projects, experience, education, skills) and copy the wording
+**verbatim** — do not rewrite, add claims, invent numbers, or add sections that aren't there.
+Skip any field that is `null`. Ignore the `_status` field.
+
+## Deliverable
+
+One file: `index.html` in your assigned folder. Nothing else.
+
+- **Content baked into the HTML.** Do not fetch `content.json` at runtime; crawlers and AI agents
+  must see all text without running JavaScript.
+- **Self-contained.** Inline all CSS. Fonts from Google Fonts are allowed. No other external
+  requests, no frameworks, no build step, no images you would need to fetch (inline SVG is fine).
+  JavaScript is optional and must be small and inline; the page must work fully without it.
+- **Single page**, responsive from 360 px phones to wide desktops, no horizontal scroll.
+- **Machine-readable:** semantic HTML (`header`, `main`, `section`, `article`, `footer`, one `h1`,
+  logical heading order), a `<script type="application/ld+json">` block describing a schema.org
+  `Person` (name, jobTitle, address locality, `sameAs` with the LinkedIn and GitHub links,
+  `knowsAbout` from skills), `<title>`, meta description, Open Graph tags, `lang="en-GB"`.
+- **Accessible:** WCAG AA contrast, visible focus styles, `prefers-reduced-motion` respected.
+- **Light and dark:** support `prefers-color-scheme`.
+- **British English** in any UI text you add (e.g. section labels).
+
+## Tone
+
+Senior, precise, understated. Engineering credibility over marketing gloss. No stock-photo
+aesthetics, no emoji, no "hire me" banners, no placeholder headshot. Let the work speak.
+
+## Your direction
+
+Your assignment names a design direction (or asks you to choose one). Commit to it fully — the
+point of six candidates is that they are genuinely different, not six variations of one template.
+{
+  "_status": "APPROVED 2026-10-06. Sourced from ~/.claude/knowledge/linkedin/{about,experience,projects}.md. All six designs render this file unchanged.",
+  "person": {
+    "name": "Patrick Vieira",
+    "headline": "Lead Platform Engineer",
+    "tagline": "I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.",
+    "location": "London, United Kingdom",
+    "links": {
+      "linkedin": "https://www.linkedin.com/in/patrickvieira/",
+      "github": "https://github.com/PVieira04",
+      "email": null
+    }
+  },
+  "about": [
+    "I lead platform engineering at Altimist, a London fintech, reporting to the CEO. I own the architecture, infrastructure, identity and security, and I set the engineering standards the company builds to.",
+    "I built and run the company's internal developer platform for AI-assisted delivery, and I hold agent-written code to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.",
+    "Before software I took a BEng in Electrical and Electronic Engineering and a PGCE at UCL, then taught secondary maths. Teaching shaped how I build tooling: it only counts if people pick it up and use it well."
+  ],
+  "stats": [
+    {
+      "value": "1,400+",
+      "label": "merged pull requests, Dec 2025 – Sep 2026"
+    },
+    {
+      "value": "40",
+      "label": "repositories"
+    },
+    {
+      "value": "44 of 61",
+      "label": "company architecture decision records authored"
+    },
+    {
+      "value": "~10×",
+      "label": "lower monthly hosting bill after moving to Cloudflare Workers"
+    }
+  ],
+  "work": [
+    {
+      "title": "Internal developer platform for AI-assisted delivery",
+      "summary": "The Claude Code platform the company builds with: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.",
+      "tags": [
+        "Agentic AI",
+        "Developer Experience",
+        "CI/CD"
+      ]
+    },
+    {
+      "title": "Software Factory",
+      "summary": "An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.",
+      "tags": [
+        "AI Agents",
+        "Cloudflare Containers",
+        "Queues"
+      ]
+    },
+    {
+      "title": "Passkey and verifiable-credential identity",
+      "summary": "altimist-id, built from scratch: did:web identity with WebAuthn passkeys and W3C Verifiable Credentials, the sign-in for the company's internal applications, with federation to self-hosted DIDs — including this domain.",
+      "tags": [
+        "WebAuthn",
+        "did:web",
+        "Verifiable Credentials"
+      ]
+    },
+    {
+      "title": "Infrastructure as code",
+      "summary": "Cloud and SaaS infrastructure run through Terraform Cloud with GitOps — plan on pull request, apply on merge, daily drift detection — across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiners and leavers automated.",
+      "tags": [
+        "Terraform",
+        "GitOps",
+        "Cloudflare"
+      ]
+    },
+    {
+      "title": "On-premises speech intelligence",
+      "summary": "A meeting-transcription pipeline on an NVIDIA DGX Spark — NeMo ASR, diarisation and voiceprint speaker naming — for audio that cannot leave the building.",
+      "tags": [
+        "NVIDIA NeMo",
+        "ASR",
+        "On-prem AI"
+      ]
+    }
+  ],
+  "side_projects": [
+    {
+      "title": "Kaizen Kingdom",
+      "summary": "An adaptive maths learning platform, built from what I saw in the classroom: the gap between what teachers need and what edtech actually provides.",
+      "url": null
+    },
+    {
+      "title": "Marine-weather agent",
+      "summary": "An agent that emails forecasts to a sailing yacht at sea.",
+      "url": null
+    }
+  ],
+  "experience": [
+    {
+      "role": "Lead Platform Engineer",
+      "org": "Altimist",
+      "dates": "Aug 2023 – present"
+    },
+    {
+      "role": "Career transition — self-taught software development",
+      "org": "Self-employed",
+      "dates": "Sep 2021 – Aug 2023"
+    },
+    {
+      "role": "Secondary Mathematics Teacher",
+      "org": "Wimbledon High School GDST",
+      "dates": "Aug 2019 – Jul 2021"
+    }
+  ],
+  "education": [
+    {
+      "qualification": "PGCE, Secondary Mathematics",
+      "institution": "UCL"
+    },
+    {
+      "qualification": "BEng, Electrical and Electronic Engineering",
+      "institution": null
+    }
+  ],
+  "skills": [
+    "Platform Engineering",
+    "Agentic AI",
+    "Developer Experience",
+    "Infrastructure as Code",
+    "TypeScript",
+    "Python",
+    "Cloudflare",
+    "Terraform",
+    "WebAuthn",
+    "Test-Driven Development"
+  ]
+}
+
+exec
+/bin/bash -lc "rg --files -g '*AGENTS.md' -g package.json -g '*lock*' -g '*.png' -g '*.jpg' -g '*.svg' -g '*.webp' -g '*.woff*' -g '*.ttf'" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "rg --files --hidden -g AGENTS.md -g '"'!node_modules'"' -g '"'!.git'"' && git status --short" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'ls -la designs && command -v chromium && command -v firefox' in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ exited 1 in 0ms:
+total 36
+drwxr-xr-x 5 patrickjv patrickjv 4096 Oct  6 15:11 .
+drwxr-xr-x 7 patrickjv patrickjv 4096 Oct  6 15:11 ..
+-rw-r--r-- 1 patrickjv patrickjv 2170 Oct  6 15:11 BRIEF.md
+drwxr-xr-x 2 patrickjv patrickjv 4096 Oct  6 15:11 codex-1
+drwxr-xr-x 2 patrickjv patrickjv 4096 Oct  6 15:11 codex-2
+drwxr-xr-x 2 patrickjv patrickjv 4096 Oct  6 15:11 codex-3
+-rw-r--r-- 1 patrickjv patrickjv 9379 Oct  6 15:11 codex-run.log
+
+codex
+I’ve chosen three directions: a warm editorial journal, a precise systems console, and a bold cobalt typographic design. Each will use all the supplied content verbatim, with responsive layouts, accessible navigation, and light and dark themes.
+exec
+/bin/bash -lc "git status --short; node -e \"for (const m of ['playwright','puppeteer']) {try { console.log(m,require.resolve(m)) } catch {}}\"; python -c \"import importlib.util; print('bs4',bool(importlib.util.find_spec('bs4')))\"" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ exited 127 in 0ms:
+?? content.json
+?? designs/
+/bin/bash: line 1: python: command not found
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import json, html
+from pathlib import Path
+
+root = Path.cwd()
+data = json.loads((root / 'content.json').read_text())
+p = data['person']
+def esc(value): return html.escape(str(value), quote=True)
+def links(cls='social'):
+    return f'<div class=\"{cls}\"><a href=\"{esc(p[\"links\"][\"linkedin\"])}\">LinkedIn <span aria-hidden=\"true\">↗</span></a><a href=\"{esc(p[\"links\"][\"github\"])}\">GitHub <span aria-hidden=\"true\">↗</span></a></div>'
+def nav():
+    return '<nav aria-label=\"Sections\">' + ''.join(f'<a href=\"#{anchor}\">{label}</a>' for anchor,label in [('about','About'),('work','Work'),('experience','Experience'),('skills','Skills')]) + '</nav>'
+def about(): return ''.join(f'<p>{esc(t)}</p>' for t in data['about'])
+def stats():
+    return '<section class=\"stats\" aria-label=\"Stats\"><dl>' + ''.join(f'<div><dt>{esc(s[\"label\"])}</dt><dd>{esc(s[\"value\"])}</dd></div>' for s in data['stats']) + '</dl></section>'
+def work():
+    return ''.join(f'<article class=\"work-item\"><div class=\"work-title\"><h3>{esc(w[\"title\"])}</h3></div><div class=\"work-detail\"><p>{esc(w[\"summary\"])}</p><ul class=\"tags\" aria-label=\"Technologies\">' + ''.join(f'<li>{esc(t)}</li>' for t in w['tags']) + '</ul></div></article>' for w in data['work'])
+def side():
+    return ''.join(f'<article><h3>{esc(s[\"title\"])}</h3><p>{esc(s[\"summary\"])}</p></article>' for s in data['side_projects'])
+def experience():
+    return ''.join(f'<article class=\"experience-item\"><p class=\"dates\">{esc(e[\"dates\"])}</p><div><h3>{esc(e[\"role\"])}</h3><p class=\"org\">{esc(e[\"org\"])}</p></div></article>' for e in data['experience'])
+def education():
+    return ''.join(f'<article><h3>{esc(e[\"qualification\"])}</h3>' + (f'<p>{esc(e[\"institution\"])}</p>' if e['institution'] is not None else '') + '</article>' for e in data['education'])
+def skills(): return '<ul class=\"skill-list\">' + ''.join(f'<li>{esc(s)}</li>' for s in data['skills']) + '</ul>'
+
+schema = {'@context':'https://schema.org','@type':'Person','name':p['name'],'jobTitle':p['headline'],'description':p['tagline'],'address':{'@type':'PostalAddress','addressLocality':'London','addressCountry':'GB'},'sameAs':[p['links']['linkedin'],p['links']['github']],'knowsAbout':data['skills']}
+base_css = '''
+*,*::before,*::after{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:2rem}body{margin:0}a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.22em}button,a{-webkit-tap-highlight-color:transparent}a:focus-visible{outline:3px solid var(--focus);outline-offset:5px;border-radius:2px}a:hover{text-decoration:underline}p,h1,h2,h3,ul,dl,dd{margin:0}h1,h2,h3{font-weight:500}ul{padding:0;list-style:none}p{overflow-wrap:break-word}h1,h2,h3{overflow-wrap:break-word}article,section,header,main,footer,div{min-width:0}::selection{background:var(--selection);color:var(--selection-text)}.skip-link{position:fixed;top:12px;left:12px;transform:translateY(-180%);z-index:100;background:var(--bg);color:var(--ink);padding:12px 20px;border:2px solid var(--focus)}.skip-link:focus{transform:translateY(0)}.social{display:flex;flex-wrap:wrap;gap:1.4rem}.social a{text-decoration:none}.social a:hover{text-decoration:underline}.tags{display:flex;flex-wrap:wrap;gap:.5rem}.stats dl{display:grid}.stats dl>div{display:flex;flex-direction:column}.stats dd{order:-1}.dates{white-space:nowrap}footer .social{justify-content:flex-end}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none"'!important;transition:none!important}}
+'"'''
+css1 = '''
+:root{color-scheme:light dark;--bg:#f5f2e9;--ink:#252820;--muted:#62655b;--rule:#cccbbf;--accent:#86412d;--focus:#86412d;--selection:#252820;--selection-text:#f5f2e9;--panel:#eae8dc}body{background:var(--bg);color:var(--ink);font-family:'Manrope',sans-serif;font-size:15px;line-height:1.8}.page{max-width:1360px;margin:auto;padding:0 64px}.masthead{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:28px 0;border-bottom:1px solid var(--ink);font-size:12px}.masthead .location{font-weight:600;letter-spacing:.035em}.masthead nav{display:flex;gap:30px}.masthead a{text-decoration:none}.hero{display:grid;grid-template-columns:1.25fr 1fr;column-gap:70px;padding:86px 0 76px;align-items:end}.hero h1{font-family:'Fraunces',Georgia,serif;font-size:clamp(62px,7.8vw,112px);line-height:1.02;letter-spacing:-.065em;max-width:660px;font-weight:400}.hero .headline{color:var(--accent);text-transform:uppercase;font-size:12px;letter-spacing:.16em;font-weight:700;margin-bottom:24px}.hero .tagline{font-family:'Fraunces',Georgia,serif;font-size:27px;line-height:1.48;letter-spacing:-.025em}.hero .social{margin-top:32px;font-size:12px;font-weight:600}.section-label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:var(--accent);line-height:1.5}.about-section{display:grid;grid-template-columns:1fr 2.4fr;gap:70px;border-top:1px solid var(--ink);padding:36px 0 54px}.about-copy{columns:2;column-gap:40px}.about-copy p{break-inside:avoid;margin-bottom:20px}.about-copy p:last-child{margin-bottom:0}.stats{border-top:1px solid var(--rule);border-bottom:1px solid var(--ink);padding:32px 0 36px}.stats dl{grid-template-columns:repeat(4,1fr);gap:36px}.stats dd{font-family:'Fraunces',Georgia,serif;font-weight:400;font-size:48px;line-height:1.15;letter-spacing:-.055em;margin-bottom:12px}.stats dt{font-size:11px;line-height:1.65;color:var(--muted);max-width:200px}.work-section{padding:52px 0 0}.work-section>h2{margin-bottom:26px}.work-item{display:grid;grid-template-columns:1fr 1.6fr;gap:80px;padding:30px 0 32px;border-top:1px solid var(--rule)}.work-item h3{font-family:'Fraunces',Georgia,serif;font-size:28px;letter-spacing:-.035em;line-height:1.25;font-weight:400;max-width:370px}.work-detail p{max-width:680px;font-size:14px}.tags{margin-top:18px;gap:8px 18px;color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.03em}.tags li{border-bottom:1px solid var(--rule);padding-bottom:2px}.side-section{border-top:1px solid var(--ink);display:grid;grid-template-columns:1fr 2.4fr;gap:70px;padding:36px 0 44px}.side-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px}.side-grid h3{font-family:'Fraunces',Georgia,serif;font-size:23px;letter-spacing:-.025em;margin-bottom:10px}.side-grid p{font-size:13px;color:var(--muted)}.history{display:grid;grid-template-columns:1.5fr 1fr;gap:70px;border-top:1px solid var(--ink);padding:36px 0 48px}.history h2{margin-bottom:25px}.experience-item{display:grid;grid-template-columns:136px 1fr;gap:20px;padding:19px 0;border-top:1px solid var(--rule)}.experience-item h3,.education-section h3{font-size:13px;font-weight:600;line-height:1.6}.dates,.org,.education-section p{font-size:11px;color:var(--muted)}.dates{padding-top:2px}.education-section article{padding:19px 0;border-top:1px solid var(--rule)}.education-section h3{max-width:270px}.skills-section{display:grid;grid-template-columns:1fr 2.4fr;gap:70px;padding:30px 0 44px;border-top:1px solid var(--ink)}.skill-list{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:12px}.skill-list li::before{content:'·';margin-right:10px;color:var(--accent)}footer{display:flex;justify-content:space-between;align-items:center;gap:24px;border-top:1px solid var(--ink);padding:24px 0 34px;font-size:11px;color:var(--muted)}footer .footer-name{font-family:'Fraunces',Georgia,serif;font-size:20px;color:var(--ink)}@media(min-width:1600px){.page{max-width:1440px}.hero{padding-top:110px;padding-bottom:100px}.hero h1{font-size:126px}}@media(max-width:1000px){.page{padding:0 36px}.hero{gap:35px}.hero .tagline{font-size:23px}.about-section,.side-section,.skills-section{grid-template-columns:1fr 3fr;gap:36px}.about-copy{columns:1}.work-item{gap:40px}.history{gap:40px}.experience-item{grid-template-columns:1fr;gap:6px}.stats dd{font-size:40px}}@media(max-width:640px){.page{padding:0 23px}.masthead{align-items:flex-start;gap:16px;padding:20px 0;font-size:10px}.masthead nav{gap:9px 15px;flex-wrap:wrap;justify-content:flex-end;max-width:180px}.masthead .location{max-width:110px;line-height:1.6}.hero{grid-template-columns:1fr;padding:48px 0 38px;gap:30px}.hero h1{font-size:76px;max-width:360px}.hero .headline{font-size:10px;margin-bottom:18px}.hero .tagline{font-size:23px}.hero .social{margin-top:24px}.about-section,.side-section,.skills-section{grid-template-columns:1fr;gap:22px;padding:28px 0 32px}.about-copy{font-size:14px}.stats{padding:26px 0}.stats dl{grid-template-columns:1fr 1fr;gap:30px 24px}.stats dd{font-size:40px}.stats dt{font-size:10px}.work-section{padding-top:34px}.work-item{grid-template-columns:1fr;gap:16px;padding:26px 0}.work-item h3{font-size:26px;max-width:100%}.work-detail p{font-size:13px}.side-grid{grid-template-columns:1fr;gap:25px}.history{grid-template-columns:1fr;gap:30px;padding:28px 0}.experience-item{grid-template-columns:122px 1fr;gap:10px}.history h2{margin-bottom:18px}.skill-list{gap:9px 18px;font-size:11px}footer{align-items:flex-start;font-size:10px}footer .social{gap:14px}}
+@media(prefers-color-scheme:dark){:root{--bg:#1d211d;--ink:#ebe9df;--muted:#aeb3a8;--rule:#4b5148;--accent:#e6a384;--focus:#e6a384;--selection:#e6a384;--selection-text:#1d211d;--panel:#282e28}}
+'''
+css2 = '''
+:root{color-scheme:light dark;--bg:#e7ede9;--ink:#172d28;--muted:#50645d;--rule:#bacbc2;--panel:#f5f8f5;--accent:#166044;--hero:#142922;--hero-ink:#eff6ec;--hero-muted:#bbcfc2;--hero-accent:#c4e89a;--focus:#166044;--selection:#166044;--selection-text:#fff}body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--ink);line-height:1.7;font-size:14px}.workspace{max-width:1536px;margin:0 auto;display:grid;grid-template-columns:250px minmax(0,1fr);padding:24px;gap:24px}.sidebar{position:sticky;top:24px;height:calc(100svh - 48px);max-height:900px;display:flex;flex-direction:column;border:1px solid var(--rule);padding:28px 24px;background:var(--panel)}.identity-symbol{width:48px;height:48px;color:var(--accent);margin-bottom:32px}.sidebar-name{font-size:20px;font-weight:500;letter-spacing:-.04em;line-height:1.2}.sidebar-role{font-size:11px;color:var(--muted);margin-top:9px;font-family:'IBM Plex Mono',monospace}.sidebar nav{display:flex;flex-direction:column;gap:2px;margin-top:40px;font-family:'IBM Plex Mono',monospace;font-size:12px}.sidebar nav a{display:flex;align-items:center;padding:11px 0;gap:12px;text-decoration:none;border-bottom:1px solid var(--rule)}.sidebar nav a::before{content:'';width:5px;height:5px;background:var(--muted)}.sidebar nav a:hover{color:var(--accent)}.sidebar nav a:hover::before{background:var(--accent)}.sidebar-bottom{margin-top:auto;padding-top:40px}.sidebar .location{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);line-height:1.7}.sidebar .social{margin-top:20px;font-size:11px;gap:15px}.main-column{min-width:0}.hero{background:var(--hero);color:var(--hero-ink);padding:45px 42px 40px;border:1px solid var(--hero);position:relative}.hero-top{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-bottom:38px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--hero-accent)}.hero-top .location{color:var(--hero-muted)}.hero h1{font-size:clamp(48px,5.5vw,80px);line-height:1.05;letter-spacing:-.055em;font-weight:500;padding-bottom:25px}.hero .tagline{font-size:21px;line-height:1.55;max-width:735px;font-weight:400;color:var(--hero-ink)}.hero .social{border-top:1px solid #526c5c;padding-top:22px;margin-top:32px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--hero-accent)}.hero a:focus-visible{outline-color:var(--hero-accent)}.stats{border:1px solid var(--rule);border-top:0;background:var(--panel)}.stats dl{grid-template-columns:repeat(4,1fr)}.stats dl>div{padding:25px 20px;border-right:1px solid var(--rule)}.stats dl>div:last-child{border-right:0}.stats dd{font-family:'IBM Plex Mono',monospace;font-size:32px;font-weight:500;letter-spacing:-.07em;line-height:1.3;margin-bottom:10px}.stats dt{font-size:10px;line-height:1.6;color:var(--muted)}.panel{border:1px solid var(--rule);background:var(--panel);margin-top:24px}.panel-head{display:flex;align-items:center;gap:12px;padding:14px 22px;background:var(--bg);border-bottom:1px solid var(--rule)}.panel-head::before{content:'';width:7px;height:7px;border:1px solid var(--accent)}h2{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;letter-spacing:.05em;text-transform:uppercase}.about-copy{padding:27px 28px;display:grid;grid-template-columns:1fr 1fr;gap:18px 30px}.about-copy p{font-size:13px}.about-copy p:first-child{grid-row:span 2;font-size:17px;line-height:1.75;border-right:1px solid var(--rule);padding-right:30px}.work-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}.work-item{padding:26px 26px 24px;background:var(--panel);display:flex;flex-direction:column}.work-item:first-child{grid-column:1/-1;display:grid;grid-template-columns:.85fr 1.15fr;gap:35px}.work-item h3{font-size:21px;line-height:1.35;letter-spacing:-.025em;font-weight:500;margin-bottom:15px}.work-item:first-child h3{font-size:29px;max-width:370px}.work-detail{display:flex;flex-direction:column;flex:1}.work-detail p{font-size:13px;color:var(--muted);margin-bottom:20px}.tags{margin-top:auto;font-family:'IBM Plex Mono',monospace;font-size:9px;gap:6px}.tags li{border:1px solid var(--rule);padding:3px 7px;color:var(--accent);background:var(--bg)}.side-grid{display:grid;grid-template-columns:1fr 1fr}.side-grid article{padding:25px 26px}.side-grid article+article{border-left:1px solid var(--rule)}.side-grid h3{font-size:18px;letter-spacing:-.02em;margin-bottom:12px}.side-grid p{font-size:13px;color:var(--muted)}.history{display:grid;grid-template-columns:1.25fr 1fr;gap:24px}.experience-item{padding:20px 23px;border-bottom:1px solid var(--rule)}.experience-item:last-child{border-bottom:0}.dates{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--accent);margin-bottom:7px}.experience-item h3{font-size:15px;font-weight:500;line-height:1.5}.org{font-size:12px;color:var(--muted);margin-top:5px}.education-body article{padding:22px 24px;border-bottom:1px solid var(--rule)}.education-body article:last-child{border-bottom:0}.education-body h3{font-size:15px;line-height:1.6;font-weight:500}.education-body p{font-family:'IBM Plex Mono',monospace;color:var(--muted);font-size:11px;margin-top:8px}.skill-list{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}.skill-list li{background:var(--panel);padding:12px 24px;font-family:'IBM Plex Mono',monospace;font-size:11px;display:flex;align-items:center;gap:12px}.skill-list li::before{content:'+';color:var(--accent)}footer{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:24px 1px 2px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted)}footer .social{gap:20px}@media(min-width:1600px){.workspace{padding:40px;gap:32px;grid-template-columns:260px minmax(0,1fr)}.sidebar{top:40px;height:calc(100svh - 80px)}.hero{padding:55px 48px}.hero h1{font-size:90px}}@media(max-width:1100px){.workspace{grid-template-columns:200px minmax(0,1fr);gap:16px;padding:16px}.sidebar{padding:24px 18px;top:16px;height:calc(100svh - 32px)}.sidebar-name{font-size:19px}.hero{padding:30px}.hero-top{flex-direction:column;align-items:flex-start;gap:8px;padding-bottom:28px}.hero .tagline{font-size:18px}.stats dl>div{padding:20px 14px}.stats dd{font-size:26px}.about-copy{padding:24px;gap:20px;grid-template-columns:1fr}.about-copy p:first-child{grid-row:auto;border:0;padding:0}.work-item:first-child{display:block}.work-item:first-child h3{font-size:24px}.work-item{padding:22px}.history{grid-template-columns:1fr;gap:0}}@media(max-width:760px){.workspace{display:block;padding:16px}.sidebar{position:static;height:auto;max-height:none;padding:18px 20px;display:grid;grid-template-columns:1fr auto;align-items:center;margin-bottom:16px;gap:18px}.identity-symbol{width:32px;height:32px;margin:0;grid-column:2;grid-row:1}.sidebar-identity{grid-row:1;grid-column:1}.sidebar-role{font-size:10px;margin-top:5px}.sidebar nav{flex-direction:row;flex-wrap:wrap;grid-column:1/-1;margin:0;gap:10px 22px;font-size:10px}.sidebar nav a{border:0;padding:0;gap:7px}.sidebar-bottom{display:none}.hero h1{font-size:58px}.hero-top{flex-direction:row;align-items:flex-start;font-size:9px;gap:15px}.hero-top .location{max-width:100px;text-align:right}.hero .tagline{font-size:19px}.stats dd{font-size:30px}.stats dl{grid-template-columns:1fr 1fr}.stats dl>div{padding:22px}.stats dl>div:nth-child(2){border-right:0}.stats dl>div:nth-child(-n+2){border-bottom:1px solid var(--rule)}.work-item:first-child h3{font-size:25px}.history{grid-template-columns:1fr 1fr;gap:16px}.panel{margin-top:16px}.history .panel-head{padding:14px 16px}.education-body article,.experience-item{padding:20px 16px}.skill-list li{padding:12px 18px;font-size:10px}}@media(max-width:520px){.workspace{padding:12px}.sidebar{padding:16px}.sidebar nav{gap:10px 18px}.hero{padding:28px 23px}.hero h1{font-size:52px;max-width:320px}.hero-top{padding-bottom:30px}.hero-top>p:first-child{max-width:150px}.hero .tagline{font-size:18px}.hero .social{padding-top:18px;margin-top:25px}.stats dl>div{padding:20px}.stats dd{font-size:31px}.work-grid{grid-template-columns:1fr}.work-item:first-child{grid-column:auto}.work-item h3{font-size:21px}.work-item{padding:25px 23px}.side-grid{grid-template-columns:1fr}.side-grid article+article{border-left:0;border-top:1px solid var(--rule)}.history{grid-template-columns:1fr;gap:0}.education-body article,.experience-item{padding:20px 23px}.skill-list{grid-template-columns:1fr}.skill-list li{font-size:11px;padding:12px 23px}footer{align-items:flex-start;font-size:9px}footer .social{gap:12px}.about-copy p:first-child{font-size:16px}}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1814;--ink:#e2ede4;--muted:#a5b9ae;--rule:#354b40;--panel:#17251e;--accent:#c4e89a;--hero:#1d3024;--hero-ink:#eff6ec;--hero-muted:#bbcfc2;--hero-accent:#c4e89a;--focus:#c4e89a;--selection:#c4e89a;--selection-text:#142922}}
+'''
+css3 = '''
+:root{color-scheme:light dark;--bg:#f6f6f1;--ink:#142720;--muted:#53605a;--rule:#b6c0b8;--accent:#183bcb;--blue-ink:#fff;--blue-rule:#8a9de4;--soft:#e7ebe3;--focus:#183bcb;--selection:#183bcb;--selection-text:#fff}body{background:var(--bg);color:var(--ink);font-family:'Space Grotesk',sans-serif;line-height:1.7;font-size:15px}.wrap{max-width:1440px;padding:0 70px;margin:0 auto}.topbar{padding:26px 0;display:flex;align-items:center;justify-content:space-between;gap:30px;border-bottom:1px solid var(--rule);font-size:12px;font-weight:500}.topbar nav{display:flex;gap:30px}.topbar nav a{text-decoration:none}.hero{padding:64px 0 62px}.hero-role{font-size:16px;font-weight:500;letter-spacing:-.02em;color:var(--accent);margin-bottom:26px}.hero-title-row{display:grid;grid-template-columns:1fr 230px;align-items:end;gap:50px}.hero h1{font-size:clamp(80px,10vw,146px);line-height:.94;font-weight:500;letter-spacing:-.085em;max-width:800px}.hero h1 span{display:block}.orbital{display:block;width:100%;height:auto;color:var(--accent);margin-bottom:10px}.hero-bottom{display:grid;grid-template-columns:1.3fr 1fr;gap:70px;margin-top:50px;align-items:end}.hero .tagline{font-size:26px;line-height:1.4;letter-spacing:-.025em;max-width:750px}.hero .social{justify-content:flex-end;font-size:12px}.stats-band{background:var(--accent);color:var(--blue-ink)}.stats{padding-top:34px;padding-bottom:38px}.stats dl{grid-template-columns:repeat(4,1fr);gap:32px}.stats dl>div{border-left:1px solid var(--blue-rule);padding-left:24px}.stats dl>div:first-child{padding-left:0;border-left:0}.stats dd{font-size:54px;letter-spacing:-.06em;line-height:1.15;font-weight:500;margin-bottom:18px}.stats dt{font-size:11px;line-height:1.6;max-width:210px}.section-layout{display:grid;grid-template-columns:1fr 3fr;gap:75px}.section-heading{font-size:18px;letter-spacing:-.035em;font-weight:500;line-height:1.4}.section-heading::before{content:'';display:block;width:26px;height:5px;background:var(--accent);margin-bottom:15px}.about-section{padding:62px 0 64px}.about-copy{display:grid;grid-template-columns:1fr 1fr;gap:24px 36px}.about-copy p{font-size:14px}.about-copy p:first-child{grid-column:1/-1;font-size:24px;letter-spacing:-.02em;line-height:1.55;max-width:890px;margin-bottom:10px}.work-section{padding:54px 0 62px;border-top:1px solid var(--rule)}.work-list{border-top:2px solid var(--ink)}.work-item{display:grid;grid-template-columns:1fr 1.2fr;gap:36px;padding:32px 0;border-bottom:1px solid var(--rule)}.work-item h3{font-size:25px;font-weight:500;line-height:1.3;letter-spacing:-.045em}.work-item p{font-size:13px;line-height:1.8}.tags{margin-top:20px;gap:8px 14px;font-size:10px;font-weight:500;color:var(--accent)}.tags li::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:middle}.side-band{background:var(--soft)}.side-section{padding-top:45px;padding-bottom:48px}.side-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px}.side-grid h3{font-size:25px;letter-spacing:-.045em;line-height:1.3;margin-bottom:15px}.side-grid p{font-size:14px;max-width:380px}.experience-section{padding:60px 0 50px}.experience-list{border-top:2px solid var(--ink)}.experience-item{display:grid;grid-template-columns:160px 1fr;gap:30px;border-bottom:1px solid var(--rule);padding:24px 0}.dates{font-size:11px;font-weight:500;color:var(--muted);padding-top:5px}.experience-item h3{font-size:21px;letter-spacing:-.035em;line-height:1.4}.org{font-size:13px;color:var(--muted);margin-top:5px}.education-section{padding:30px 0 55px}.education-grid{display:grid;grid-template-columns:1fr 1fr;gap:35px}.education-grid article{padding-top:20px;border-top:1px solid var(--rule)}.education-grid h3{font-size:17px;letter-spacing:-.025em;line-height:1.5}.education-grid p{font-size:12px;color:var(--muted);margin-top:10px}.skills-band{background:var(--accent);color:var(--blue-ink)}.skills-section{padding-top:45px;padding-bottom:48px}.skills-section .section-heading::before{background:var(--blue-ink)}.skill-list{display:flex;flex-wrap:wrap;gap:10px 22px;font-size:23px;letter-spacing:-.04em;line-height:1.6}.skill-list li::after{content:'/';margin-left:22px;color:var(--blue-rule)}.skill-list li:last-child::after{display:none}footer{padding-top:30px"'!important;padding-bottom:34px!important;display:flex;justify-content:space-between;align-items:center;gap:25px;font-size:11px}footer .footer-name{font-size:19px;letter-spacing:-.04em}footer .social{gap:24px}@media(min-width:1600px){.hero h1{font-size:156px}.hero{padding:80px 0}.hero-title-row{grid-template-columns:1fr 280px}.hero-bottom{margin-top:60px}}@media(max-width:1100px){.wrap{padding-left:40px;padding-right:40px}.hero-title-row{grid-template-columns:1fr 180px;gap:35px}.hero h1{font-size:108px}.hero-bottom{grid-template-columns:1.7fr 1fr;gap:40px}.hero .tagline{font-size:23px}.section-layout{grid-template-columns:1fr 3.5fr;gap:40px}.stats dd{font-size:43px}.stats dl{gap:20px}.stats dl>div{padding-left:18px}.work-item{gap:26px;grid-template-columns:1fr 1.25fr}.work-item h3{font-size:22px}.skill-list{font-size:20px}.experience-item{grid-template-columns:135px 1fr;gap:20px}}@media(max-width:760px){.wrap{padding-left:25px;padding-right:25px}.topbar{font-size:11px;gap:15px}.topbar nav{gap:16px}.hero{padding:44px 0}.hero h1{font-size:92px}.hero-title-row{grid-template-columns:1fr 110px;gap:25px}.hero-role{font-size:13px;margin-bottom:25px}.hero-bottom{grid-template-columns:1fr;gap:25px;margin-top:35px}.hero .tagline{font-size:24px;max-width:570px}.hero .social{justify-content:flex-start}.stats dl{grid-template-columns:1fr 1fr;gap:30px 25px}.stats dl>div:nth-child(3){border-left:0;padding-left:0}.stats dd{font-size:48px;margin-bottom:10px}.section-layout{grid-template-columns:1fr;gap:28px}.section-heading{font-size:17px}.section-heading::before{display:inline-block;width:20px;height:4px;margin:0 12px 4px 0}.about-section{padding:42px 0}.about-copy p:first-child{font-size:23px}.work-section{padding:40px 0}.work-item h3{font-size:24px}.side-section{padding-top:36px;padding-bottom:40px}.side-grid{gap:28px}.side-grid h3{font-size:23px}.experience-section{padding:40px 0}.education-section{padding:15px 0 40px}.skills-section{padding-top:35px;padding-bottom:38px}.skill-list{font-size:21px}}
+@media(max-width:520px){.wrap{padding-left:22px;padding-right:22px}.topbar{align-items:flex-start;padding:20px 0;font-size:10px}.topbar>.location{max-width:108px;line-height:1.6}.topbar nav{flex-wrap:wrap;justify-content:flex-end;max-width:160px;gap:8px 15px}.hero-title-row{grid-template-columns:1fr 56px;gap:12px}.hero h1{font-size:clamp(65px,18vw,92px)}.orbital{align-self:start;margin-top:4px}.hero-role{font-size:12px}.hero .tagline{font-size:21px}.hero-bottom{margin-top:30px}.stats{padding-top:28px;padding-bottom:30px}.stats dd{font-size:41px}.stats dt{font-size:10px}.stats dl{gap:26px 20px}.stats dl>div{padding-left:18px}.about-copy{grid-template-columns:1fr;gap:22px}.about-copy p:first-child{font-size:21px;grid-column:auto;margin-bottom:0}.about-copy p{font-size:13px}.work-item{grid-template-columns:1fr;gap:15px;padding:25px 0}.work-item h3{font-size:25px}.work-item p{font-size:13px}.tags{margin-top:17px;font-size:9px}.side-grid{grid-template-columns:1fr;gap:30px}.side-grid article+article{border-top:1px solid var(--rule);padding-top:25px}.side-grid p{font-size:13px}.experience-item{grid-template-columns:1fr;gap:8px;padding:21px 0}.experience-item h3{font-size:20px}.dates{padding:0}.education-grid{grid-template-columns:1fr;gap:25px}.education-grid h3{font-size:17px}.skill-list{font-size:19px;gap:8px 16px}.skill-list li::after{margin-left:16px}footer{align-items:flex-start;gap:20px;font-size:10px}footer .social{gap:14px}footer .footer-name{font-size:17px}}
+@media(prefers-color-scheme:dark){:root{--bg:#181c20;--ink:#f0f1e9;--muted:#b6beb8;--rule:#525e57;--accent:#9fb5ff;--blue-ink:#12204c;--blue-rule:#536db8;--soft:#252c30;--focus:#9fb5ff;--selection:#9fb5ff;--selection-text:#12204c}.stats-band,.skills-band{background:#9fb5ff}}
+'"'''
+
+footer = f'<footer><p class=\"footer-name\">{esc(p[\"name\"])}</p>{links()}</footer>'
+body1 = f'''
+<div class=\"page\">
+<header><div class=\"masthead\"><p class=\"location\">{esc(p['location'])}</p>{nav()}</div><div class=\"hero\"><div><p class=\"headline\">{esc(p['headline'])}</p><h1>{esc(p['name'])}</h1></div><div><p class=\"tagline\">{esc(p['tagline'])}</p>{links()}</div></div></header>
+<main id=\"main\" tabindex=\"-1\">
+<section id=\"about\" class=\"about-section\" aria-labelledby=\"about-heading\"><h2 id=\"about-heading\" class=\"section-label\">About</h2><div class=\"about-copy\">{about()}</div></section>
+{stats()}
+<section id=\"work\" class=\"work-section\" aria-labelledby=\"work-heading\"><h2 id=\"work-heading\" class=\"section-label\">Work</h2>{work()}</section>
+<section id=\"side-projects\" class=\"side-section\" aria-labelledby=\"side-heading\"><h2 id=\"side-heading\" class=\"section-label\">Side projects</h2><div class=\"side-grid\">{side()}</div></section>
+<div class=\"history\"><section id=\"experience\" aria-labelledby=\"experience-heading\"><h2 id=\"experience-heading\" class=\"section-label\">Experience</h2>{experience()}</section><section class=\"education-section\" id=\"education\" aria-labelledby=\"education-heading\"><h2 id=\"education-heading\" class=\"section-label\">Education</h2>{education()}</section></div>
+<section id=\"skills\" class=\"skills-section\" aria-labelledby=\"skills-heading\"><h2 id=\"skills-heading\" class=\"section-label\">Skills</h2>{skills()}</section>
+</main>{footer}</div>'''
+
+symbol = '<svg class=\"identity-symbol\" viewBox=\"0 0 48 48\" fill=\"none\" aria-hidden=\"true\"><path d=\"M1 17V1h16M31 1h16v16M47 31v16H31M17 47H1V31\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"M16 16h16v16H16zM24 8v8M24 32v8M8 24h8M32 24h8\" stroke=\"currentColor\" stroke-width=\"2\"/></svg>'
+body2 = f'''
+<div class=\"workspace\">
+<aside class=\"sidebar\" aria-label=\"Profile and navigation\">{symbol}<div class=\"sidebar-identity\"><p class=\"sidebar-name\">{esc(p['name'])}</p><p class=\"sidebar-role\">{esc(p['headline'])}</p></div>{nav()}<div class=\"sidebar-bottom\"><p class=\"location\">{esc(p['location'])}</p>{links()}</div></aside>
+<div class=\"main-column\"><header class=\"hero\"><div class=\"hero-top\"><p>{esc(p['headline'])}</p><p class=\"location\">{esc(p['location'])}</p></div><h1>{esc(p['name'])}</h1><p class=\"tagline\">{esc(p['tagline'])}</p>{links()}</header>
+<main id=\"main\" tabindex=\"-1\">{stats()}
+<section id=\"about\" class=\"panel\" aria-labelledby=\"about-heading\"><div class=\"panel-head\"><h2 id=\"about-heading\">About</h2></div><div class=\"about-copy\">{about()}</div></section>
+<section id=\"work\" class=\"panel\" aria-labelledby=\"work-heading\"><div class=\"panel-head\"><h2 id=\"work-heading\">Work</h2></div><div class=\"work-grid\">{work()}</div></section>
+<section id=\"side-projects\" class=\"panel\" aria-labelledby=\"side-heading\"><div class=\"panel-head\"><h2 id=\"side-heading\">Side projects</h2></div><div class=\"side-grid\">{side()}</div></section>
+<div class=\"history\"><section id=\"experience\" class=\"panel\" aria-labelledby=\"experience-heading\"><div class=\"panel-head\"><h2 id=\"experience-heading\">Experience</h2></div>{experience()}</section><section id=\"education\" class=\"panel\" aria-labelledby=\"education-heading\"><div class=\"panel-head\"><h2 id=\"education-heading\">Education</h2></div><div class=\"education-body\">{education()}</div></section></div>
+<section id=\"skills\" class=\"panel\" aria-labelledby=\"skills-heading\"><div class=\"panel-head\"><h2 id=\"skills-heading\">Skills</h2></div>{skills()}</section>
+</main>{footer}</div></div>'''
+
+orbital = '''<svg class=\"orbital\" viewBox=\"0 0 240 240\" fill=\"none\" aria-hidden=\"true\"><circle cx=\"120\" cy=\"120\" r=\"112\" stroke=\"currentColor\" stroke-width=\"2\"/><circle cx=\"120\" cy=\"120\" r=\"78\" stroke=\"currentColor\" stroke-width=\"2\"/><circle cx=\"120\" cy=\"120\" r=\"44\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"M120 0v240M0 120h240\" stroke=\"currentColor\" stroke-width=\"2\"/><circle cx=\"120\" cy=\"120\" r=\"10\" fill=\"currentColor\"/><circle cx=\"198\" cy=\"120\" r=\"10\" fill=\"currentColor\"/><circle cx=\"120\" cy=\"8\" r=\"10\" fill=\"currentColor\"/></svg>'''
+# The line break is typographic; the accessible name remains the supplied full name.
+name_parts = p['name'].split(' ',1)
+name_html = f'<span>{esc(name_parts[0])}</span> <span>{esc(name_parts[1])}</span>'
+body3 = f'''
+<header class=\"wrap\"><div class=\"topbar\"><p class=\"location\">{esc(p['location'])}</p>{nav()}</div><div class=\"hero\"><p class=\"hero-role\">{esc(p['headline'])}</p><div class=\"hero-title-row\"><h1>{name_html}</h1>{orbital}</div><div class=\"hero-bottom\"><p class=\"tagline\">{esc(p['tagline'])}</p>{links()}</div></div></header>
+<main id=\"main\" tabindex=\"-1\"><div class=\"stats-band\"><div class=\"wrap\">{stats()}</div></div>
+<div class=\"wrap\"><section id=\"about\" class=\"section-layout about-section\" aria-labelledby=\"about-heading\"><h2 id=\"about-heading\" class=\"section-heading\">About</h2><div class=\"about-copy\">{about()}</div></section>
+<section id=\"work\" class=\"section-layout work-section\" aria-labelledby=\"work-heading\"><h2 id=\"work-heading\" class=\"section-heading\">Work</h2><div class=\"work-list\">{work()}</div></section></div>
+<div class=\"side-band\"><section id=\"side-projects\" class=\"wrap section-layout side-section\" aria-labelledby=\"side-heading\"><h2 id=\"side-heading\" class=\"section-heading\">Side projects</h2><div class=\"side-grid\">{side()}</div></section></div>
+<div class=\"wrap\"><section id=\"experience\" class=\"section-layout experience-section\" aria-labelledby=\"experience-heading\"><h2 id=\"experience-heading\" class=\"section-heading\">Experience</h2><div class=\"experience-list\">{experience()}</div></section>
+<section id=\"education\" class=\"section-layout education-section\" aria-labelledby=\"education-heading\"><h2 id=\"education-heading\" class=\"section-heading\">Education</h2><div class=\"education-grid\">{education()}</div></section></div>
+<div class=\"skills-band\"><section id=\"skills\" class=\"wrap section-layout skills-section\" aria-labelledby=\"skills-heading\"><h2 id=\"skills-heading\" class=\"section-heading\">Skills</h2>{skills()}</section></div>
+</main><div class=\"wrap\">{footer}</div>'''
+fonts = [
+'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Manrope:wght@400;500;600;700&display=swap',
+'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap',
+'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap']
+for i,(css,body,font) in enumerate(zip([css1,css2,css3],[body1,body2,body3],fonts),1):
+    doc = f'''<"'!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(p['"'name'])} — {esc(p['headline'])}</title>
+<meta name=\"description\" content=\"{esc(p['tagline'])}\">
+<meta name=\"color-scheme\" content=\"light dark\">
+<meta property=\"og:type\" content=\"profile\">
+<meta property=\"og:locale\" content=\"en_GB\">
+<meta property=\"og:title\" content=\"{esc(p['name'])} — {esc(p['headline'])}\">
+<meta property=\"og:description\" content=\"{esc(p['tagline'])}\">
+<meta property=\"profile:first_name\" content=\"{esc(name_parts[0])}\">
+<meta property=\"profile:last_name\" content=\"{esc(name_parts[1])}\">
+<link rel=\"stylesheet\" href=\"{esc(font)}\">
+<style>{base_css}{css}</style>
+<script type=\"application/ld+json\">{json.dumps(schema,ensure_ascii=False).replace('</','<\\\\/')}</script>
+</head>
+<body>
+<a class=\"skip-link\" href=\"#main\">Skip to content</a>
+{body}
+</body>
+</html>
+'''
+    dest = root / 'designs' / f'codex-{i}' / 'index.html'
+    dest.write_text(doc)
+    print(f'Written {dest.relative_to(root)} ({len(doc):,} characters)')
+PY" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ succeeded in 0ms:
+Written designs/codex-1/index.html (15,672 characters)
+Written designs/codex-2/index.html (19,658 characters)
+Written designs/codex-3/index.html (19,010 characters)
+
+exec
+/bin/bash -lc 'ls -la; ls -la /tmp; ls -la /usr/lib/node_modules /usr/local/lib/node_modules /opt 2>/dev/null' in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ exited 2 in 0ms:
+total 24
+drwxr-xr-x 7 patrickjv patrickjv 4096 Oct  6 15:16 .
+drwxr-xr-x 3 patrickjv patrickjv 4096 Oct  6 15:01 ..
+dr-xr-xr-x 2 patrickjv patrickjv   40 Oct  6 15:16 .agents
+dr-xr-xr-x 2 patrickjv patrickjv   40 Oct  6 15:16 .aws
+dr-xr-xr-x 2 patrickjv patrickjv   40 Oct  6 15:16 .codex
+drwxr-xr-x 6 patrickjv patrickjv 4096 Oct  6 15:14 .git
+-rw-r--r-- 1 patrickjv patrickjv 5188 Oct  6 15:11 content.json
+drwxr-xr-x 9 patrickjv patrickjv 4096 Oct  6 15:14 designs
+total 4
+drwxrwxrwt 20 nobody    nogroup    400 Oct  6 15:16 .
+drwxr-xr-x 24 nobody    nogroup   4096 Oct  6 13:18 ..
+drwxrwxrwx  2 nobody    nogroup     60 Oct  6 13:18 .X11-unix
+dr-xr-xr-x  2 patrickjv patrickjv   40 Oct  6 15:16 .agents
+dr-xr-xr-x  2 patrickjv patrickjv   40 Oct  6 15:16 .aws
+dr-xr-xr-x  2 patrickjv patrickjv   40 Oct  6 15:16 .codex
+dr-xr-xr-x  2 patrickjv patrickjv   40 Oct  6 15:16 .git
+drwxr-xr-x  3 patrickjv patrickjv   60 Oct  6 15:02 .wrangler
+drwx------  2 patrickjv patrickjv   60 Oct  6 14:44 cc-socks
+drwx------  4 patrickjv patrickjv   80 Oct  6 15:01 claude-1000
+drwxr-xr-x  9 patrickjv patrickjv  200 Oct  6 15:16 codex-bwrap-synthetic-mount-targets-1000
+d---------  2 patrickjv patrickjv   40 Oct  6 15:16 codex-daemon-1000
+drwxr-xr-x  3 patrickjv patrickjv   60 Oct  6 15:00 node-compile-cache
+drwx------  2 patrickjv patrickjv   80 Oct  6 13:30 qa-pack-log-twTPo3
+drwx------  3 patrickjv patrickjv  100 Oct  6 13:30 qa-pack-start-jhlj93
+drwx------  2 nobody    nogroup     40 Oct  6 13:18 snap-private-tmp
+drwx------  3 nobody    nogroup     60 Oct  6 13:18 systemd-private-3c9a8acc156f4c9bb1b3e745aa6cde8a-chrony.service-xKaN3P
+drwx------  3 nobody    nogroup     60 Oct  6 13:18 systemd-private-3c9a8acc156f4c9bb1b3e745aa6cde8a-systemd-logind.service-pCM7Z7
+drwx------  2 patrickjv patrickjv   60 Oct  6 13:46 tmux-1000
+drwxr-xr-x  2 patrickjv patrickjv   60 Oct  6 15:00 update-check
+/opt:
+total 8
+drwxr-xr-x  2 nobody nogroup 4096 Oct  5 14:48 .
+drwxr-xr-x 24 nobody nogroup 4096 Oct  6 13:18 ..
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import importlib.util
+for m in ['bs4','playwright','selenium','tinycss2','weasyprint']:
+ print(m, bool(importlib.util.find_spec(m)))
+PY
+command -v node
+command -v chromium
+command -v chromium-browser
+command -v google-chrome
+command -v firefox
+npm root -g" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ succeeded in 0ms:
+bs4 False
+playwright False
+selenium False
+tinycss2 False
+weasyprint False
+/home/patrickjv/.local/bin/node
+/home/patrickjv/.local/opt/node-v24.13.0-linux-x64/lib/node_modules
+
+codex
+The three pages are built. I’m checking content completeness, semantic markup, navigation, and colour contrast in both themes.
+exec
+/bin/bash -lc "python3 - <<'PY'
+from html.parser import HTMLParser
+from pathlib import Path
+import json, re
+source=json.loads(Path('content.json').read_text())
+class Document(HTMLParser):
+ def __init__(self):
+  super().__init__(convert_charrefs=True); self.tags=[]; self.text=[]; self.ids=[]; self.anchors=[]; self.meta={}; self.stack=[]; self.schema=[]; self.in_schema=False; self.in_style=False; self.lang=None; self.heading_text=[]; self.hrefs=[]
+ def handle_starttag(self,tag,attrs):
+  a=dict(attrs); self.tags.append(tag)
+  if 'id' in a:self.ids.append(a['id'])
+  if tag=='html':self.lang=a.get('lang')
+  if tag=='a':self.anchors.append(a['href'])
+  if tag=='link':self.hrefs.append(a['href'])
+  if tag=='meta':self.meta[a.get('name',a.get('property'))]=a.get('content')
+  if tag=='script':
+   assert a.get('type')=='application/ld+json'; self.in_schema=True
+  if tag=='style':self.in_style=True
+  if tag not in ['meta','link','br','hr','img','input','source','wbr']:self.stack.append(tag)
+ def handle_endtag(self,tag):
+  if tag=='script':self.in_schema=False
+  if tag=='style':self.in_style=False
+  assert self.stack and self.stack[-1]==tag, (tag,self.stack)
+  self.stack.pop()
+ def handle_data(self,text):
+  if self.in_schema:self.schema.append(text)
+  elif not self.in_style:self.text.append(text)
+def leaves(obj):
+ if isinstance(obj,dict):
+  for k,v in obj.items():
+   if k"'!='"'_status':yield from leaves(v)
+ elif isinstance(obj,list):
+  for v in obj:yield from leaves(v)
+ elif obj is not None:yield str(obj)
+normal=lambda x:' '.join(x.split())
+for path in sorted(Path('designs').glob('codex-[123]/index.html')):
+ doc=Document(); raw=path.read_text(); doc.feed(raw)
+ assert not doc.stack
+ assert doc.lang=='en-GB'
+ assert doc.tags.count('h1')==1
+ assert all(t in doc.tags for t in ['header','main','section','article','footer','title'])
+ assert len(doc.ids)==len(set(doc.ids))
+ assert all(h[1:] in doc.ids for h in doc.anchors if h.startswith('#'))
+ text=normal(' '.join(doc.text))
+ for value in leaves(source):
+  assert normal(value) in text or value in doc.anchors, (path,value)
+ assert source['person']['tagline']==doc.meta['description']==doc.meta['og:description']
+ assert all(k in doc.meta for k in ['og:title','og:type','og:locale','viewport'])
+ schema=json.loads(''.join(doc.schema))
+ assert schema['@type']=='Person'
+ assert schema['name']==source['person']['name']
+ assert schema['jobTitle']==source['person']['headline']
+ assert schema['address']['addressLocality']=='London'
+ assert schema['sameAs']==list(v for v in source['person']['links'].values() if v)
+ assert schema['knowsAbout']==source['skills']
+ assert all(h.startswith('https://fonts.googleapis.com/') for h in doc.hrefs)
+ assert not any(t in doc.tags for t in ['img','iframe','video'])
+ assert raw.count('<script')==1
+ assert 'prefers-color-scheme:dark' in raw and 'prefers-reduced-motion:reduce' in raw
+ assert '_status' not in raw and 'null' not in raw
+ print(f'{path}: all supplied content, HTML nesting, landmarks, one h1, links, metadata and Person schema verified')
+
+def luminance(color):
+ channels=[int(color[i:i+2],16)/255 for i in (1,3,5)]
+ return sum((c/12.92 if c<=.04045 else ((c+.055)/1.055)**2.4)*w for c,w in zip(channels,[.2126,.7152,.0722]))
+def contrast(a,b):
+ x,y=sorted([luminance(a),luminance(b)])
+ return (y+.05)/(x+.05)
+for path in sorted(Path('designs').glob('codex-[123]/index.html')):
+ raw=path.read_text(); blocks=re.findall(r':root\\{(["'^}]+)'"\\}',raw)
+ for mode,block in zip(['light','dark'],blocks):
+  variables=dict(re.findall(r'(--[\\w-]+):(["'^;]+)'"',block))
+  if mode=='dark':variables={**base,**variables}
+  else:base=variables.copy()
+  pairs=[('ink','bg'),('muted','bg'),('accent','bg')]
+  if '--panel' in variables:pairs += [('ink','panel'),('muted','panel'),('accent','panel')]
+  if '--hero' in variables:pairs += [('hero-ink','hero'),('hero-muted','hero'),('hero-accent','hero')]
+  if '--blue-ink' in variables:pairs += [('blue-ink','accent'),('ink','soft'),('muted','soft')]
+  scores=[contrast(variables['--'+a],variables['--'+b]) for a,b in pairs]
+  for pair,score in zip(pairs,scores):assert score>=4.5,(path,mode,pair,score)
+  print(f'{path}: {mode} text contrast passes AA, minimum {min(scores):.2f}:1')
+PY" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ exited 1 in 205ms:
+designs/codex-1/index.html: all supplied content, HTML nesting, landmarks, one h1, links, metadata and Person schema verified
+designs/codex-2/index.html: all supplied content, HTML nesting, landmarks, one h1, links, metadata and Person schema verified
+designs/codex-3/index.html: all supplied content, HTML nesting, landmarks, one h1, links, metadata and Person schema verified
+designs/codex-1/index.html: light text contrast passes AA, minimum 4.83:1
+designs/codex-1/index.html: dark text contrast passes AA, minimum 6.49:1
+designs/codex-2/index.html: light text contrast passes AA, minimum 5.32:1
+designs/codex-2/index.html: dark text contrast passes AA, minimum 7.69:1
+Traceback (most recent call last):
+  File "<stdin>", line 78, in <module>
+  File "<stdin>", line 66, in contrast
+  File "<stdin>", line 63, in luminance
+ValueError: invalid literal for int() with base 16: ''
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+import re
+
+def luminance(color):
+ color=color.lstrip('#')
+ if len(color)==3:color=''.join(c*2 for c in color)
+ values=[int(color[i:i+2],16)/255 for i in (0,2,4)]
+ return sum((c/12.92 if c<=.04045 else ((c+.055)/1.055)**2.4)*w for c,w in zip(values,[.2126,.7152,.0722]))
+def contrast(a,b):
+ lo,hi=sorted([luminance(a),luminance(b)])
+ return (hi+.05)/(lo+.05)
+for path in sorted(Path('designs').glob('codex-[123]/index.html')):
+ raw=path.read_text()
+ blocks=re.findall(r':root\\{(["'^}]+)'"\\}',raw)
+ for mode,block in zip(['light','dark'],blocks):
+  variables=dict(re.findall(r'(--[\\w-]+):(["'^;]+)'"',block))
+  if mode=='dark':variables={**base,**variables}
+  else:base=variables.copy()
+  pairs=[('ink','bg'),('muted','bg'),('accent','bg')]
+  if '--panel' in variables:pairs += [('ink','panel'),('muted','panel'),('accent','panel')]
+  if '--hero' in variables:pairs += [('hero-ink','hero'),('hero-muted','hero'),('hero-accent','hero')]
+  if '--blue-ink' in variables:pairs += [('blue-ink','accent'),('ink','soft'),('muted','soft')]
+  scores=[contrast(variables['--'+a],variables['--'+b]) for a,b in pairs]
+  for pair,score in zip(pairs,scores):assert score>=4.5,(path,mode,pair,score)
+  print(f'{path}: {mode} text contrast passes AA; minimum {min(scores):.2f}:1')
+ # Check stylesheet delimiter balance without introducing any tooling or artifacts.
+ css=re.search(r'<style>(.*?)</style>',raw,re.S)[1]
+ assert css.count('{')==css.count('}')
+ assert 'fetch(' not in raw and 'url(' not in css
+ print(f'{path}: self-contained CSS; reduced motion, visible focus, phone and desktop breakpoints present')
+PY" in /home/patrickjv/projects/pvieira04/patrickjv-eng-site
+ succeeded in 0ms:
+designs/codex-1/index.html: light text contrast passes AA; minimum 4.83:1
+designs/codex-1/index.html: dark text contrast passes AA; minimum 6.49:1
+designs/codex-1/index.html: self-contained CSS; reduced motion, visible focus, phone and desktop breakpoints present
+designs/codex-2/index.html: light text contrast passes AA; minimum 5.32:1
+designs/codex-2/index.html: dark text contrast passes AA; minimum 7.69:1
+designs/codex-2/index.html: self-contained CSS; reduced motion, visible focus, phone and desktop breakpoints present
+designs/codex-3/index.html: light text contrast passes AA; minimum 5.45:1
+designs/codex-3/index.html: dark text contrast passes AA; minimum 7.46:1
+designs/codex-3/index.html: self-contained CSS; reduced motion, visible focus, phone and desktop breakpoints present
+
+codex
+[codex-1](/home/patrickjv/projects/pvieira04/patrickjv-eng-site/designs/codex-1/index.html) — Warm editorial journal  
+[codex-2](/home/patrickjv/projects/pvieira04/patrickjv-eng-site/designs/codex-2/index.html) — Precise systems console  
+[codex-3](/home/patrickjv/projects/pvieira04/patrickjv-eng-site/designs/codex-3/index.html) — Bold cobalt typography
+tokens used
+56,022
+[codex-1](/home/patrickjv/projects/pvieira04/patrickjv-eng-site/designs/codex-1/index.html) — Warm editorial journal  
+[codex-2](/home/patrickjv/projects/pvieira04/patrickjv-eng-site/designs/codex-2/index.html) — Precise systems console  
+[codex-3](/home/patrickjv/projects/pvieira04/patrickjv-eng-site/designs/codex-3/index.html) — Bold cobalt typography
