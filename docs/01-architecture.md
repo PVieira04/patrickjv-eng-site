@@ -42,6 +42,7 @@ The first version used one Worker with `run_worker_first: true` to handle redire
 | `patrickjv.com` | Worker Custom Domain (auto-managed) | Workers |
 | `www.patrickjv.com` | Worker Custom Domain (auto-managed) | Workers |
 | `pvieira.co.uk`, `www.pvieira.co.uk` | Worker Custom Domains (auto-managed). The old proxied A/CNAME records (which caused a 525 error) were deleted in the dashboard first — Custom Domains refuse to overwrite external records (error `100117`). | Workers |
+| `pvieira.co.uk` mail | **Locked down (sends and receives no mail):** null MX `0 .`, SPF `v=spf1 -all`, DMARC `v=DMARC1; p=reject; adkim=s; aspf=s`, `*._domainkey` `v=DKIM1; p=` (revoked). Replaced legacy Hostinger/Elastic Email records on 6 Oct (review R2). | Manual (API/dashboard) |
 | `patrickjv.com` MX | `route1/2/3.mx.cloudflare.net` + SPF `v=spf1 include:_spf.mx.cloudflare.net ~all` | Email Routing (auto) |
 | `patrickjv.com` TXT | `google-site-verification=…` — **keep**, Google re-checks it | Google Search Console |
 

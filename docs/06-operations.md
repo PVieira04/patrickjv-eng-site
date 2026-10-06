@@ -135,7 +135,6 @@ From the [6 Oct review](reviews/2026-10-06-merged-review.md); Wrangler's OAuth c
 | Review | Action | Then |
 |---|---|---|
 | R1 | SSL/TLS → Edge Certificates → **Always Use HTTPS** (`http://patrickjv.com/` still serves the page with 200) | Add `--strict-https` to `monitor.yml` and `deploy.yml` so a regression fails |
-| R2 | `pvieira.co.uk` DNS lockdown: delete the legacy Hostinger MX, both SPF records, the template DMARC and the Elastic Email DKIM/tracking records; add null MX, `v=spf1 -all`, `v=DMARC1; p=reject; adkim=s; aspf=s`, `*._domainkey "v=DKIM1; p="` | — |
 | R3 | `patrickjv.com`: add DMARC (`p=quarantine` with reporting, then `reject`); SPF `~all` → `-all` | — |
 | R4 | Minimum TLS 1.2 (TLS 1.1 still negotiates); DNSSEC on `patrickjv.com`; CAA records for Cloudflare's CAs | — |
 | R5 | Turn off Network Error Logging if the plan allows | Update the privacy caveat in [05](05-quality-and-audits.md#privacy) |
