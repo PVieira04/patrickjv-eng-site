@@ -8,10 +8,10 @@
   X-Frame-Options: DENY
 
 /
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-L2vsGxnswV+3bBrrO1CQ2LiLzaLdfTJBtgmKiLj9oAs='; script-src 'sha256-2mGQEjFsVAlmkmMmPzpoABytbxejqJqgeFsA8knT6ZE='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-L2vsGxnswV+3bBrrO1CQ2LiLzaLdfTJBtgmKiLj9oAs='; script-src 'sha256-VLQFzYayih8j5PAjPXIBjuavXY1D16olAJtQ3T8zCIE='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-L2vsGxnswV+3bBrrO1CQ2LiLzaLdfTJBtgmKiLj9oAs='; script-src 'sha256-2mGQEjFsVAlmkmMmPzpoABytbxejqJqgeFsA8knT6ZE='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-L2vsGxnswV+3bBrrO1CQ2LiLzaLdfTJBtgmKiLj9oAs='; script-src 'sha256-VLQFzYayih8j5PAjPXIBjuavXY1D16olAJtQ3T8zCIE='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable

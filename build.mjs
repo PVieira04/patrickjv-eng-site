@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { agentData } from "./lib/agent-data.mjs";
+import { tools as mcpTools } from "./mcp/handler.js";
 
 const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -61,7 +62,8 @@ const jsonld = {
 };
 
 // ---- WebMCP data ----
-const webmcp = agentData(c);
+// The page's WebMCP request_intro uses the MCP server's own input schema, so they cannot drift.
+const webmcp = { ...agentData(c), introSchema: mcpTools().find((t) => t.name === "request_intro").inputSchema };
 
 // Splice both into the hand-written HTML. Each regex must match exactly once.
 function splice(html, re, replacement, what) {
