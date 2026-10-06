@@ -82,6 +82,28 @@ Teaching shaped how I build tooling: it only counts if people pick it up and use
 - WebAuthn
 - Test-Driven Development
 
+## Quick answers
+
+### Who is Patrick Vieira, the engineer?
+
+Patrick Vieira is a platform engineer based in London — not the footballer of the same name. He designs and runs the foundations other engineers build on: architecture, infrastructure, identity and security.
+
+### What does he specialise in?
+
+Platform engineering, AI-assisted software delivery, infrastructure as code and passkey-based identity, mainly with TypeScript, Python, Cloudflare and Terraform.
+
+### What has he built?
+
+An internal developer platform for AI-assisted delivery, an agent execution and evaluation platform, a passkey and verifiable-credential identity system, infrastructure as code across cloud and SaaS, and an on-premises speech pipeline.
+
+### How does he make AI-written code trustworthy?
+
+By holding it to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.
+
+### How can I contact him?
+
+Through LinkedIn or GitHub — links at the top of this page.
+
 ## Links
 
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)

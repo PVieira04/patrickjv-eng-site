@@ -1,5 +1,5 @@
 {
-  "_status": "DRAFT v2 2026-10-06 — employer-agnostic reframe, awaiting approval. No employer names anywhere on the site.",
+  "_status": "APPROVED 2026-10-06 (v2 employer-agnostic + faq). Source of truth for public/index.html, index.md, llms.txt, JSON-LD and the WebMCP data.",
   "person": {
     "name": "Patrick Vieira",
     "headline": "Platform Engineer",
@@ -108,5 +108,27 @@
     "Terraform",
     "WebAuthn",
     "Test-Driven Development"
+  ],
+  "faq": [
+    {
+      "q": "Who is Patrick Vieira, the engineer?",
+      "a": "Patrick Vieira is a platform engineer based in London — not the footballer of the same name. He designs and runs the foundations other engineers build on: architecture, infrastructure, identity and security."
+    },
+    {
+      "q": "What does he specialise in?",
+      "a": "Platform engineering, AI-assisted software delivery, infrastructure as code and passkey-based identity, mainly with TypeScript, Python, Cloudflare and Terraform."
+    },
+    {
+      "q": "What has he built?",
+      "a": "An internal developer platform for AI-assisted delivery, an agent execution and evaluation platform, a passkey and verifiable-credential identity system, infrastructure as code across cloud and SaaS, and an on-premises speech pipeline."
+    },
+    {
+      "q": "How does he make AI-written code trustworthy?",
+      "a": "By holding it to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor."
+    },
+    {
+      "q": "How can I contact him?",
+      "a": "Through LinkedIn or GitHub — links at the top of this page."
+    }
   ]
 }
