@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test redirect/index.test.mjs",
-    "deploy": "wrangler deploy && wrangler deploy -c redirect/wrangler.jsonc",
+    "build": "node build.mjs",
+    "test": "node build.mjs --check && node --test redirect/index.test.mjs",
+    "deploy": "npm test && wrangler deploy && wrangler deploy -c redirect/wrangler.jsonc",
     "smoke": "node smoke.mjs"
   },
   "devDependencies": {

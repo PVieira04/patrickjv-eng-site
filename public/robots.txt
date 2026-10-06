@@ -1,4 +1,8 @@
+# Content signals: search = building a search index and showing links/snippets;
+# ai-input = using content as input to AI answers (retrieval, grounding);
+# ai-train = training or fine-tuning AI models. All are permitted for this site.
 User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 
 Sitemap: https://patrickjv.com/sitemap.xml
