@@ -43,7 +43,7 @@ The first version used one Worker with `run_worker_first: true` to handle redire
 | `www.patrickjv.com` | Worker Custom Domain (auto-managed) | Workers |
 | `pvieira.co.uk`, `www.pvieira.co.uk` | Worker Custom Domains (auto-managed). The old proxied A/CNAME records (which caused a 525 error) were deleted in the dashboard first — Custom Domains refuse to overwrite external records (error `100117`). | Workers |
 | `pvieira.co.uk` mail | **Locked down (sends and receives no mail):** null MX `0 .`, SPF `v=spf1 -all`, DMARC `v=DMARC1; p=reject; adkim=s; aspf=s`, `*._domainkey` `v=DKIM1; p=` (revoked). Replaced legacy Hostinger/Elastic Email records on 6 Oct (review R2). | Manual (API/dashboard) |
-| `patrickjv.com` MX | `route1/2/3.mx.cloudflare.net` + SPF `v=spf1 include:_spf.mx.cloudflare.net ~all` | Email Routing (auto) |
+| `patrickjv.com` MX | `route1/2/3.mx.cloudflare.net` + SPF `v=spf1 include:_spf.mx.cloudflare.net -all`; DMARC `v=DMARC1; p=none; rua=mailto:hello@patrickjv.com; fo=1` (monitoring; tighten later); CAA for letsencrypt.org, pki.goog, ssl.com (+ Cloudflare's own) and `iodef`; DNSSEC enabled (7 Oct). Subdomains keep their own mail records (`marineweather` sends via Amazon SES; `tenlines` is GitHub Pages) | Email Routing (auto) |
 | `patrickjv.com` TXT | `google-site-verification=…` — **keep**, Google re-checks it | Google Search Console |
 
 The `patrickjv.com` custom domain was moved from `patrickjv-did` to `patrickjv-eng-site` **in place** (`PUT /workers/domains` with `override_existing_origin: true`), so DNS and the certificate never changed and `did.json` served `200` with identical bytes throughout the switch.
@@ -61,6 +61,10 @@ The `patrickjv.com` custom domain was moved from `patrickjv-did` to `patrickjv-e
 | Rules → **URL Rewrite Rule** "Markdown for agents" | `(http.request.uri.path eq "/" and any(http.request.headers["accept"][*] contains "text/markdown"))` → path `/index.md`, query preserved | Markdown content negotiation with no Worker code |
 | Security → Security rules → **Rate limiting rule** "MCP flood guard" | URI path starts with `/mcp`; per IP; 6 requests / 10 s; block 10 s | The Free plan's one rate-limiting rule; stops floods before the MCP Worker runs |
 | Caching → Configuration → **Crawler Hints** | On | Tells search engines about changes via IndexNow |
+| SSL/TLS → Edge Certificates → **Always Use HTTPS** | On (7 Oct) | HTTP → HTTPS at the edge, no Worker invoked; HSTS now takes effect from the first HTTPS visit |
+| SSL/TLS → Edge Certificates → **Minimum TLS Version** | 1.2 (7 Oct) | TLS 1.0/1.1 refused |
+| **Network Error Logging** | Off (7 Oct) | Browsers are no longer told to send network-error reports to a Cloudflare reporting endpoint |
+| DNS → Settings → **DNSSEC** | Enabled (7 Oct; DS publication pending at the registrar) | Protects the `did:web` identity from DNS spoofing |
 
 ## Free-plan limits that shaped the design
 

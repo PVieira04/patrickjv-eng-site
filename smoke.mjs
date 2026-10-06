@@ -49,8 +49,8 @@ async function check(name, fn) {
 }
 
 // One request: no redirects, 10 s deadline (covers the body), body always drained or cancelled.
-async function req(url, { read: readBody = false, ...init } = {}) {
-  const r = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10_000), ...init });
+async function req(url, { read: readBody = false, timeout = 10_000, ...init } = {}) {
+  const r = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(timeout), ...init });
   let buf = null;
   if (readBody) buf = Buffer.from(await r.arrayBuffer());
   else await r.body?.cancel();
@@ -220,7 +220,15 @@ if (flags.has("--mcp")) {
 if (flags.has("--registry")) {
   const serverJson = JSON.parse(read("mcp/server.json"));
   await check(`registry: ${serverJson.name} active, ${serverJson.version}, remote https://patrickjv.com/mcp`, async () => {
-    const r = await req("https://registry.modelcontextprotocol.io/v0/servers?search=com.patrickjv", { read: true });
+    // The Registry is a third-party service and can be slow (12 s observed on 7 Oct 2026): allow
+    // 30 s, and report an unreachable Registry as WARN — only a wrong or missing listing FAILs.
+    let r;
+    try {
+      r = await req("https://registry.modelcontextprotocol.io/v0/servers?search=com.patrickjv", { read: true, timeout: 30_000 });
+    } catch (e) {
+      return WARN(`registry unreachable (${e.name === "TimeoutError" ? "timeout" : e.message}) — not a site fault`);
+    }
+    if (r.status >= 500) return WARN(`registry returned ${r.status} — not a site fault`);
     if (r.status !== 200) return FAIL(`status ${r.status}`);
     const entries = (JSON.parse(r.buf.toString()).servers ?? []).filter((e) => e.server?.name === serverJson.name);
     const latest = entries.find((e) => e._meta?.["io.modelcontextprotocol.registry/official"]?.isLatest) ?? entries[0];

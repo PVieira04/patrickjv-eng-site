@@ -56,7 +56,7 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 - No analytics or tracking scripts, no cookies, and no third-party requests during page loads (fonts self-hosted — Google Fonts previously saw every visitor's IP).
 - The page footer says it plainly: *"Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here."* The same note ends `index.md` and `llms.txt`, and the `request_intro` tool description states it too.
 - The MCP server stores only rate-limit counters, under **HMAC-SHA256 keys** (keyed with a Worker secret) of the client IP and of a normalised sender address — never the raw values — and keeps them for **one day**: an alarm deletes them at the next UTC midnight. Without the secret, introductions are refused rather than hashed with a public key. Messages are forwarded by email, not stored. Workers Logs record only redacted failure events, and query strings are redacted from invocation logs.
-- Caveat: Cloudflare adds Network Error Logging headers (`Report-To`/`NEL` → `a.nel.cloudflare.com`), so a browser *may* send a network-error report to Cloudflare if a load fails. This is a zone-level Cloudflare feature, not site code, and is still present (review R5).
+- Network Error Logging (Cloudflare `Report-To`/`NEL` headers, which could make browsers send failure reports to a Cloudflare endpoint) was **disabled on 7 Oct** — the headers are no longer sent (review R5).
 - The portrait's EXIF metadata was stripped.
 
 ## Responsive, theming and print

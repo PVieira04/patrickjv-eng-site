@@ -28,7 +28,7 @@ The repo variable `CLOUDFLARE_ACCOUNT_ID` is already set. As of 6 Oct 2026 neith
 
 ## Monitoring
 
-`.github/workflows/monitor.yml` runs **every 6 hours** at 00:17, 06:17, 12:17 and 18:17 UTC (and on demand): `node smoke.mjs https://patrickjv.com --aliases --mcp --registry` — **24 checks**, each reported as **PASS**, **WARN** or **FAIL**, with the output written to the run's step summary. The run fails only on a FAIL. Every check requires its exact success status, and media types are compared exactly (`type/subtype`, parameters ignored). No redirects are followed, each request has a 10 s deadline, and one failing check never stops the rest. The checks marked "deployed = repo" compare live bytes with the checkout, so they FAIL while commits are undeployed. `test/smoke.test.mjs` runs the script against a local mock of the site, correct by default and broken one way at a time.
+`.github/workflows/monitor.yml` runs **every 6 hours** at 00:17, 06:17, 12:17 and 18:17 UTC (and on demand): `node smoke.mjs https://patrickjv.com --aliases --mcp --registry --strict-https` — **24 checks**, each reported as **PASS**, **WARN** or **FAIL**, with the output written to the run's step summary. The run fails only on a FAIL. Every check requires its exact success status, and media types are compared exactly (`type/subtype`, parameters ignored). No redirects are followed, each request has a 10 s deadline, and one failing check never stops the rest. The checks marked "deployed = repo" compare live bytes with the checkout, so they FAIL while commits are undeployed. `test/smoke.test.mjs` runs the script against a local mock of the site, correct by default and broken one way at a time.
 
 - `did.json`: 200, `application/json`, no redirect; live bytes and the repo copy both match the frozen sha256
 - `/`, `/index.md`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt`, `/photo.webp`, `/og-card.jpg`, `/favicon.ico`: 200, the expected media type, and **deployed = repo** (sha256 of the live body equals the repo file)
@@ -36,12 +36,12 @@ The repo variable `CLOUDFLARE_ACCOUNT_ID` is already set. As of 6 Oct 2026 neith
 - `Accept: text/markdown` on `/` returns 200 `text/markdown` whose body equals `public/index.md`
 - `security.txt`: 200 `text/plain` and `Expires` more than 30 days ahead
 - A missing font path (`/fonts/does-not-exist.woff2`) returns 404 with at most one CSP header and without the fonts' 30-day cache
-- `http://patrickjv.com/` redirects to HTTPS — **WARN** until Always Use HTTPS is turned on; `--strict-https` makes it a FAIL
+- `http://patrickjv.com/` redirects to HTTPS — FAIL with `--strict-https` (used by CI since Always Use HTTPS was enabled on 7 Oct); WARN without it
 - `--aliases`: `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` GET → 301 to `https://patrickjv.com/a/b?x=1`; POST → 308 (a 301 is a FAIL)
 - `--mcp`: `initialize` (version `2025-11-25`, `serverInfo.name` = `patrickjv.com`, `serverInfo.version` = `server.json`), `notifications/initialized` → 202, `tools/list` = exactly the five tools, each with icons, `tools/call list_faq` items deep-equal to `content.json`'s `faq` (read-only; never calls `request_intro`). Four requests in all, well inside the edge limit of 6 per 10 s per IP; a longer sequence would need to stay within it
 - `--registry`: `com.patrickjv/profile` is active on the MCP Registry with the same version and remote
 
-On 6 Oct after the first fixes, a local run of the then 23-check smoke gave **22 passed, 1 warned (HTTP→HTTPS), 0 failed**. The round-2 smoke (24 checks) has not yet been run against production; until the round-2 commit is deployed its "deployed = repo" checks for `/` and the missing-font check are expected to FAIL.
+On 6 Oct after the first fixes, a local run of the then 23-check smoke gave 22 passed, 1 warned (HTTP→HTTPS), 0 failed. On 7 Oct, after the round-2 deploy and the zone hardening, the full run with `--strict-https` gave **24 passed, 0 warned, 0 failed**. The Registry check allows 30 s and reports an unreachable Registry as WARN (it is a third-party service; 12 s responses were observed), while a wrong or missing listing FAILs.
 
 A failed scheduled run notifies according to GitHub's Actions notification settings — GitHub sends scheduled-run notifications to the user who last modified the cron schedule, and only if that user has Actions notifications on. Check those settings rather than assuming an email will arrive.
 
@@ -134,10 +134,7 @@ From the [6 Oct review](reviews/2026-10-06-merged-review.md); Wrangler's OAuth c
 
 | Review | Action | Then |
 |---|---|---|
-| R1 | SSL/TLS → Edge Certificates → **Always Use HTTPS** (`http://patrickjv.com/` still serves the page with 200) | Add `--strict-https` to `monitor.yml` and `deploy.yml` so a regression fails |
-| R3 | `patrickjv.com`: add DMARC (`p=quarantine` with reporting, then `reject`); SPF `~all` → `-all` | — |
-| R4 | Minimum TLS 1.2 (TLS 1.1 still negotiates); DNSSEC on `patrickjv.com`; CAA records for Cloudflare's CAs | — |
-| R5 | Turn off Network Error Logging if the plan allows | Update the privacy caveat in [05](05-quality-and-audits.md#privacy) |
+| R3 | `patrickjv.com`: add DMARC (`p=quarantine` with reporting, then `reject`); SPF `~all` → `-all` | DMARC is `p=none` with reports to `hello@` since 7 Oct: after ~2 weeks of clean reports, move to `p=quarantine`, then `p=reject`. Also confirm the DNSSEC DS record has appeared (`dig DS patrickjv.com`) |
 | R6 | Tighten the "Markdown for agents" rule so `q=0` or an HTML-first `Accept` does not get Markdown | — |
 | R7 | The redirect Worker is still metered with no rate limit — an alias flood could use up the account's daily Worker quota (which the MCP Worker shares). Replace it with free Single Redirect rules, or widen the WAF rule to the alias hosts | — |
 

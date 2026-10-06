@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           for attempt in 1 2 3 4 5; do
-            node smoke.mjs https://patrickjv.com --aliases --mcp && exit 0
+            node smoke.mjs https://patrickjv.com --aliases --mcp --strict-https && exit 0
             echo "::warning::smoke attempt $attempt failed; retrying in $((attempt * 20)) s"
             sleep $((attempt * 20))
           done

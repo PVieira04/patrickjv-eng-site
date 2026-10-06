@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          node smoke.mjs https://patrickjv.com --aliases --mcp --registry > smoke.out 2>&1
+          node smoke.mjs https://patrickjv.com --aliases --mcp --registry --strict-https > smoke.out 2>&1
           rc=$?
           cat smoke.out
           {
