@@ -1,0 +1,33 @@
+{
+  "icons": {
+    "inputs": {
+      "designs/favicon/chosen.svg": "357bdab467d49440f00adfbbd565e408848db062b4b0a7836b90b157e58d65d6",
+      "designs/favicon/make-icons.cjs": "8554052cb04a37f579aa93a10e69f3446f6f252bb73fadaf5f8f8b48c9a84da3",
+      "sharp (package.json)": "a41a17a6dee7e6c171e9e9f080d6cf5dd8036787e685eee695102fa92516a860"
+    },
+    "outputs": {
+      "public/favicon.svg": "357bdab467d49440f00adfbbd565e408848db062b4b0a7836b90b157e58d65d6",
+      "public/favicon.ico": "fe6a1cd9d6f41ba6e63d8893dfb34c5fe755460eeaddf51f4e8d7e915be44adf",
+      "public/icon-192.png": "fc6197f729f5a5d82940e0e2f1a3ece40d14f872880d9f4cabd523fb1d7968c7",
+      "public/icon-512.png": "bbae4f2559f9957cfaf8b9fafeb8048ea418632b5e9b177c1505ef2931098268",
+      "public/apple-touch-icon.png": "7b7f53e8b5d52a5b8276057325a08c639d7b035c464375065d034534849fc595"
+    }
+  },
+  "card": {
+    "inputs": {
+      "designs/og/make-card.cjs": "c1401e65fd38e35887ba47abe9cf559f8b0b650664148b1c530dbd7b22e0ff34",
+      "content.json person.{name,headline,tagline}": "e62b2ded893ac62600ef3b93a596d444cf8a4038a24568a0af88ce793a7cb7a0",
+      "public/photo.webp": "a342e4f91434ed199b73362fe1f01bfd835f69ca7f7324159954f408b01082d5",
+      "public/icon-192.png": "fc6197f729f5a5d82940e0e2f1a3ece40d14f872880d9f4cabd523fb1d7968c7",
+      "designs/og/fonts/IBMPlexMono-Medium.ttf": "4fc14a73ca53ba9d32fd759ae1ca1a3133326035d0dd337862b3ee1633cc156e",
+      "designs/og/fonts/IBMPlexMono-Regular.ttf": "a7fdc993f9f0387caedba4e42521136fa97e4c0837ae6239bf0413ccf8af00c2",
+      "designs/og/fonts/IBMPlexSans-Regular.ttf": "6dbe082463cf749cfa057d45c3048c90f4df031496498e5b5bdfd0b6babb9d16",
+      "designs/og/fonts/IBMPlexSans-SemiBold.ttf": "5311c66fd6d04ae45671236f7eae667b671c06c1dc7e88d52c206e5fadd0fb21",
+      "designs/og/fonts/OFL.txt": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
+      "sharp (package.json)": "a41a17a6dee7e6c171e9e9f080d6cf5dd8036787e685eee695102fa92516a860"
+    },
+    "outputs": {
+      "public/og-card.jpg": "477759d65a1b9eac12c8d1bb05ae7882d3a0caa0aac57e4c83e791454a32149c"
+    }
+  }
+}

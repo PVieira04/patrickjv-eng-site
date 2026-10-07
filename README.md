@@ -19,7 +19,8 @@ Requires Node 24 or later (`engines: >=24`). `npm ci` once (Wrangler is a pinned
 
 ```bash
 npm run build    # regenerate every machine-readable copy from content.json
-npm test         # build drift check + 100 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
+npm run images   # regenerate the icons and share card (after changing the name, headline, tagline, photo or icon)
+npm test         # build drift check + 104 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
 npm run deploy   # manual fallback: npm test, then deploy both Workers (Workers Builds deploys on push to main)
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```
@@ -51,7 +52,7 @@ mcp/                      patrickjv-mcp Worker: remote MCP server on the route p
 test/                     Build, smoke (against a local mock site), workflow and WebMCP (page script in a VM) tests
 lib/smoke-lib.mjs         Pure helpers for smoke.mjs (media type, CSP count, MCP body, redirect, readiness, NEL and DNS verdicts)
 smoke.mjs                 Live checks (did.json, pages, headers/CSP, redirects, NEL, MCP lifecycle + readiness, Registry, DNS)
-designs/                  Archived design round (PROVENANCE.md), favicon candidates, share-card generator
+designs/                  Archived design round (PROVENANCE.md), favicon candidates, icon + share-card generators (npm run images; hashes in images.json)
 .github/workflows/        test.yml (every push/PR), monitor.yml (every 6 h + on Workers Builds results); dependabot.yml (weekly)
 docs/                     Full documentation (start below)
 ```

@@ -1,8 +1,8 @@
 // Turns the chosen favicon SVG into every icon file the site serves:
-//   node designs/favicon/make-icons.cjs designs/favicon/<chosen>.svg
+//   npm run images   (or: node designs/favicon/make-icons.cjs designs/favicon/chosen.svg)
 // Writes public/favicon.svg, favicon.ico (16/32/48 PNGs in an ICO container), icon-192.png,
 // icon-512.png and apple-touch-icon.png (180, full-bleed: iOS rounds the corners itself).
-// Needs sharp: run from a directory where `require("sharp")` resolves, or `npm i --no-save sharp`.
+// sharp is a pinned devDependency (review R53).
 const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");

@@ -74,7 +74,7 @@ After de-duplication: ~55 distinct findings, **none Critical**. Both agreed on e
 | R50 | Nit [X] | HTML is ~45 KB, not "~30 KB"; quota errors are 1027, not 429 | **Docs fixed** (`9f63ab5`) |
 | R51 | Low [X] | Print CSS targets non-existent `.frame`; "one-page CV" over-claimed | **Fixed** (`9f63ab5` docs, `778d2c5` print selectors) |
 | R52 | Nit [C] | `tfp.pvieira.co.uk` A record documented but does not exist | **Docs fixed** (`9f63ab5`) |
-| R53 | Low [B] | Icon/share-card generators not reproducible (unpinned `sharp`, local fonts); card not drift-checked | **Not done** — generators still need an unpinned `sharp` and local fonts; the card is not drift-checked |
+| R53 | Low [B] | Icon/share-card generators not reproducible (unpinned `sharp`, local fonts); card not drift-checked | **Fixed 7 Oct**: `sharp` pinned as a devDependency (`0.35.4`); card fonts committed in `designs/og/fonts/` with fontconfig isolated to them; `npm run images` regenerates and records input/output hashes in `designs/images.json`; `test/images.test.mjs` fails on a stale or hand-edited image. Regenerated output is byte-identical to what was deployed |
 | R54 | Nit [B] | No `engines`; docs say `npm install` despite lockfile | **Fixed** (`c1d1637` `engines: >=24`; README now says `npm ci`) |
 | R55 | Nit [C] | `npm audit`: 3 high in dev-only tooling (sharp via miniflare via wrangler) | **Not done** — `npm audit` still reports 3 high (dev-only, via wrangler); awaiting an upstream release. An npm `overrides` entry is the fallback |
 | R56 | Low [X] | Fonts cached `immutable` without fingerprinted filenames; images `max-age=0` | **Fixed** (`778d2c5`) — fonts 30 days revalidated, images 1 day |

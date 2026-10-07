@@ -9,9 +9,11 @@
     "build": "node build.mjs",
     "test": "node build.mjs --check && node --test \"mcp/*.test.mjs\" \"test/*.test.mjs\"",
     "deploy": "npm test && wrangler deploy && wrangler deploy -c mcp/wrangler.jsonc",
+    "images": "node designs/make-images.mjs",
     "smoke": "node smoke.mjs"
   },
   "devDependencies": {
+    "sharp": "0.35.4",
     "wrangler": "4.147.0"
   }
 }

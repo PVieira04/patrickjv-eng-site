@@ -1,9 +1,17 @@
 // Builds public/og-card.jpg (1200x630) for link previews, in the site's technical-drawing style.
-//   node designs/og/make-card.cjs   (needs sharp, and IBM Plex Sans/Mono installed for fontconfig)
-const sharp = require("sharp");
+//   npm run images   (or: node designs/og/make-card.cjs, after the icons)
+// Fonts come only from designs/og/fonts/ (IBM Plex, OFL): fontconfig is pointed at a config that
+// lists that folder alone, so installed system fonts can never change the result (review R53).
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const root = path.join(__dirname, "../..");
+const fcDir = fs.mkdtempSync(path.join(os.tmpdir(), "og-fontconfig-"));
+fs.writeFileSync(path.join(fcDir, "fonts.conf"), `<?xml version="1.0"?>
+<fontconfig><dir>${path.join(__dirname, "fonts")}</dir><cachedir>${path.join(fcDir, "cache")}</cachedir></fontconfig>
+`);
+process.env.FONTCONFIG_FILE = path.join(fcDir, "fonts.conf"); // must be set before sharp loads
+const sharp = require("sharp");
 const c = JSON.parse(fs.readFileSync(path.join(root, "content.json"), "utf8"));
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const W = 1200, H = 630, P = 420, PX = 72, PY = 105;
@@ -41,4 +49,5 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
   const out = path.join(root, "public/og-card.jpg");
   await sharp(Buffer.from(svg)).composite([{ input: photo, left: PX, top: PY }, { input: icon, left: W - 64 - 64, top: H - 64 - 52 }]).jpeg({ quality: 86, mozjpeg: true }).toFile(out);
   console.log("og-card.jpg", fs.statSync(out).size, "bytes;", lines.length, "tagline lines");
+  fs.rmSync(fcDir, { recursive: true, force: true });
 })();
