@@ -193,6 +193,13 @@ test("a failing build writes nothing", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("JSON-LD dateModified is a full ISO 8601 datetime (Search Console: a bare date is invalid)", () => {
+  const ld = JSON.parse(page.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+  const profile = ld["@graph"].find((n) => n["@type"] === "ProfilePage");
+  assert.match(profile.dateModified, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/);
+  assert.ok(Number.isFinite(Date.parse(profile.dateModified)));
+});
+
 // dateModified hashes content-bearing outputs only: the page, index.md, llms.txt, sitemap.xml and
 // robots.txt (rendered with a placeholder date) plus the images the page references (C3-F10).
 test("changing a page-referenced image's bytes moves dateModified (portrait variants, share card, icons)", () => {

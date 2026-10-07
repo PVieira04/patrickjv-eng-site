@@ -303,7 +303,9 @@ function render(c, html0, html404, imageFiles, fontFiles, date) {
     "@graph": [
       {
         "@type": "ProfilePage", "@id": SITE + "#profilepage", url: SITE,
-        name: `${c.person.name} — ${c.person.headline}`, inLanguage: "en-GB", dateModified: date,
+        // Google's ProfilePage wants a full ISO 8601 DateTime ("Invalid datetime value" for a bare date);
+        // the build tracks the day the content changed, so that day at midnight UTC.
+        name: `${c.person.name} — ${c.person.headline}`, inLanguage: "en-GB", dateModified: `${date}T00:00:00Z`,
         mainEntity: id("person"), isPartOf: id("website"), hasPart: id("faq"),
       },
       { "@type": "WebSite", "@id": SITE + "#website", url: SITE, name: c.person.name, inLanguage: "en-GB" },
