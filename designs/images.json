@@ -32,7 +32,7 @@
   },
   "cv": {
     "inputs": {
-      "public/cv.html": "326f17e23c8b64e42396e7d15aea2526a3037415d9c879e05739678729d73aed",
+      "public/cv.html": "837583fdf2e700a409d595182eeec83b9a445b0f8b9d0e10c1bbfd1f60d41437",
       "designs/make-cv-pdf.mjs": "1af4358b0a34cb9e8e60df9ed2c5678b74a38eb56eb1b3f2533fe6f0f127593d",
       "public/fonts/ibm-plex-mono-latin-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
       "public/fonts/ibm-plex-mono-latin-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
@@ -40,7 +40,7 @@
       "playwright-core (package.json)": "135f3e7fabc10c4d2ff2bb4f1b5dbc3d32eb0e4ff7dd6b4b8c8a6e96f4824f9d"
     },
     "outputs": {
-      "public/cv.pdf": "ae987dfd8d39240345990731614f0fb5bfb73a1375c8d7bc6b9eab41c675bae4"
+      "public/cv.pdf": "feb08566f9c88dc42fec09d95abf1dcbddc1d9e23ce9e3b8ae733a902d557b64"
     }
   }
 }
