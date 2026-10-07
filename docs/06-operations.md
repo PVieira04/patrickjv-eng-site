@@ -2,7 +2,7 @@
 
 ## Deploying
 
-**Normal path: push to `main`. Cloudflare Workers Builds deploys** (since 7 Oct 2026, replacing the GitHub Actions `deploy.yml`; decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)). Each of the three Workers is connected to the GitHub repo `PVieira04/patrickjv-eng-site`, production branch `main`; Cloudflare clones the repo, runs the build command and then the deploy command with a **Cloudflare-managed build token**. **No Cloudflare credential is needed in GitHub** (the old Actions secret awaits deletion — [owner clean-up](#token-rotation)). Non-production (other-branch) builds are **off**. Node is pinned by `.node-version` (`24`).
+**Normal path: push to `main`. Cloudflare Workers Builds deploys** (since 7 Oct 2026, replacing the GitHub Actions `deploy.yml`; decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)). Each of the three Workers is connected to the GitHub repo `PVieira04/patrickjv-eng-site`, production branch `main`; Cloudflare clones the repo, runs the build command and then the deploy command with a **Cloudflare-managed build token**. **No Cloudflare credential is needed in GitHub** (the old Actions secret was deleted on 7 Oct — [owner clean-up](#no-ci-deploy-token-any-more-owner-clean-up)). Non-production (other-branch) builds are **off**. Node is pinned by `.node-version` (`24`).
 
 | Worker | Build command | Deploy command | Build watch paths |
 |---|---|---|---|
@@ -44,9 +44,9 @@ GitHub Actions no longer deploys and holds **no secrets**. Both workflows use ac
 Until 7 Oct 2026 `deploy.yml` deployed with `CLOUDFLARE_API_TOKEN`, a repository-level Actions secret (an "Edit Cloudflare Workers" template token, readable by a workflow on any branch — review C3-F1). Workers Builds removes the need for it. Nothing in the repo reads `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` or `DEPLOY_ENABLED` any more (`test/workflows.test.mjs` fails if a workflow references any secret). Owner steps, in this order:
 
 1. Cloudflare → My Profile → API Tokens → the GitHub Actions Workers token (created 6 Oct 2026) → **Delete**. (Do not delete the Workers Builds token Cloudflare manages for the build.)
-2. `gh secret delete CLOUDFLARE_API_TOKEN -R PVieira04/patrickjv-eng-site`
-3. `gh variable delete DEPLOY_ENABLED -R PVieira04/patrickjv-eng-site` (currently `false`)
-4. `gh variable delete CLOUDFLARE_ACCOUNT_ID -R PVieira04/patrickjv-eng-site` (only `deploy.yml` used it; the wrangler configs do not need it)
+2. ~~`gh secret delete CLOUDFLARE_API_TOKEN`~~ — **done 7 Oct**
+3. ~~`gh variable delete DEPLOY_ENABLED`~~ — **done 7 Oct**
+4. ~~`gh variable delete CLOUDFLARE_ACCOUNT_ID`~~ — **done 7 Oct**. The repo now has **no Actions secrets or variables**.
 
 Production does not depend on any of these: deleting them changes nothing live.
 
