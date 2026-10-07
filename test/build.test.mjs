@@ -144,6 +144,7 @@ test("security.txt Expires: invalid, too soon and too far all fail with a clear 
 function scratch() {
   const dir = mkdtempSync(join(tmpdir(), "site-build-"));
   cpSync(join(ROOT, "content.json"), join(dir, "content.json"));
+  cpSync(join(ROOT, "cv.json"), join(dir, "cv.json"));
   cpSync(join(ROOT, "build-state.json"), join(dir, "build-state.json"));
   cpSync(join(ROOT, "public"), join(dir, "public"), { recursive: true });
   return dir;

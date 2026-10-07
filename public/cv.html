@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patrick Vieira — CV</title>
+<meta name="description" content="CV of Patrick Vieira, Lead Platform Engineer, London.">
+<link rel="canonical" href="https://patrickjv.com/cv">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-500.woff2) format("woff2"); }
+:root { --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+html { background: #e9e7e0; }
+body { margin: 0; font-family: var(--sans); color: var(--ink); font-size: 10pt; line-height: 1.42; }
+a { color: inherit; }
+.bar { box-sizing: border-box; max-width: 210mm; margin: 16px auto 0; padding: 0 4px; display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 13px; }
+.bar a { color: var(--signal); }
+.sheet { box-sizing: border-box; max-width: 210mm; margin: 12px auto 32px; padding: 15mm 16mm; background: #fff; box-shadow: 0 1px 3px rgba(20, 23, 28, 0.15); }
+h1 { margin: 0; font-size: 24pt; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; }
+.role { margin: 3px 0 0; font-family: var(--mono); font-size: 10.5pt; color: var(--signal); }
+.contact { margin: 6px 0 0; font-family: var(--mono); font-size: 8.5pt; color: var(--muted); }
+.contact a { text-decoration: none; }
+h2 { margin: 13px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 8.5pt; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--signal); break-after: avoid; }
+h3 { margin: 0; font-size: 10.5pt; font-weight: 600; break-after: avoid; }
+.org { font-weight: 400; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.dates { font-family: var(--mono); font-size: 8.5pt; color: var(--muted); white-space: nowrap; }
+article { margin: 0 0 8px; }
+ul { margin: 3px 0 0; padding-left: 1.1em; }
+li { margin: 2px 0; break-inside: avoid; }
+p { margin: 0; }
+.earlier { margin-top: 4px; font-size: 9pt; color: var(--muted); }
+dl { display: grid; grid-template-columns: 40mm 1fr; gap: 3px 10px; margin: 0; break-inside: avoid; }
+dt { font-weight: 600; }
+dd { margin: 0; }
+.edu { display: flex; flex-direction: column; gap: 3px; }
+@page { size: A4; margin: 14mm 15mm; }
+@media print {
+  html { background: #fff; }
+  .bar { display: none; }
+  .sheet { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+  a { text-decoration: none; }
+}
+@media (max-width: 640px) {
+  .sheet { padding: 20px 16px; }
+  .row { flex-direction: column; gap: 0; }
+  dl { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<nav class="bar" aria-label="CV"><a href="/">← patrickjv.com</a><a href="/cv.pdf" download="Patrick-Vieira-CV.pdf">Download PDF</a></nav>
+<main class="sheet">
+  <header>
+    <h1>Patrick Vieira</h1>
+    <p class="role">Lead Platform Engineer · London</p>
+    <p class="contact"><a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a> · <a href="https://patrickjv.com/">patrickjv.com</a> · <a href="https://www.linkedin.com/in/patrickvieira/">linkedin.com/in/patrickvieira</a> · <a href="https://github.com/PVieira04">github.com/PVieira04</a></p>
+  </header>
+  <section>
+    <h2>Profile</h2>
+    <p>Platform engineer who owns architecture, infrastructure, identity and security at a London fintech, reporting to the CEO. I build and run the internal developer platform the company ships with, and I hold AI-written code to the same standard as anyone's: a written spec first, tests first, gated by CI and reviewed by a model from a second vendor.</p>
+  </section>
+  <section>
+    <h2>Experience</h2>
+    <article>
+      <div class="row"><h3>Lead Platform Engineer<span class="org">, Altimist Ltd</span></h3><span class="dates">Aug 2023 – present</span></div>
+      <ul>
+        <li>Built the internal developer platform for AI-assisted delivery: a Claude Code plugin of 21 skills and 3 hook events (spec-first authoring, test-driven implementation, cross-vendor adversarial review), and a versioned engineering baseline rolled out to about 26 repositories by automated pull request.</li>
+        <li>1,400+ merged pull requests across 40 repositories between Dec 2025 and Sep 2026; monthly volume rose from 76 to 381.</li>
+        <li>Designed the Software Factory, an agent execution and evaluation platform: queue-driven dispatch with a dead-letter queue and transactional outbox, sandboxed containers with per-run credentials, rubric-graded review gates and an instant kill switch. Chose the platform from a measured spike (3.3 s cold start, 32 ms warm).</li>
+        <li>Built the company's identity provider from scratch: did:web with WebAuthn passkeys and W3C Verifiable Credentials. The sign-in for internal applications since May 2026, with federation to self-hosted DIDs.</li>
+        <li>Run cloud and SaaS infrastructure as code through Terraform Cloud (plan on pull request, apply on merge, daily drift detection) across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiner, mover and leaver access automated.</li>
+        <li>Moved all application hosting to Cloudflare Workers and retired Vercel (Sep 2026), cutting the monthly hosting bill roughly tenfold.</li>
+        <li>Built an on-premises speech pipeline on an NVIDIA DGX Spark (NeMo ASR, diarisation, voiceprint speaker naming) for audio that cannot leave the building.</li>
+        <li>Set technical direction through architecture decision records: 44 of the company's 61, including the identity move from OIDC to did:web. Own vendor selection and compliance.</li>
+      </ul>
+    </article>
+    <article>
+      <div class="row"><h3>Career transition into software development<span class="org">, Self-employed</span></h3><span class="dates">Sep 2021 – Aug 2023</span></div>
+      <ul>
+        <li>Self-taught full-stack development (JavaScript, React, Python, REST APIs, SQL). Delivered a paid client website; explored Motoko on the Internet Computer. Tutored A-Level and IB mathematics privately.</li>
+      </ul>
+    </article>
+    <article>
+      <div class="row"><h3>Teacher of Mathematics<span class="org">, Wimbledon High School GDST</span></h3><span class="dates">Sep 2019 – Jul 2021</span></div>
+      <ul>
+        <li>Taught mathematics across Key Stages 3–5, including GCSE and A-Level. Completed the NQT induction year and a further year.</li>
+      </ul>
+    </article>
+    <p class="earlier">Earlier: academic tutor and mentor, Leading Lights Tuition (2015–2018); special projects coordinator and volunteer corps member, City Year UK (2014–2016).</p>
+  </section>
+  <section>
+    <h2>Selected personal projects</h2>
+    <ul>
+      <li><b>patrickjv.com</b>: An agent-ready digital twin of a person. One content file generates the page, JSON-LD, llms.txt, Markdown and WebMCP tools; a remote MCP server listed on the MCP Registry, with Durable Object quotas on Cloudflare Workers; 110+ tests and a production smoke monitor.</li>
+      <li><b>Kaizen Kingdom</b>: An adaptive maths learning platform (in development).</li>
+      <li><b>Marine-weather agent</b>: Emails forecasts to a sailing yacht.</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Skills</h2>
+    <dl>
+      <dt>Platform and delivery</dt><dd>internal developer platforms, CI/CD (GitHub Actions), GitOps, test-driven development, code review, architecture decision records</dd>
+      <dt>AI</dt><dd>agentic AI, Claude Code, Model Context Protocol, LLM evaluation, speech recognition (NVIDIA NeMo)</dd>
+      <dt>Infrastructure</dt><dd>Cloudflare (Workers, Containers, Queues, Durable Objects, R2), Terraform, AWS, Microsoft 365</dd>
+      <dt>Identity and security</dt><dd>WebAuthn passkeys, did:web, Verifiable Credentials</dd>
+      <dt>Languages</dt><dd>TypeScript, Python, SQL, PowerShell</dd>
+    </dl>
+  </section>
+  <section>
+    <h2>Education</h2>
+    <div class="edu">
+      <div class="row"><h3>PGCE Secondary Mathematics<span class="org">, University College London (IOE)</span></h3><span class="dates">2018 – 2019</span></div>
+      <div class="row"><h3>BEng (Hons) Electrical and Electronic Engineering, 2:1<span class="org">, University of East London</span></h3><span class="dates">2011 – 2014</span></div>
+    </div>
+  </section>
+  <section>
+    <h2>Spoken languages</h2>
+    <p>Portuguese (fluent), Cantonese (intermediate)</p>
+  </section>
+</main>
+</body>
+</html>

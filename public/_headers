@@ -12,11 +12,24 @@
 
 # The page: "/" is negotiated (HTML, or Markdown for Accept: text/markdown), hence Vary.
 /
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-1M+ZI/eubamY7uObRBbpXsVFBV1Aq/yU9VL0cGdy9xY='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-/nBwjXtbH5yssH7PIt0gGujZKkbTtF5mwOPuOhO4FdY='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   Vary: Accept
 
 /index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-1M+ZI/eubamY7uObRBbpXsVFBV1Aq/yU9VL0cGdy9xY='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-/nBwjXtbH5yssH7PIt0gGujZKkbTtF5mwOPuOhO4FdY='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+# The CV: served at /cv (and /cv.html, which the asset server redirects to /cv). It names employers;
+# the page and agent surfaces do not.
+/cv
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-gj10nDrdWlmeY0qimLSJSb2sO3ge4h/zTrmYrXxo6FA='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/cv.html
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-gj10nDrdWlmeY0qimLSJSb2sO3ge4h/zTrmYrXxo6FA='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/cv.pdf
+  Content-Type: application/pdf
+  Cache-Control: public, max-age=3600
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /index.md
   Content-Type: text/markdown; charset=utf-8

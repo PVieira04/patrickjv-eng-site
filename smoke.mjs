@@ -80,6 +80,8 @@ const PAGES = [
   ["/photo.webp", ["image/webp"], "public/photo.webp"],
   ["/og-card.jpg", ["image/jpeg"], "public/og-card.jpg"],
   ["/favicon.ico", ["image/x-icon", "image/vnd.microsoft.icon"], "public/favicon.ico"],
+  ["/cv", ["text/html"], "public/cv.html"],
+  ["/cv.pdf", ["application/pdf"], "public/cv.pdf"],
 ];
 for (const [p, types, file] of PAGES) {
   await check(`${p}: 200 ${types.join("|")}, deployed = repo ${file}`, async () => {

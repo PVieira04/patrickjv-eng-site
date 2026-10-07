@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, cpSync, mkdtempSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MANIFEST, currentHashes, imageDrift } from "../lib/images.mjs";
+import { MANIFEST, currentHashes, imageDrift, pdfPageCount, CV_MAX_PAGES } from "../lib/images.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const recorded = JSON.parse(readFileSync(join(ROOT, MANIFEST), "utf8"));
@@ -14,7 +14,7 @@ const recorded = JSON.parse(readFileSync(join(ROOT, MANIFEST), "utf8"));
 // A scratch copy of just what the image sets read, to mutate safely.
 function scratch() {
   const dir = mkdtempSync(join(tmpdir(), "images-test-"));
-  for (const p of ["package.json", "content.json", "designs/favicon", "designs/og", "public"]) cpSync(join(ROOT, p), join(dir, p), { recursive: true });
+  for (const p of ["package.json", "content.json", "designs/favicon", "designs/og", "designs/make-cv-pdf.mjs", "public"]) cpSync(join(ROOT, p), join(dir, p), { recursive: true });
   return dir;
 }
 
@@ -60,5 +60,17 @@ test("a hand-edited output, or a missing set, is reported", () => {
     assert.match(imageDrift(recorded, currentHashes(dir)).join("\n"), /card: public\/og-card\.jpg differs from what npm run images generated/);
     const { card, ...withoutCard } = recorded;
     assert.match(imageDrift(withoutCard, currentHashes(ROOT)).join("\n"), /card: not in designs\/images\.json/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("cv.pdf, as committed, has 1 to 2 pages (counted in the file), and the CV page changing invalidates it", () => {
+  const pages = pdfPageCount(readFileSync(join(ROOT, "public/cv.pdf")));
+  assert.ok(pages >= 1 && pages <= CV_MAX_PAGES, `cv.pdf has ${pages} pages`);
+  // The counter itself: page objects only, not the /Pages tree root.
+  assert.equal(pdfPageCount(Buffer.from("<< /Type /Pages >> << /Type /Page >> << /Type/Page /X 1 >> << /Type /Page >>")), 3);
+  const dir = scratch();
+  try {
+    writeFileSync(join(dir, "public/cv.html"), readFileSync(join(dir, "public/cv.html"), "utf8").replace("</main>", "<p>x</p></main>"));
+    assert.match(imageDrift(recorded, currentHashes(dir)).join("\n"), /cv: input public\/cv\.html changed/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

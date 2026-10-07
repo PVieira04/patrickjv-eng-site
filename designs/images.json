@@ -29,5 +29,18 @@
     "outputs": {
       "public/og-card.jpg": "477759d65a1b9eac12c8d1bb05ae7882d3a0caa0aac57e4c83e791454a32149c"
     }
+  },
+  "cv": {
+    "inputs": {
+      "public/cv.html": "85c36c69759eb6ff2017f025d6bdf6420e06aa35aa402af6e44b47dea80b569b",
+      "designs/make-cv-pdf.mjs": "1af4358b0a34cb9e8e60df9ed2c5678b74a38eb56eb1b3f2533fe6f0f127593d",
+      "public/fonts/ibm-plex-mono-latin-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
+      "public/fonts/ibm-plex-mono-latin-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
+      "public/fonts/ibm-plex-sans-latin-var.woff2": "e2291e842cf5af167122a22881a740c7f2dda7716f1e8cd76680264f4a859470",
+      "playwright-core (package.json)": "135f3e7fabc10c4d2ff2bb4f1b5dbc3d32eb0e4ff7dd6b4b8c8a6e96f4824f9d"
+    },
+    "outputs": {
+      "public/cv.pdf": "576abc0249368c68b49b643405a0a9c8e9e7838e81a5e8a1001d94033580c0d1"
+    }
   }
 }

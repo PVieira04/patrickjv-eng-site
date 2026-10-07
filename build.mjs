@@ -188,7 +188,7 @@ export function checkPage(html, c) {
   one("h1", texts(within(head, byTag("h1")))[0], c.person.name, "person.name");
   one("headline (.role)", texts(within(head, byClass("role")))[0], c.person.headline, "person.headline");
   one("tagline", texts(within(head, byClass("tagline")))[0], c.person.tagline, "person.tagline");
-  list("hero contact links", hrefs(within(head, byClass("actions"))[0]), [L.linkedin, L.github, mailto], LINK_PATHS);
+  list("hero contact links", hrefs(within(head, byClass("actions"))[0]), [L.linkedin, L.github, mailto, CV_PDF], LINK_PATHS);
   const spec = within(head, byClass("spec"))[0];
   list("contact strip links", hrefs(spec), [L.linkedin, L.github, mailto], LINK_PATHS);
   const dd = Object.fromEntries(within(spec, byTag("dt")).map((dt) => {
@@ -290,9 +290,126 @@ export function checkHeaders(headers) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The CV (/cv, and cv.pdf printed from it by `npm run cv`): A4, at most two pages. Its content is
+// cv.json; name, location and links come from content.json. The CV names employers, so it is the
+// one output outside the BANNED employer guard — nothing on the page or agent surfaces repeats it.
+// ---------------------------------------------------------------------------------------------
+export const CV_PDF = "/cv.pdf";
+export function renderCv(cv, c) {
+  const e = attr;
+  const L = c.person.links;
+  const bare = (u) => u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+  const city = c.person.location.split(",")[0].trim();
+  const contact = [[`mailto:${L.email}`, L.email], [SITE, bare(SITE)], [L.linkedin, bare(L.linkedin)], [L.github, bare(L.github)]]
+    .map(([h, t]) => `<a href="${e(h)}">${e(t)}</a>`).join(" · ");
+  const role = (r) => `    <article>
+      <div class="row"><h3>${e(r.title)}<span class="org">, ${e(r.org)}</span></h3><span class="dates">${e(r.dates)}</span></div>
+      <ul>
+${r.bullets.map((b) => `        <li>${e(b)}</li>`).join("\n")}
+      </ul>
+    </article>`;
+  const style = `
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-500.woff2) format("woff2"); }
+:root { --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+html { background: #e9e7e0; }
+body { margin: 0; font-family: var(--sans); color: var(--ink); font-size: 10pt; line-height: 1.42; }
+a { color: inherit; }
+.bar { box-sizing: border-box; max-width: 210mm; margin: 16px auto 0; padding: 0 4px; display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 13px; }
+.bar a { color: var(--signal); }
+.sheet { box-sizing: border-box; max-width: 210mm; margin: 12px auto 32px; padding: 15mm 16mm; background: #fff; box-shadow: 0 1px 3px rgba(20, 23, 28, 0.15); }
+h1 { margin: 0; font-size: 24pt; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; }
+.role { margin: 3px 0 0; font-family: var(--mono); font-size: 10.5pt; color: var(--signal); }
+.contact { margin: 6px 0 0; font-family: var(--mono); font-size: 8.5pt; color: var(--muted); }
+.contact a { text-decoration: none; }
+h2 { margin: 13px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 8.5pt; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--signal); break-after: avoid; }
+h3 { margin: 0; font-size: 10.5pt; font-weight: 600; break-after: avoid; }
+.org { font-weight: 400; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.dates { font-family: var(--mono); font-size: 8.5pt; color: var(--muted); white-space: nowrap; }
+article { margin: 0 0 8px; }
+ul { margin: 3px 0 0; padding-left: 1.1em; }
+li { margin: 2px 0; break-inside: avoid; }
+p { margin: 0; }
+.earlier { margin-top: 4px; font-size: 9pt; color: var(--muted); }
+dl { display: grid; grid-template-columns: 40mm 1fr; gap: 3px 10px; margin: 0; break-inside: avoid; }
+dt { font-weight: 600; }
+dd { margin: 0; }
+.edu { display: flex; flex-direction: column; gap: 3px; }
+@page { size: A4; margin: 14mm 15mm; }
+@media print {
+  html { background: #fff; }
+  .bar { display: none; }
+  .sheet { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+  a { text-decoration: none; }
+}
+@media (max-width: 640px) {
+  .sheet { padding: 20px 16px; }
+  .row { flex-direction: column; gap: 0; }
+  dl { grid-template-columns: 1fr; }
+}
+`;
+  return `<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${e(c.person.name)} — CV</title>
+<meta name="description" content="${e(`CV of ${c.person.name}, ${cv.headline}, ${city}.`)}">
+<link rel="canonical" href="${SITE}cv">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>${style}</style>
+</head>
+<body>
+<nav class="bar" aria-label="CV"><a href="/">← ${e(bare(SITE))}</a><a href="${CV_PDF}" download="Patrick-Vieira-CV.pdf">Download PDF</a></nav>
+<main class="sheet">
+  <header>
+    <h1>${e(c.person.name)}</h1>
+    <p class="role">${e(cv.headline)} · ${e(city)}</p>
+    <p class="contact">${contact}</p>
+  </header>
+  <section>
+    <h2>Profile</h2>
+    <p>${e(cv.profile)}</p>
+  </section>
+  <section>
+    <h2>Experience</h2>
+${cv.experience.map(role).join("\n")}
+    <p class="earlier">${e(cv.earlier)}</p>
+  </section>
+  <section>
+    <h2>Selected personal projects</h2>
+    <ul>
+${cv.projects.map((x) => `      <li><b>${e(x.title)}</b>: ${e(x.text)}</li>`).join("\n")}
+    </ul>
+  </section>
+  <section>
+    <h2>Skills</h2>
+    <dl>
+${cv.skills.map((x) => `      <dt>${e(x.group)}</dt><dd>${e(x.items)}</dd>`).join("\n")}
+    </dl>
+  </section>
+  <section>
+    <h2>Education</h2>
+    <div class="edu">
+${cv.education.map((x) => `      <div class="row"><h3>${e(x.qual)}<span class="org">, ${e(x.org)}</span></h3><span class="dates">${e(x.dates)}</span></div>`).join("\n")}
+    </div>
+  </section>
+  <section>
+    <h2>Spoken languages</h2>
+    <p>${e(cv.spoken)}</p>
+  </section>
+</main>
+</body>
+</html>
+`;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Rendering: every generated file, as a function of the content and the dateModified value.
 // ---------------------------------------------------------------------------------------------
-function render(c, html0, html404, imageFiles, fontFiles, date) {
+function render(c, cv, html0, html404, imageFiles, fontFiles, date) {
   const city = c.person.location.split(",")[0].trim();
   const title = `${c.person.name} — ${c.person.headline}, ${city}`;
 
@@ -362,7 +479,7 @@ function render(c, html0, html404, imageFiles, fontFiles, date) {
   html = splice(html, /var d = \{.*\};/, () => `var d = ${safeJson(webmcp)};`, "WebMCP data");
 
   // ---- index.md ----
-  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, "", c.privacy, ""];
+  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, "", c.privacy, ""];
   const md = [
     `# ${c.person.name}`, "",
     `Platform engineer in London (not the footballer of the same name). Canonical page: ${SITE}`, "",
@@ -399,6 +516,7 @@ function render(c, html0, html404, imageFiles, fontFiles, date) {
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${SITE}</loc><lastmod>${date}</lastmod></url>
+  <url><loc>${SITE}cv</loc><lastmod>${date}</lastmod></url>
 </urlset>
 `;
 
@@ -415,6 +533,12 @@ Sitemap: ${SITE}sitemap.xml
 
   // ---- _headers ----
   const page = inlineCode(html, { styles: 1, scripts: 1 });
+  const cvHtml = renderCv(cv, c);
+  const cvPage = inlineCode(cvHtml, { styles: 1, scripts: 0 });
+  const cvCsp = [
+    "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${cvPage.styles.map(cspHash).join(" ")}`,
+    "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
+  ].join("; ");
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${page.styles.map(cspHash).join(" ")}`,
@@ -456,6 +580,19 @@ Sitemap: ${SITE}sitemap.xml
 /index.html
   Content-Security-Policy: ${csp}
 
+# The CV: served at /cv (and /cv.html, which the asset server redirects to /cv). It names employers;
+# the page and agent surfaces do not.
+/cv
+  Content-Security-Policy: ${cvCsp}
+
+/cv.html
+  Content-Security-Policy: ${cvCsp}
+
+${CV_PDF}
+  Content-Type: application/pdf
+  Cache-Control: public, max-age=3600
+  Content-Security-Policy: ${baseCsp}
+
 ${types.map(([p, t]) => `${p}\n  Content-Type: ${t}\n  Content-Security-Policy: ${baseCsp}${p === "/index.md" ? "\n  Vary: Accept" : ""}`).join("\n\n")}
 
 /.well-known/did.json
@@ -476,8 +613,8 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
     : html404.replace(/<meta charset="utf-8">/, `<meta charset="utf-8">\n${cspMeta}`);
 
   return {
-    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots },
-    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...headerErrors],
+    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml },
+    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...headerErrors],
     md, llms,
   };
 }
@@ -490,7 +627,7 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt"];
+const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html"];
 
 // Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
 // over the original. This is NOT transactional: a failure part-way through the renames leaves some
@@ -520,11 +657,12 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const errors = [];
 
   const c = JSON.parse(read("content.json"));
+  const cv = JSON.parse(read("cv.json"));
   const html0 = read("public/index.html");
   const html404 = read("public/404.html");
   const imageFiles = readdirSync(p("public")).filter((f) => /\.(webp|jpe?g|png|ico|svg|avif|gif)$/i.test(f)).sort();
   const fontFiles = readdirSync(p("public/fonts")).filter((f) => !f.startsWith(".")).sort();
-  const probe = render(c, html0, html404, imageFiles, fontFiles, "0000-00-00").files;
+  const probe = render(c, cv, html0, html404, imageFiles, fontFiles, "0000-00-00").files;
   // Images the page references by path (src, srcset, icons, og:image / twitter:image).
   const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
   const assetDigests = referenced.map((f) => [f, sha256(readFileSync(p(`public/${f}`))).toString("hex")]);
@@ -537,7 +675,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   else if (check) { errors.push("build-state.json does not match the generated output (run npm run build)"); date = state?.date ?? today; }
   else date = today;
 
-  const { files, inlineErrors, md, llms } = render(c, html0, html404, imageFiles, fontFiles, date);
+  const { files, inlineErrors, md, llms } = render(c, cv, html0, html404, imageFiles, fontFiles, date);
   files["build-state.json"] = JSON.stringify({ hash, date }, null, 2) + "\n";
 
   // ---- checks (all before any write) ----

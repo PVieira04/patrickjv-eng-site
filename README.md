@@ -20,13 +20,14 @@ Requires Node 24 or later (`engines: >=24`). `npm ci` once (Wrangler is a pinned
 ```bash
 npm run build    # regenerate every machine-readable copy from content.json
 npm run cf:check  # live Cloudflare dashboard config vs infra/cloudflare/ (needs CLOUDFLARE_READ_TOKEN; cf:export to update)
+npm run cv       # print public/cv.html to public/cv.pdf (A4, max two pages; run npm run build first)
 npm run images   # regenerate the icons and share card (after changing the name, headline, tagline, photo or icon)
-npm test         # build drift check + 110 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
+npm test         # build drift check + 111 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
 npm run deploy   # manual fallback: npm test, then deploy both Workers (Workers Builds deploys on push to main)
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```
 
-`smoke.mjs` flags: `--aliases` (redirect hosts, no NEL/`Report-To` headers on the primary and alias hosts, HSTS on the `pvieira.co.uk` redirect), `--mcp` (read-only MCP lifecycle plus the `patrickjv/health` readiness check: FAIL unless `request_intro` is configured), `--registry` (MCP Registry listing), `--strict-https` (turn the HTTP→HTTPS WARN into a FAIL), `--dns` (CAA, DMARC and DNSSEC on `patrickjv.com` via DNS-over-HTTPS). Every check prints **PASS**, **WARN** or **FAIL**; the run exits 1 only on a FAIL. Every check requires its exact success status and media type, and deterministic files (`/`, `index.md`, `llms.txt`, `robots.txt`, `sitemap.xml`, `security.txt`, the portrait, share card and favicon) must be byte-identical to the repo ("deployed = repo"), so the smoke also fails while commits are undeployed. Base checks: 15; with all four check flags: 31.
+`smoke.mjs` flags: `--aliases` (redirect hosts, no NEL/`Report-To` headers on the primary and alias hosts, HSTS on the `pvieira.co.uk` redirect), `--mcp` (read-only MCP lifecycle plus the `patrickjv/health` readiness check: FAIL unless `request_intro` is configured), `--registry` (MCP Registry listing), `--strict-https` (turn the HTTP→HTTPS WARN into a FAIL), `--dns` (CAA, DMARC and DNSSEC on `patrickjv.com` via DNS-over-HTTPS). Every check prints **PASS**, **WARN** or **FAIL**; the run exits 1 only on a FAIL. Every check requires its exact success status and media type, and deterministic files (`/`, `index.md`, `llms.txt`, `robots.txt`, `sitemap.xml`, `security.txt`, the portrait, share card and favicon) must be byte-identical to the repo ("deployed = repo"), so the smoke also fails while commits are undeployed. Base checks: 17; with all four check flags: 33.
 
 ### Changing the wording
 

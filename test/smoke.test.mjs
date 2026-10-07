@@ -83,7 +83,7 @@ test("DNS verdicts: DS + AD, CAA issue, exactly one DMARC record", () => {
 });
 
 // ---- whole runs against a local mock ----
-const TYPES = { ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml; charset=utf-8", ".webp": "image/webp", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".html": "text/html; charset=utf-8" };
+const TYPES = { ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml; charset=utf-8", ".webp": "image/webp", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".html": "text/html; charset=utf-8", ".pdf": "application/pdf" };
 const ext = (p) => p.slice(p.lastIndexOf("."));
 
 function mockSite(faults = {}) {
@@ -117,9 +117,11 @@ function mockSite(faults = {}) {
     if (url.pathname.startsWith("/fonts/does-not-exist"))
       return send(404, { "content-type": "text/html", ...(faults.fontCsp ? { "content-security-policy": "default-src 'none', default-src 'none'" } : {}) }, file("public/404.html"));
     try {
-      let body = file("public" + url.pathname);
+      // Like the asset server's html_handling: /cv serves cv.html.
+      const path = url.pathname === "/cv" ? "/cv.html" : url.pathname;
+      let body = file("public" + path);
       if (faults.emptyImages && /\.(webp|jpg|ico)$/.test(url.pathname)) body = Buffer.alloc(0);
-      return send(200, { "content-type": TYPES[ext(url.pathname)] ?? "application/octet-stream" }, body);
+      return send(200, { "content-type": TYPES[ext(path)] ?? "application/octet-stream" }, body);
     } catch {
       return send(404, { "content-type": "text/html" }, file("public/404.html"));
     }
