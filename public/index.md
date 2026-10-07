@@ -25,13 +25,13 @@ I do my best work where a small team needs to operate like a much larger one: se
 
 ### Internal developer platform for AI-assisted delivery
 
-A Claude Code platform for a whole engineering team: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.
+A Claude Code platform for a whole engineering team, built around a golden path from spec to merge: a plugin of 21 skills and 3 hook events for spec-first authoring, test-driven implementation and cross-vendor adversarial review, plus a versioned engineering-standards baseline that fans out automatically to about 26 repositories.
 
 Tags: Agentic AI · Developer Experience · CI/CD
 
 ### Agent execution and evaluation platform
 
-An agent execution and evaluation platform. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.
+An agent execution and evaluation platform, in build, with the same golden path as its backbone. Coding agents take specified work, build in sandboxed containers with per-run credentials, pass rubric-graded review gates and merge on automated criteria. The platform choice was settled by a measured spike: 3.3 s cold start, 32 ms warm.
 
 Tags: AI Agents · Cloudflare Containers · Queues
 
