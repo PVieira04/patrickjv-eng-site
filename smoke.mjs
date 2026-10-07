@@ -166,14 +166,14 @@ if (flags.has("--aliases")) {
     return expect(redirectVerdict("POST", r.status, loc, target).ok, `${r.status} ${loc}`);
   });
   // Network Error Logging (third-party failure reports) must be off on every public host. The
-  // headers come from responses already fetched above. pvieira.co.uk is a WARN, not a FAIL, until
-  // the owner disables NEL on that zone (a dashboard setting; review R5 / C3-F3) — then make it FAIL.
-  for (const [host, headers, strict] of [[baseUrl.host, rootHeaders, true], ["pvieira.co.uk", aliasHeaders["pvieira.co.uk"], false]]) {
+  // headers come from responses already fetched above. NEL is a per-zone dashboard setting, off on
+  // both zones since 7 Oct (review R5 / C3-F3).
+  for (const [host, headers] of [[baseUrl.host, rootHeaders], ["pvieira.co.uk", aliasHeaders["pvieira.co.uk"]]]) {
     await check(`${host}: no NEL / Report-To headers`, async () => {
       if (!headers) return FAIL("no response to inspect (its request failed above)");
       const v = nelVerdict(headers);
       if (v.ok) return PASS("absent");
-      return (strict ? FAIL : WARN)(`present: ${v.present.join(", ")}${strict ? "" : " — owner: disable NEL on the pvieira.co.uk zone"}`);
+      return FAIL(`present: ${v.present.join(", ")} — disable Network Error Logging on the ${host} zone`);
     });
   }
 }

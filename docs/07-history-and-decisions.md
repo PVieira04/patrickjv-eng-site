@@ -71,7 +71,7 @@ Working independently, Codex chose directions close to Claude's (editorial, syst
 | MCP server on its own route | Only `/mcp*` runs code; the edge rule caps the request rate before it (it bounds a flood, it does not stop one) |
 | Limits-only for `request_intro` | Double opt-in needs Workers Paid or an external sender |
 | No MCP server card / A2A card / `_agent` DNS | Nothing reads them yet; the MCP Registry does the discovery job |
-| No analytics script | Keeps zero third-party requests (Cloudflare NEL also disabled on `patrickjv.com`, 7 Oct; still on for the alias zone `pvieira.co.uk` until the owner turns it off — see [05](05-quality-and-audits.md#privacy)) |
+| No analytics script | Keeps zero third-party requests (Cloudflare NEL also disabled on `patrickjv.com` and the alias zone `pvieira.co.uk`, 7 Oct — see [05](05-quality-and-audits.md#privacy)) |
 | Codex favicon over Claude's | Bolder and clearer at 16 px, where favicons are judged |
 | One CSP rule per path, none on `/*` | Production `_headers` ignores detach lines; two matching rules mean two policies (the 6 Oct incident) |
 | Keep the JSON-LD `identifier` → `did:web:patrickjv.com` (review D1) | `did.json`'s `alsoKnownAs` lists DIDs on an employer's domain — a subtle link — but the file is already public and the choice is reversible |

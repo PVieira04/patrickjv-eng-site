@@ -57,7 +57,7 @@ The `patrickjv.com` custom domain was moved from `patrickjv-did` to `patrickjv-e
 
 ## Zone settings changed in the dashboard
 
-All on the **`patrickjv.com`** zone. The alias zone `pvieira.co.uk` has none of the 7 Oct hardening yet — NEL is still on, TLS 1.0/1.1 are accepted, no CAA, no Always Use HTTPS (owner actions, review C3-F3; see [06](06-operations.md#owner-actions-still-open)). Its redirect Worker answers only over HTTPS with a 301/308 to `https://patrickjv.com`.
+All on the **`patrickjv.com`** zone. The alias zone `pvieira.co.uk` was hardened the same way on 7 Oct (review C3-F3): NEL off, minimum TLS 1.2, Always Use HTTPS, and the same 11 CAA records as `patrickjv.com`. Its redirect Worker answers only over HTTPS with a 301/308 to `https://patrickjv.com`.
 
 | Setting | Value | Why |
 |---|---|---|
@@ -67,7 +67,7 @@ All on the **`patrickjv.com`** zone. The alias zone `pvieira.co.uk` has none of 
 | Caching → Configuration → **Crawler Hints** | On | Tells search engines about changes via IndexNow |
 | SSL/TLS → Edge Certificates → **Always Use HTTPS** | On (7 Oct) | HTTP → HTTPS at the edge, no Worker invoked; HSTS now takes effect from the first HTTPS visit |
 | SSL/TLS → Edge Certificates → **Minimum TLS Version** | 1.2 (7 Oct) | TLS 1.0/1.1 refused |
-| **Network Error Logging** | Off (7 Oct) on `patrickjv.com` — still **on** for `pvieira.co.uk` | Browsers are no longer told to send network-error reports to a Cloudflare reporting endpoint by the primary host; smoke `--aliases` FAILs if NEL returns there and WARNs while the alias zone still sends it |
+| **Network Error Logging** | Off (7 Oct) on `patrickjv.com` and `pvieira.co.uk` | Browsers are no longer told to send network-error reports to a Cloudflare reporting endpoint; smoke `--aliases` FAILs if NEL returns on either zone |
 | DNS → Settings → **DNSSEC** | Enabled (7 Oct; DS publication pending at the registrar — **no protection until the DS appears**; smoke `--dns` WARNs meanwhile) | Will protect the `did:web` identity from DNS spoofing once the chain of trust is complete |
 
 ## Free-plan limits that shaped the design
