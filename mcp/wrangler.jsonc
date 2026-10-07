@@ -1,4 +1,5 @@
 {
+  // Deployed by Cloudflare Workers Builds on push to main (build: npm ci && npm test).
   // Remote MCP server. Runs ONLY on patrickjv.com/mcp*; the rest of the site stays on the
   // assets-only patrickjv-eng-site Worker, so ordinary page views never invoke code.
   "name": "patrickjv-mcp",

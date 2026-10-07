@@ -1,4 +1,5 @@
 {
+  // Deployed by Cloudflare Workers Builds on push to main (build: npm ci && npm test).
   // Static assets only, no Worker script: asset requests are free and unmetered on the
   // Free plan, so the site and /.well-known/did.json can't be taken down by request quota.
   "name": "patrickjv-eng-site",
