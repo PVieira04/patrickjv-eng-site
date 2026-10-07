@@ -66,6 +66,8 @@ The `patrickjv.com` custom domain was moved from `patrickjv-did` to `patrickjv-e
 
 ## Zone settings changed in the dashboard
 
+Everything in this section is also recorded, as exported from the live account, in `infra/cloudflare/` ([06](06-operations.md#dashboard-config-export)).
+
 All on the **`patrickjv.com`** zone. The alias zone `pvieira.co.uk` was hardened the same way on 7 Oct (review C3-F3): NEL off, minimum TLS 1.2, Always Use HTTPS, and the same 11 CAA records as `patrickjv.com`. Zone HSTS is on for `pvieira.co.uk` (7 Oct), so its redirects carry `Strict-Transport-Security`.
 
 | Setting | Value | Why |

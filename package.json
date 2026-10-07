@@ -10,6 +10,8 @@
     "test": "node build.mjs --check && node --test \"mcp/*.test.mjs\" \"test/*.test.mjs\"",
     "deploy": "npm test && wrangler deploy && wrangler deploy -c mcp/wrangler.jsonc",
     "images": "node designs/make-images.mjs",
+    "cf:export": "node infra/cloudflare-export.mjs",
+    "cf:check": "node infra/cloudflare-export.mjs --check",
     "smoke": "node smoke.mjs"
   },
   "devDependencies": {

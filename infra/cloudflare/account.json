@@ -1,0 +1,16 @@
+{
+  "worker_custom_domains": [
+    {
+      "hostname": "patrickjv.com",
+      "service": "patrickjv-eng-site",
+      "environment": "production",
+      "zone_name": "patrickjv.com"
+    }
+  ],
+  "worker_scripts": [
+    "marine-weather-cron",
+    "patrickjv-did",
+    "patrickjv-eng-site",
+    "patrickjv-mcp"
+  ]
+}

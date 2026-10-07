@@ -123,6 +123,7 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 | Thing | Location | Notes |
 |---|---|---|
 | Cloudflare (personal account) | Wrangler OAuth on the dev machine (`~/.config/.wrangler`) | Cannot touch DNS or rulesets — use the dashboard for those |
+| `CLOUDFLARE_READ_TOKEN` | Password manager; set in the shell only when running `npm run cf:check` / `cf:export` | API token for both zones used by the [config export](#dashboard-config-export). It should be **read-only** (Zone, DNS, Zone Settings, Single Redirect, Transform Rules, Zone WAF, Email Routing Rules, Bot Management, Workers Routes: Read). Never in the repo or GitHub |
 | MCP Registry signing key | `~/.config/mcp-registry/key.pem` (600) | Back it up (password manager). Public half: `public/.well-known/mcp-registry-auth` (keep deployed). **If lost:** generate a new ed25519 key, replace the public key in `mcp-registry-auth`, deploy, then `mcp-publisher login http` with the new key — ownership is proven by the domain, not the old key. |
 | Google Search Console proof | DNS TXT on `patrickjv.com` | Keep it |
 | GitHub Pages domain verification | DNS TXT `_github-pages-challenge-pvieira04.patrickjv.com` (added 7 Oct 2026; `patrickjv.com` verified under GitHub → Settings → Pages → Verified domains, review C3-F6) | **Keep it** — GitHub re-checks it, and removing it un-verifies the domain, re-opening the takeover risk for `tenlines` (a CNAME to `pvieira04.github.io`). If the `tenlines` Pages site is retired, delete its CNAME first |
@@ -132,6 +133,21 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 | GitHub | `gh` CLI (has `user` scope, used to set the profile website/bio) | Remove with `gh auth refresh -h github.com -r user` if unwanted |
 
 Not stored anywhere: the Immich API key used to fetch the portrait (deleted locally and revoked in Immich).
+
+<a id="dashboard-config-export"></a>
+## Dashboard configuration export (D2)
+
+The Cloudflare configuration that is not in a wrangler config — DNS, the rewrite, redirect and rate-limiting rules, zone settings (TLS, HTTPS, HSTS, NEL), DNSSEC, Email Routing, bot settings, Worker routes, Custom Domains and the account's Worker names — is exported to **`infra/cloudflare/`** (`account.json`, `patrickjv.com.json`, `pvieira.co.uk.json`). The **dashboard stays the source of truth**; the export gives it history in git and makes drift visible. Nothing in it writes to Cloudflare (decision D2; full infrastructure-as-code was not chosen — it would need a write token wherever it runs, against D4).
+
+```bash
+export CLOUDFLARE_READ_TOKEN=…   # from the password manager
+npm run cf:check    # live vs committed: prints each differing path, exits 1 on drift
+npm run cf:export   # after an intended dashboard change: rewrite the files, then commit them
+```
+
+- **After every dashboard change**, run `cf:export` and commit, so the repo records what changed and when. Run `cf:check` before relying on these files (for example before a review) — it is not run by CI, because that would need a Cloudflare token in GitHub (D4; `test/workflows.test.mjs` forbids workflow secrets).
+- Ids, timestamps and Cloudflare's managed rule sets are dropped; Email Routing forward destinations off the two zones are written as `<verified destination>` (`test/cloudflare-export.test.mjs` fails if any other address appears).
+- Account-level data (Custom Domains, Worker names) is read with Wrangler's OAuth login, so run it on a machine where `wrangler login` is done.
 
 <a id="mcp-registry-updates"></a>
 ## MCP Registry updates
