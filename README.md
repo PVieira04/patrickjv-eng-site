@@ -7,7 +7,7 @@ Source for **https://patrickjv.com** — Patrick Vieira's professional site (pla
 | **Live** | https://patrickjv.com (also `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` → 301 to it; 308 for non-GET/HEAD) |
 | **Hosting** | Cloudflare Workers, Free plan — static assets (unmetered) + two small Workers |
 | **Agents** | MCP server at `https://patrickjv.com/mcp` · listed on the MCP Registry as `com.patrickjv/profile` · WebMCP tools on the page |
-| **Quality** | Lighthouse 100 / 100 / 100 / 100 and axe 0 violations on 6 Oct (before the review fixes) · Lighthouse/axe re-run 7 Oct: see [docs/05](docs/05-quality-and-audits.md) · strict per-path CSP, no third-party requests |
+| **Quality** | Lighthouse 100 / 100 / 100 / 100 (mobile and desktop) and axe 0 violations — re-run 7 Oct after all review fixes ([docs/05](docs/05-quality-and-audits.md)) · strict per-path CSP, no third-party requests |
 | **Monitoring** | GitHub Actions smoke check every 6 hours against the last deployed commit (30 checks incl. `request_intro` readiness and DNS, each PASS / WARN / FAIL), plus a "main is deployed" check; a failed run notifies according to GitHub's notification settings |
 | **Deploys** | On push to `main` (GitHub Actions: tests, then `wrangler deploy`, then smoke); superseded commits are never deployed |
 

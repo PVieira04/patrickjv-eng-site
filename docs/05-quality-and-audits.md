@@ -19,7 +19,15 @@
 
 ### Re-run, 7 Oct 2026 (review C3-F16)
 
-_Results to be added: Lighthouse (mobile and desktop) and axe re-run on the live site on 7 Oct._
+Re-run on the live site after the round-3 deploy (commit aa55c83), headless Chromium via Playwright + Lighthouse:
+
+| Audit | Mobile | Desktop |
+|---|---|---|
+| Performance / Accessibility / Best Practices / SEO | **100 / 100 / 100 / 100** | **100 / 100 / 100 / 100** |
+| Largest Contentful Paint | 1.2 s (was 1.5 s) | 0.3 s (was 0.4 s) |
+| Cumulative Layout Shift / Total Blocking Time | 0 / 0 ms | 0 / 0 ms |
+
+axe-core (WCAG 2.0/2.1/2.2 A and AA + best practices): **0 violations** in dark and light mode. Lighthouse's only remaining suggestions are cache lifetimes (3–10 KiB), which are deliberate (fonts 30 days, images 1 day; see Caching).
 
 ## Security headers
 

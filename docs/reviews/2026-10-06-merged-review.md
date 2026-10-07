@@ -139,7 +139,7 @@ Two more independent reviews of `06a1af7` on 7 Oct: Codex gpt-6.1-sol ([raw repo
 | C3-F12 | Low | Global cap of 10 a day is easy to exhaust | **Accepted** — 5 senders × 3 IPs, ~4 minutes; protects one mailbox; refusals point to email ([04](../04-mcp-and-webmcp.md#which-limit-binds)) |
 | C3-F14 | Nit | WebMCP confirm showed raw input; the server strips bidi/zero-width/control characters | **Fixed (round 3)** — the page normalises exactly as `validateIntro` before the dialog, shows and sends the normalised values (VM test against `validateIntro`; headless Chromium check) |
 | C3-F15 | Nit | Actions on Node 20, no Dependabot, `sha_pinning_required` off, no shared concurrency | **Fixed (round 3)** — `actions/checkout` v7.0.1 and `actions/setup-node` v7.0.0 (Node 24), SHA-pinned with version comments; `.github/dependabot.yml` (actions + npm weekly, dev deps grouped); shared concurrency (above). **Owner option:** Settings → Actions → "Require actions to be pinned to a full-length commit SHA" (availability on this plan unverified) |
-| C3-F16 | Nit | README presented 6 Oct Lighthouse/axe as current | **Docs** — README now dates them and points to the 7 Oct re-run in [05](../05-quality-and-audits.md) (results to be added there) |
+| C3-F16 | Nit | README presented 6 Oct Lighthouse/axe as current | **Fixed 7 Oct**: Lighthouse 100×4 (mobile and desktop) and axe 0 re-run on the live site after the round-3 deploy; README and docs/05 updated |
 
 **Earlier fixes found incomplete in round 3:**
 
