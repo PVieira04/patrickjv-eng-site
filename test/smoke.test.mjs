@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict } from "../lib/smoke-lib.mjs";
+import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict } from "../lib/smoke-lib.mjs";
 import { handle } from "../mcp/handler.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -49,6 +49,39 @@ test("redirectVerdict: GET/HEAD 301, everything else 308, exact location", () =>
   assert.equal(redirectVerdict("GET", 301, t + "&y", t).ok, false);
 });
 
+test("healthVerdict: exactly five booleans and introReady true; anything else fails", () => {
+  const ready = { introReady: true, salt: true, email: true, quota: true, rateLimits: true };
+  assert.equal(healthVerdict(ready).ok, true);
+  assert.equal(healthVerdict({ ...ready, introReady: false, salt: false }).ok, false);
+  assert.match(healthVerdict({ ...ready, introReady: false, salt: false }).detail, /not configured: salt/);
+  for (const bad of [undefined, null, {}, [], { ...ready, saltLength: 40 }, { ...ready, email: "yes" }, { introReady: true }])
+    assert.equal(healthVerdict(bad).ok, false, JSON.stringify(bad));
+});
+
+test("nelVerdict: NEL or Report-To present fails", () => {
+  assert.deepEqual(nelVerdict(new Headers({ "content-type": "text/html" })), { ok: true, present: [] });
+  assert.deepEqual(nelVerdict(new Headers({ nel: '{"max_age":604800}', "report-to": "{}" })), { ok: false, present: ["nel", "report-to"] });
+  assert.equal(nelVerdict(new Headers({ "Report-To": "{}" })).ok, false);
+});
+
+test("DNS verdicts: DS + AD, CAA issue, exactly one DMARC record", () => {
+  const ds = { Status: 0, AD: true, Answer: [{ name: "patrickjv.com", type: 43, data: "2371 13 2 ABCD" }] };
+  const noDs = { Status: 0, AD: true, Authority: [{ name: "com", type: 6, data: "a.gtld-servers.net. ..." }] };
+  const caa = (AD) => ({ Status: 0, AD, Answer: [{ type: 257, data: '0 issue "letsencrypt.org"' }, { type: 257, data: '0 iodef "mailto:x@y"' }] });
+  assert.deepEqual(dnssecVerdict(ds, caa(true)), { ok: true, ds: true, ad: true });
+  assert.equal(dnssecVerdict(noDs, caa(true)).ok, false, "DS absent");
+  assert.equal(dnssecVerdict(ds, caa(false)).ok, false, "not authenticated");
+  assert.deepEqual(caaVerdict(caa(false)), { ok: true, count: 2 });
+  assert.equal(caaVerdict({ Status: 0, Answer: [{ type: 257, data: '0 iodef "mailto:x@y"' }] }).ok, false, "iodef only");
+  assert.equal(caaVerdict({ Status: 3 }).ok, false, "NXDOMAIN");
+  const txt = (...data) => ({ Status: 0, Answer: data.map((d) => ({ type: 16, data: d })) });
+  assert.deepEqual(dmarcVerdict(txt('"v=DMARC1; p=none; rua=mailto:hello@patrickjv.com; fo=1"')), { ok: true, count: 1, policy: "none" });
+  assert.equal(dmarcVerdict(txt('"v=DMARC1; p=quar" "antine"')).policy, "quarantine", "split strings are joined");
+  assert.equal(dmarcVerdict(txt('"v=DMARC1; p=none"', '"v=DMARC1; p=reject"')).ok, false, "two records");
+  assert.equal(dmarcVerdict(txt('"v=spf1 -all"')).ok, false, "not DMARC");
+  assert.equal(dmarcVerdict({ Status: 0 }).ok, false, "absent");
+});
+
 // ---- whole runs against a local mock ----
 const TYPES = { ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml; charset=utf-8", ".webp": "image/webp", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".html": "text/html; charset=utf-8" };
 const ext = (p) => p.slice(p.lastIndexOf("."));
@@ -56,7 +89,12 @@ const ext = (p) => p.slice(p.lastIndexOf("."));
 function mockSite(faults = {}) {
   const csp = expectedCsp(file("public/_headers").toString());
   const base = { "strict-transport-security": "max-age=31536000; includeSubDomains", "x-content-type-options": "nosniff" };
-  const env = { RL_MCP: { limit: async () => ({ success: true }) }, RL_BURST: { limit: async () => ({ success: true }) }, RL_INTRO: { limit: async () => ({ success: true }) } };
+  const allow = { limit: async () => ({ success: true }) };
+  const env = {
+    RL_MCP: allow, RL_BURST: allow, RL_INTRO: allow, INTRO_FROM: "intro@patrickjv.com", INTRO_TO: "owner@example.com",
+    EMAIL: { send: async () => { throw new Error("never"); } }, QUOTA: { idFromName: () => ({}), get: () => ({}) },
+    ...(faults.noSalt ? {} : { QUOTA_SALT: "mock-salt-0123456789abcdef0123456789" }),
+  };
   const faq = faults.faq ? content.faq.map((f, k) => (k ? f : { ...f, a: f.a + " (changed)" })) : content.faq;
   const deps = { content: { ...content, faq }, now: () => new Date(), reserve: async () => { throw new Error("never"); }, sendEmail: async () => { throw new Error("never"); } };
   return createServer(async (req, res) => {
@@ -113,8 +151,9 @@ test("smoke FAILs each false-PASS case from the round-2 review", async () => {
     [{ fontCsp: true }, /does-not-exist/],
     [{ serverName: true }, /mcp initialize/],
     [{ faq: true }, /list_faq/],
+    [{ noSalt: true }, /patrickjv\/health/],
   ];
-  const results = await Promise.all(cases.map(([f]) => runSmoke(f, f.serverName || f.faq ? ["--mcp"] : [])));
+  const results = await Promise.all(cases.map(([f]) => runSmoke(f, f.serverName || f.faq || f.noSalt ? ["--mcp"] : [])));
   results.forEach((r, k) => {
     const [f, pattern] = cases[k];
     assert.equal(r.code, 1, `${JSON.stringify(f)}: exit ${r.code}\n${r.lines.join("\n")}`);

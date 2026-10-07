@@ -481,14 +481,14 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 }
 
 // ---------------------------------------------------------------------------------------------
-// The build. dateModified is content-addressed: build-state.json records the hash of every
-// generated output (rendered with a placeholder date) plus the sha256 of every served static asset
-// that is content (portrait, share card, icons, fonts, security.txt, mcp-registry-auth), and the
-// date that hash was first built. The date moves only when the output or those assets change, so a
-// rebuild converges in one run and --check never depends on git or the clock. did.json is left out:
-// it is frozen and has its own hash check.
+// The build. dateModified is content-addressed: build-state.json records the hash of the
+// content-bearing outputs (rendered with a placeholder date) plus the sha256 of every image the page
+// references, and the date that hash was first built. The date moves only when the content changes,
+// so a rebuild converges in one run and --check never depends on git or the clock. Not content, so
+// left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
+// with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const WELL_KNOWN_CONTENT = [".well-known/security.txt", ".well-known/mcp-registry-auth"];
+const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt"];
 
 // Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
 // over the original. This is NOT transactional: a failure part-way through the renames leaves some
@@ -522,11 +522,12 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const html404 = read("public/404.html");
   const imageFiles = readdirSync(p("public")).filter((f) => /\.(webp|jpe?g|png|ico|svg|avif|gif)$/i.test(f)).sort();
   const fontFiles = readdirSync(p("public/fonts")).filter((f) => !f.startsWith(".")).sort();
-  const assets = [...imageFiles, ...fontFiles.map((f) => `fonts/${f}`), ...WELL_KNOWN_CONTENT].sort();
-  const assetDigests = assets.map((f) => [f, sha256(readFileSync(p(`public/${f}`))).toString("hex")]);
-
   const probe = render(c, html0, html404, imageFiles, fontFiles, "0000-00-00").files;
-  const hash = sha256(JSON.stringify({ outputs: Object.entries(probe).sort(), assets: assetDigests })).toString("hex");
+  // Images the page references by path (src, srcset, icons, og:image / twitter:image).
+  const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
+  const assetDigests = referenced.map((f) => [f, sha256(readFileSync(p(`public/${f}`))).toString("hex")]);
+  const outputs = CONTENT_OUTPUTS.map((f) => [f, probe[f]]);
+  const hash = sha256(JSON.stringify({ outputs, assets: assetDigests })).toString("hex");
   let state = null;
   try { state = JSON.parse(readOr("build-state.json") ?? "null"); } catch { state = null; }
   let date;

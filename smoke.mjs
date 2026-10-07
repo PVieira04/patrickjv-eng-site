@@ -1,5 +1,5 @@
 // Checks a DEPLOYED site against the repo:
-//   node smoke.mjs [base-url] [--aliases] [--mcp] [--registry] [--strict-https]
+//   node smoke.mjs [base-url] [--aliases] [--mcp] [--registry] [--strict-https] [--dns]
 // Every check prints PASS / WARN / FAIL; the run exits 1 if any check FAILs (WARN is non-fatal).
 // No redirects are followed anywhere. Each request has a 10 s deadline. Never calls request_intro.
 // Every check requires its exact success status and exact media type (parameters ignored).
@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict } from "./lib/smoke-lib.mjs";
+import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict } from "./lib/smoke-lib.mjs";
 
 // The frozen did.json (also enforced by build.mjs). Production AND the repo copy must match it.
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -16,7 +16,7 @@ const ALIASES = ["www.patrickjv.com", "pvieira.co.uk", "www.pvieira.co.uk"];
 const TOOLS = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"];
 
 // ---- arguments ----
-const FLAGS = new Set(["--aliases", "--mcp", "--registry", "--strict-https"]);
+const FLAGS = new Set(["--aliases", "--mcp", "--registry", "--strict-https", "--dns"]);
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith("--")));
 const positional = args.filter((a) => !a.startsWith("--"));
@@ -91,8 +91,10 @@ for (const [p, types, file] of PAGES) {
 }
 
 // ---- security headers on / ----
+let rootHeaders = null; // reused by the --aliases NEL check (no extra request)
 await check("/ security headers: 200, HSTS, nosniff, CSP = public/_headers", async () => {
   const r = await req(at("/"), { headers: { accept: "text/html" } });
+  rootHeaders = r.headers;
   const h = (n) => r.headers.get(n);
   const want = expectedCsp(read("public/_headers").toString());
   const problems = [];
@@ -148,9 +150,11 @@ await check(`http://${baseUrl.host}/ -> 301/308 https://${baseUrl.host}/`, async
 // ---- alias hosts ----
 if (flags.has("--aliases")) {
   const target = "https://patrickjv.com/a/b?x=1";
+  const aliasHeaders = {};
   for (const host of ALIASES) {
     await check(`${host} GET -> 301 ${target}`, async () => {
       const r = await req(`https://${host}/a/b?x=1`);
+      aliasHeaders[host] = r.headers;
       const loc = r.headers.get("location");
       return expect(redirectVerdict("GET", r.status, loc, target).ok, `${r.status} ${loc}`);
     });
@@ -161,6 +165,17 @@ if (flags.has("--aliases")) {
     const loc = r.headers.get("location");
     return expect(redirectVerdict("POST", r.status, loc, target).ok, `${r.status} ${loc}`);
   });
+  // Network Error Logging (third-party failure reports) must be off on every public host. The
+  // headers come from responses already fetched above. pvieira.co.uk is a WARN, not a FAIL, until
+  // the owner disables NEL on that zone (a dashboard setting; review R5 / C3-F3) — then make it FAIL.
+  for (const [host, headers, strict] of [[baseUrl.host, rootHeaders, true], ["pvieira.co.uk", aliasHeaders["pvieira.co.uk"], false]]) {
+    await check(`${host}: no NEL / Report-To headers`, async () => {
+      if (!headers) return FAIL("no response to inspect (its request failed above)");
+      const v = nelVerdict(headers);
+      if (v.ok) return PASS("absent");
+      return (strict ? FAIL : WARN)(`present: ${v.present.join(", ")}${strict ? "" : " — owner: disable NEL on the pvieira.co.uk zone"}`);
+    });
+  }
 }
 
 // ---- MCP lifecycle (read-only) ----
@@ -170,9 +185,10 @@ if (flags.has("--mcp")) {
   let protocol = null;
   let first = true;
   // Rate limits on /mcp: the edge WAF rule allows 6 requests per 10 s per IP; the Worker allows
-  // 30 per minute and 10 tools/call per 10 s. This sequence is 4 requests, so it fits whatever the
+  // 30 per minute and 10 tools/call per 10 s. This sequence is 5 requests, so it fits whatever the
   // spacing; the 1.2 s gap is only margin. A longer sequence must keep any 10 s window to at most
-  // 6 requests (about 1.7 s apart) — and the deploy workflow's retries add another 4 per attempt.
+  // 6 requests (about 1.7 s apart) — and the deploy workflow's retries add another 5 per attempt
+  // (at least 20 s apart).
   const mcp = async (msg) => {
     if (!first) await sleep(1200);
     first = false;
@@ -214,6 +230,14 @@ if (flags.has("--mcp")) {
     const same = isDeepStrictEqual(items, faq);
     return expect(result?.isError !== true && same, `${items?.length ?? 0} items${same ? "" : ", differ from content.json"}${result?.isError ? ", isError" : ""}`);
   });
+  // Readiness, not delivery: request_intro's secret, email binding, quota Durable Object and rate
+  // limits are configured. Read-only and sends nothing; delivery itself is never exercised here.
+  await check("mcp patrickjv/health -> introReady (salt, email, quota, rate limits configured)", async () => {
+    const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
+    if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
+    const v = healthVerdict(res.json.result);
+    return expect(v.ok, v.detail);
+  });
 }
 
 // ---- MCP Registry ----
@@ -239,6 +263,33 @@ if (flags.has("--registry")) {
       meta.status === "active" && latest.server.version === serverJson.version && remote,
       `status ${meta.status}, version ${latest.server.version}, remote ${remote ? "ok" : "missing"}`,
     );
+  });
+}
+
+// ---- DNS (DNS-over-HTTPS, Cloudflare's validating resolver) ----
+if (flags.has("--dns")) {
+  const DOH = "https://cloudflare-dns.com/dns-query";
+  const zone = "patrickjv.com";
+  const doh = async (name, type) => {
+    const r = await req(`${DOH}?name=${encodeURIComponent(name)}&type=${type}`, { read: true, headers: { accept: "application/dns-json" } });
+    if (r.status !== 200) throw new Error(`DoH ${name} ${type}: status ${r.status}`);
+    return JSON.parse(r.buf.toString());
+  };
+  let caa = null;
+  await check(`${zone} CAA present`, async () => {
+    caa = await doh(zone, "CAA");
+    const v = caaVerdict(caa);
+    return expect(v.ok, `${v.count} CAA record(s)`);
+  });
+  // The CAA answer above doubles as the in-zone answer whose AD bit shows the chain validates.
+  await check(`${zone} DNSSEC: DS at the parent and answers authenticated (AD)`, async () => {
+    const v = dnssecVerdict(await doh(zone, "DS"), caa);
+    if (v.ok) return PASS("DS present, AD=true");
+    return WARN(`DS ${v.ds ? "present" : "absent"}, AD=${v.ad} — DS publication at the registrar pending (follow up if this persists)`);
+  });
+  await check(`_dmarc.${zone}: exactly one DMARC record`, async () => {
+    const v = dmarcVerdict(await doh(`_dmarc.${zone}`, "TXT"));
+    return expect(v.ok, `${v.count} record(s)${v.policy ? `, p=${v.policy}` : ""}`);
   });
 }
 

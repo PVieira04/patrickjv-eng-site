@@ -69,7 +69,7 @@ export function tools() {
       name: "request_intro",
       title: "Request an introduction",
       description:
-        "Send Patrick Vieira a short introduction by email on behalf of a person. Only use this when the person has asked you to contact him and has approved the message. Strictly rate-limited; at most a couple per sender per day. Do not retry on error. Privacy: the message is forwarded to Patrick's email and not stored by this site; rate-limit counters are hashed and kept for one day.",
+        "Send Patrick Vieira a short introduction by email on behalf of a person. Only use this when the person has asked you to contact him and has approved the message. Strictly rate-limited; at most a couple per sender per day. Do not retry on error. Privacy: the message is forwarded to Patrick's email and not stored by this site; rate-limit counters are hashed and expire daily.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -163,7 +163,7 @@ export function encodeHeaderText(s, firstMax = 39) {
   return words.map((w) => `=?UTF-8?B?${b64(w)}?=`).join("\r\n ");
 }
 
-export function buildMime(v, meta, { from, to, messageId, date }) {
+export function buildMime(v, { from, to, messageId, date }) {
   const subject = `[Intro · ${v.reason}] ${v.from_name}${v.organisation ? ` (${v.organisation})` : ""}`;
   const body = [
     `From: ${v.from_name} <${v.from_email}>`,
@@ -175,7 +175,6 @@ export function buildMime(v, meta, { from, to, messageId, date }) {
     "",
     "—",
     `Received via the patrickjv.com MCP server (request_intro) at ${date.toISOString()}.`,
-    `Country: ${meta.country || "unknown"} · Client: ${meta.userAgent || "unknown"}`,
     "Unverified sender: reply only if it looks genuine.",
   ].filter((l) => l !== null).join("\n")
     // MIME text is canonically CRLF (RFC 2045), including the lines inside the message itself.
@@ -238,6 +237,20 @@ export async function quotaHash(env, kind, key) {
   const k = await crypto.subtle.importKey("raw", enc.encode(salt), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const d = await crypto.subtle.sign("HMAC", k, enc.encode(`${kind}:${key}`));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Readiness of request_intro, for monitoring (the patrickjv/health method): whether each piece it
+// needs is configured. Booleans only — never a secret, its length, an address or a binding's state.
+// It says the configuration is in place, not that an email would be delivered.
+export function introReadiness(env) {
+  const r = {
+    salt: saltConfigured(env),
+    email: typeof env.EMAIL?.send === "function" && typeof env.INTRO_FROM === "string" && env.INTRO_FROM !== ""
+      && typeof env.INTRO_TO === "string" && env.INTRO_TO !== "",
+    quota: typeof env.QUOTA?.idFromName === "function" && typeof env.QUOTA?.get === "function",
+    rateLimits: ["RL_INTRO", "RL_MCP", "RL_BURST"].every((k) => typeof env[k]?.limit === "function"),
+  };
+  return { introReady: r.salt && r.email && r.quota && r.rateLimits, ...r };
 }
 
 // Pure quota logic. `state` is the stored counters for the current day; returns the next state
@@ -371,7 +384,7 @@ async function callTool(name, args, ctx) {
         console.log(JSON.stringify({ event: "intro_quota_rejected", which: reservation.which }));
         return toolError(`Daily limit reached (${reservation.which}). Please try again tomorrow, or email ${d.profile.links.email}.`);
       }
-      const raw = buildMime(v, ctx.meta, { from: ctx.env.INTRO_FROM, to: ctx.env.INTRO_TO, messageId: `${crypto.randomUUID()}@patrickjv.com`, date: ctx.now });
+      const raw = buildMime(v, { from: ctx.env.INTRO_FROM, to: ctx.env.INTRO_TO, messageId: `${crypto.randomUUID()}@patrickjv.com`, date: ctx.now });
       try {
         await ctx.sendEmail(ctx.env.INTRO_FROM, ctx.env.INTRO_TO, raw);
       } catch {
@@ -462,6 +475,10 @@ export async function handle(request, env, deps) {
       }
       case "ping":
         return ok({});
+      // A vendor-prefixed custom method, not a tool (clients would list a tool to users) and not an
+      // extension of ping (whose result MUST be empty). Other servers answer it with -32601.
+      case "patrickjv/health":
+        return ok(introReadiness(env));
       case "tools/list":
         return ok({ tools: tools() });
       case "tools/call": {
@@ -471,7 +488,6 @@ export async function handle(request, env, deps) {
         if (params.name !== "request_intro" && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
         const result = await callTool(params.name, args, {
           env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve,
-          meta: { country: request.cf?.country, userAgent: oneLine(request.headers.get("user-agent") || "").slice(0, 120) },
         });
         if (!result) return rpcError(msg.id, -32602, `Unknown tool: ${params.name}`);
         return ok(result);

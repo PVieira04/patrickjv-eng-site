@@ -15,7 +15,11 @@
 - **axe-core** (WCAG 2.0/2.1/2.2 A and AA + best practices): **0 violations** in dark and light mode.
 - Lighthouse's only remaining suggestions concerned the photo (served larger than displayed); fixed afterwards with a 320/640/960 `srcset`, `sizes="300px"` and `fetchpriority="high"`.
 - Bing Webmaster live test: "No SEO/GEO issues found".
-- These audits were run on 6 Oct **before** the evening's review fixes (privacy note, 404 page, per-path headers, WebMCP changes) and have not been re-run since. After the fixes, headless Chromium confirmed the live page and 404 page load with no CSP violations (see below).
+- These audits were run on 6 Oct **before** the evening's review fixes (privacy note, 404 page, per-path headers, WebMCP changes). After the fixes, headless Chromium confirmed the live page and 404 page load with no CSP violations (see below).
+
+### Re-run, 7 Oct 2026 (review C3-F16)
+
+_Results to be added: Lighthouse (mobile and desktop) and axe re-run on the live site on 7 Oct._
 
 ## Security headers
 
@@ -49,14 +53,19 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 
 **404 page.** Unknown paths return `public/404.html` with a real 404 status (`not_found_handling: "404-page"`): one `<h1>`, `noindex`, a link home, the site's fonts and palette. Checked live: status 404 and no CSP violations.
 
+**Soft 404 at `/404` — accepted (review C3-F9).** The asset server also serves the 404 file at its own clean URL, so `GET /404` returns **200** with the not-found page. It is harmless — the page carries `noindex`, nothing links to it and it is not in the sitemap — and a fix (a `_redirects` rule or renaming the file) would change asset-server behaviour that differs between `wrangler dev` and production (the 6 Oct incident), so it is left as is unless a production-verified fix appears.
+
 `/.well-known/security.txt` (RFC 9116): contact `hello@patrickjv.com`, expires 2027-10-06 — the build fails 30 days before expiry, or if `Expires` is invalid or more than a year ahead.
 
 ## Privacy
 
 - No analytics or tracking scripts, no cookies, and no third-party requests during page loads (fonts self-hosted — Google Fonts previously saw every visitor's IP).
 - The page footer says it plainly: *"Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here."* The same note ends `index.md` and `llms.txt`, and the `request_intro` tool description states it too.
-- The MCP server stores only rate-limit counters, under **HMAC-SHA256 keys** (keyed with a Worker secret) of the client IP and of a normalised sender address — never the raw values — and keeps them for **one day**: an alarm deletes them at the next UTC midnight. Without the secret, introductions are refused rather than hashed with a public key. Messages are forwarded by email, not stored. Workers Logs record only redacted failure events, and query strings are redacted from invocation logs.
-- Network Error Logging (Cloudflare `Report-To`/`NEL` headers, which could make browsers send failure reports to a Cloudflare endpoint) was **disabled on 7 Oct** — the headers are no longer sent (review R5).
+- **Introductions (`request_intro`, MCP or WebMCP).** What is processed, where, and for how long:
+  - **The message** (name, reply-to address, optional organisation and agent, reason, text) is sent once by email from `intro@patrickjv.com` to Patrick's personal **Gmail** mailbox (Google, US) and kept there like any other email, at Patrick's discretion. The site does not store it. The email also carries the time received and an "unverified sender" note — and, since round 3 (review C3-F11), **no country or client (user-agent) metadata**.
+  - **Rate-limit counters** live in a Cloudflare Durable Object under **HMAC-SHA256 keys** (keyed with a Worker secret) of the client IP and of a normalised sender address — never the raw values. Counters **expire daily**: an alarm deletes them at the next UTC midnight, and a new day replaces them. Cloudflare's SQLite-backed Durable Objects keep **30 days of point-in-time recovery history**, so deleted counters (keyed hashes only) remain recoverable by the account owner on the platform for up to 30 days. Without the secret, introductions are refused rather than hashed with a public key.
+  - **Logs.** Workers Logs keep only the MCP Worker's own redacted events (`mcp_failure` with a subsystem name, `intro_quota_rejected` with the cap) — **invocation logs are off** (review C3-F4), so no per-request IP, location or user agent is retained there; query strings are redacted as well. The per-minute rate-limit bindings hold short-lived counters in Cloudflare's rate-limiting service.
+- Network Error Logging (Cloudflare `Report-To`/`NEL` headers, which could make browsers send failure reports to a Cloudflare endpoint) was **disabled on `patrickjv.com` on 7 Oct** (review R5). The alias zone **`pvieira.co.uk` still sends them** on its redirect responses until the owner disables NEL there (review C3-F3); `smoke --aliases` FAILs if they reappear on `patrickjv.com` and WARNs for `pvieira.co.uk`.
 - The portrait's EXIF metadata was stripped.
 
 ## Responsive, theming and print

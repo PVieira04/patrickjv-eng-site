@@ -57,7 +57,11 @@ function harness({ burst = 1e9, minute = 1e9, intro = 1e9, sendFails = false, re
     return p;
   };
   const rl = { burst: limiter(burst), minute: limiter(minute) };
-  const env = { INTRO_FROM: "intro@patrickjv.com", INTRO_TO: "owner@example.com", RL_BURST: rl.burst, RL_MCP: rl.minute, RL_INTRO: limiter(intro), ...(salt ? { QUOTA_SALT: salt } : {}) };
+  const env = {
+    INTRO_FROM: "intro@patrickjv.com", INTRO_TO: "owner@example.com", RL_BURST: rl.burst, RL_MCP: rl.minute, RL_INTRO: limiter(intro), ...(salt ? { QUOTA_SALT: salt } : {}),
+    // Binding stand-ins (the handler only checks that they are present, for patrickjv/health).
+    EMAIL: { send: async () => {} }, QUOTA: { idFromName: () => ({}), get: () => ({}) },
+  };
   const deps = {
     content, reserve, now: () => new Date("2026-10-06T12:00:00Z"),
     sendEmail: async (f, t, raw) => { if (sendFails) throw new Error("send failed"); sent.push({ f, t, raw }); },
@@ -129,6 +133,9 @@ test("tools/list: four read-only tools and request_intro", async () => {
   for (const t of r.result.tools.slice(0, 4)) assert.equal(t.annotations.readOnlyHint, true);
   for (const t of r.result.tools) assert.equal(t.icons[0].src, "https://patrickjv.com/icon-192.png");
   assert.match(r.result.tools[4].description, /not stored by this site/);
+  // Durable Object storage keeps 30 days of recovery history, so no exact retention is promised.
+  assert.match(r.result.tools[4].description, /rate-limit counters are hashed and expire daily/);
+  assert.doesNotMatch(r.result.tools[4].description, /kept for one day/);
 });
 
 test("read tools: text is the serialised structuredContent, matching content.json", async () => {
@@ -152,6 +159,15 @@ test("request_intro: one email, Reply-To is exactly the validated address even w
   assert.equal((replyTo.match(/@/g) || []).length, 1);
   assert.doesNotMatch(h, /^Bcc:/mi);
   assert.equal(h.match(/^To: (.*)$/m)[1], "<owner@example.com>");
+});
+
+test("intro email body: no country or client metadata; timestamp and unverified-sender note kept", async () => {
+  const { call, sent } = harness();
+  await call(intro(), { headers: { "user-agent": "SecretClient/9.9 (Probe)" } });
+  const body = decodeBody(sent[0].raw);
+  assert.doesNotMatch(body, /Country:|Client:|SecretClient/);
+  assert.match(body, /Received via the patrickjv\.com MCP server \(request_intro\) at 2026-10-06T12:00:00\.000Z\./);
+  assert.match(body, /Unverified sender: reply only if it looks genuine\./);
 });
 
 test("request_intro: Reply-To keeps the local part's case and +tag; only the domain is lower-cased", async () => {
@@ -551,6 +567,51 @@ test("failures and quota refusals are logged as redacted events naming the subsy
   for (const l of lines) for (const s of secretish) assert.ok(!l.includes(s), `leaked ${s}: ${l}`);
 });
 
+// patrickjv/health: a read-only readiness signal for request_intro (smoke --mcp requires introReady).
+const health = async (h, opts) => (await (await h.call(rpc("patrickjv/health"), opts)).json());
+const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits"];
+
+test("patrickjv/health: only booleans; introReady when salt, email, quota and rate limits are all configured", async () => {
+  const r = await health(harness());
+  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true });
+  const broken = [
+    ["salt", (h) => { delete h.env.QUOTA_SALT; }], ["salt", (h) => { h.env.QUOTA_SALT = "x".repeat(31); }],
+    ["email", (h) => { delete h.env.EMAIL; }], ["email", (h) => { delete h.env.INTRO_TO; }], ["email", (h) => { h.env.INTRO_FROM = ""; }],
+    ["quota", (h) => { delete h.env.QUOTA; }], ["rateLimits", (h) => { delete h.env.RL_INTRO; }],
+  ];
+  for (const [key, breakIt] of broken) {
+    const h = harness();
+    breakIt(h);
+    const res = (await health(h)).result;
+    assert.deepEqual(Object.keys(res), HEALTH_KEYS, key);
+    for (const k of HEALTH_KEYS) assert.equal(typeof res[k], "boolean", `${key}: ${k}`);
+    assert.equal(res[key], false, key);
+    assert.equal(res.introReady, false, `${key}: introReady`);
+  }
+});
+
+test("patrickjv/health: never reveals secret values or lengths, and sends or reserves nothing", async () => {
+  const h = harness();
+  const text = await (await h.call(rpc("patrickjv/health"))).text();
+  assert.ok(!text.includes(h.env.QUOTA_SALT) && !text.includes(String(h.env.QUOTA_SALT.length)), text);
+  assert.ok(!text.includes("owner@example.com") && !text.includes("intro@patrickjv.com"), text);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.reserved.length, 0);
+});
+
+test("patrickjv/health: goes through the same rejection chain (origin, method, media type, size, rate limits)", async () => {
+  const h = harness();
+  assert.equal((await h.call(rpc("patrickjv/health"), { headers: { origin: "https://evil.example" } })).status, 403);
+  assert.equal((await h.call(rpc("patrickjv/health"), { headers: { "content-type": "text/plain" } })).status, 415);
+  assert.equal((await h.call(rpc("patrickjv/health"), { headers: { "content-length": String(LIMITS.maxBodyBytes + 1) } })).status, 413);
+  assert.equal((await h.call(null, { method: "GET" })).status, 405);
+  assert.equal((await harness({ minute: 0 }).call(rpc("patrickjv/health"))).status, 429, "per-minute limit");
+  const b = harness({ burst: 1 });
+  assert.equal((await b.call(rpc("patrickjv/health"))).status, 200);
+  assert.equal((await b.call(rpc("patrickjv/health"))).status, 429, "burst limit (not handshake-exempt)");
+  assert.equal(b.rl.burst.calls(), 2);
+});
+
 test("unknown method and unknown tool return JSON-RPC errors", async () => {
   const { call } = harness();
   assert.equal((await (await call(rpc("resources/list"))).json()).error.code, -32601);
@@ -585,4 +646,12 @@ test("reserveQuota resets on a new day", () => {
   for (let i = 0; i < LIMITS.introGlobalPerDay; i++) s = reserveQuota(s, "2026-10-06", `ip${i}`, `f${i}`).state;
   assert.equal(reserveQuota(s, "2026-10-06", "new", "new").ok, false);
   assert.equal(reserveQuota(s, "2026-10-07", "new", "new").ok, true);
+});
+
+test("mcp/wrangler.jsonc: Workers Logs keep only custom events — invocation logs off, query strings redacted", () => {
+  const cfg = JSON.parse(readFileSync(new URL("./wrangler.jsonc", import.meta.url), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"));
+  assert.equal(cfg.observability.enabled, true);
+  assert.equal(cfg.observability.redact_query_string, true);
+  assert.equal(cfg.observability.logs.enabled, true);
+  assert.equal(cfg.observability.logs.invocation_logs, false);
 });

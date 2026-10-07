@@ -1,5 +1,10 @@
 # Checks the live site every 6 hours (and on demand). A failed scheduled run notifies according to
-# the owner's GitHub Actions notification settings. Read-only: no secrets. Never calls request_intro.
+# the owner's GitHub Actions notification settings. Read-only: no secrets (only the run's own
+# read-only GITHUB_TOKEN, to read deploy history). Never calls request_intro.
+#
+# Like with like: production is compared with the commit the last successful CI deploy actually
+# deployed (not whatever main is now), and the run shares deploy.yml's concurrency group, so it never
+# runs while a deploy is in progress. Whether main itself is deployed is a separate check.
 name: monitor
 on:
   schedule:
@@ -7,28 +12,79 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
+# Queue behind a running deploy; never cancel one. (GitHub keeps one pending run per group: a newer
+# arrival replaces a pending one. A pending deploy displaced this way is caught by the
+# "main is deployed" step below.)
+concurrency:
+  group: deploy
+  cancel-in-progress: false
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # The newest successful deploy.yml run on main whose "Deploy site, redirect and MCP Workers"
+      # step actually ran (a superseded or DEPLOY_ENABLED-off run succeeds without deploying).
+      - name: Find the last deployed commit
+        id: deployed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=""
+          while read -r id head; do
+            step=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
+              --jq '[.jobs[] | select(.name == "deploy") | .steps[] | select(.name == "Deploy site, redirect and MCP Workers") | .conclusion][0] // ""')
+            if [ "$step" = success ]; then sha=$head; break; fi
+          done < <(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=20" \
+            --jq '.workflow_runs[] | "\(.id) \(.head_sha)"')
+          if [ -z "$sha" ]; then echo "::error::no successful CI deploy among the last 20 deploy runs"; exit 1; fi
+          echo "Last deployed commit: $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.deployed.outputs.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: did.json, pages, headers, redirects, MCP lifecycle, Registry
+      - name: did.json, pages, headers, redirects, MCP lifecycle and readiness, Registry, DNS
         shell: bash
+        env:
+          DEPLOYED: ${{ steps.deployed.outputs.sha }}
         run: |
           set +e
-          node smoke.mjs https://patrickjv.com --aliases --mcp --registry --strict-https > smoke.out 2>&1
+          node smoke.mjs https://patrickjv.com --aliases --mcp --registry --strict-https --dns > smoke.out 2>&1
           rc=$?
           cat smoke.out
           {
-            echo "### Smoke: $([ $rc -eq 0 ] && echo passed || echo FAILED)"
+            echo "### Smoke against $DEPLOYED: $([ $rc -eq 0 ] && echo passed || echo FAILED)"
             echo '```'
             cat smoke.out
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
+      # Convergence: main's head should be deployed, unless it differs from the deployed commit only
+      # in files deploy.yml ignores (keep this list equal to its paths-ignore), or a deploy is queued.
+      - name: main is deployed
+        if: always() && steps.deployed.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYED: ${{ steps.deployed.outputs.sha }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$DEPLOYED" ]; then echo "main ($head) is deployed"; exit 0; fi
+          served=""
+          while read -r f; do
+            case "$f" in
+              docs/*|README.md|designs/*.md) ;;
+              *) served="$served $f" ;;
+            esac
+          done < <(gh api "repos/$GITHUB_REPOSITORY/compare/$DEPLOYED...$head" --jq '.files[].filename')
+          if [ -z "$served" ]; then echo "main ($head) differs from the deployed commit only in ignored files"; exit 0; fi
+          pending=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&per_page=20" \
+            --jq '[.workflow_runs[] | select(.status != "completed")] | length')
+          if [ "$pending" -gt 0 ]; then echo "::notice::main ($head) not yet deployed; $pending deploy run(s) queued"; exit 0; fi
+          echo "::error title=main is not deployed::main ($head) has served changes not in the last deployed commit ($DEPLOYED):$served — the deploy failed, was cancelled or is disabled"
+          echo "### main is NOT deployed: $head vs deployed $DEPLOYED" >> "$GITHUB_STEP_SUMMARY"
+          exit 1

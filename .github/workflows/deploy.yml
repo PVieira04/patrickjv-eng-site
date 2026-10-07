@@ -1,16 +1,21 @@
 # Deploy on push to main: test job (no secrets) -> deploy all three Workers -> smoke (with retries).
 # Tests run ONLY in the reusable test job, which has no secrets; the deploy step runs wrangler
 # directly (not `npm run deploy`, which would rerun the tests with the token in their environment).
-# Manual dispatch deploys only from main.
+# Manual dispatch deploys only from main, and only main's current head: a re-run of an older run
+# (GitHub keeps the original SHA) is skipped, so it can never put superseded code back. Rolling back
+# is a deliberate, separate operation (`wrangler rollback`, docs/06).
 # The deploy job shows as SKIPPED until the repo variable DEPLOY_ENABLED is 'true' (secrets cannot
 # be read in `if:`); it also needs the CLOUDFLARE_API_TOKEN secret and CLOUDFLARE_ACCOUNT_ID variable.
+# monitor.yml shares the `deploy` concurrency group, so it never compares production mid-deploy.
 name: deploy
 on:
   push:
     branches: [main]
+    # Only files that are never served. Markdown under public/ IS served, so it deploys.
     paths-ignore:
       - "docs/**"
-      - "**/*.md"
+      - "README.md"
+      - "designs/**/*.md"
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,17 +31,33 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
       # --ignore-scripts verified locally: wrangler (esbuild, workerd) bundles all three Workers without postinstall.
       - run: npm ci --ignore-scripts
+      # Immediately before deploying: is this run's commit still main's head? If main has moved on
+      # (a re-run of an old run, or a queued run overtaken by a newer push), skip — the newer commit
+      # has its own run. Fails closed: if the API call fails, the step fails and nothing deploys.
+      - name: Skip if superseded by a newer main
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Deploy skipped (superseded)::$GITHUB_SHA is not main's head ($head); nothing deployed. Use wrangler rollback for a deliberate rollback (docs/06)."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
       # The token is in this step's environment only, and only wrangler runs here.
       - name: Deploy site, redirect and MCP Workers
+        if: steps.current.outputs.current == 'true'
         run: |
           npx wrangler deploy
           npx wrangler deploy -c redirect/wrangler.jsonc
@@ -46,6 +67,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       # The edge can serve the previous version for a minute or so: retry with backoff.
       - name: Smoke the live site
+        if: steps.current.outputs.current == 'true'
         shell: bash
         run: |
           for attempt in 1 2 3 4 5; do

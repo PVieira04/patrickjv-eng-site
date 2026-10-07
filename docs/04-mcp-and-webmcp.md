@@ -20,21 +20,21 @@ Read tools carry `readOnlyHint: true` (and `destructiveHint: false`, `idempotent
 
 - `from_email` must be a **dot-atom** local part (no leading, trailing or consecutive dots; ≤ 64 octets) at a valid hostname. The domain is lower-cased; the local part keeps its case (it may be case-sensitive) and goes into `Reply-To` exactly.
 - Single-line fields lose control characters and **bidi-override and zero-width characters**, so the Subject cannot display differently from what it says.
-- The tool description states the privacy terms: the message is forwarded and not stored; rate-limit counters are hashed and kept for one day.
+- The tool description states the privacy terms: the message is forwarded and not stored by this site; rate-limit counters are hashed and **expire daily**. It deliberately does not promise exactly one day of retention: Cloudflare keeps 30 days of Durable Object recovery history (see [05](05-quality-and-audits.md#privacy)).
 
-The email arrives from "patrickjv.com intro" `<intro@patrickjv.com>` with subject `[Intro · <reason>] <name> (<organisation>)` (RFC 2047 encoded words, every header line ≤ 76 characters), `Reply-To` the sender's address only, a CRLF-canonical base64 text body, and a footer marking it as an unverified sender.
+The email arrives from "patrickjv.com intro" `<intro@patrickjv.com>` with subject `[Intro · <reason>] <name> (<organisation>)` (RFC 2047 encoded words, every header line ≤ 76 characters), `Reply-To` the sender's address only, a CRLF-canonical base64 text body, and a footer with the time received and an unverified-sender note. Since round 3 (C3-F11) the footer carries **no country or client (user-agent) metadata** — data minimisation; it was never needed to judge an introduction.
 
 ### Code layout
 
 - `mcp/handler.js` — all protocol and safety logic, including the quota Durable Object's reservation (`reserveIntro`) and alarm (`pruneQuota`) logic, with no Cloudflare-only imports, so it is fully unit-tested in Node.
 - `mcp/index.js` — wires in `EmailMessage` (`cloudflare:email`) and the `IntroQuota` Durable Object, whose methods call `reserveIntro` / `pruneQuota`.
-- `mcp/handler.test.mjs` — 46 tests, run against the real reservation code with an in-memory storage. `redirect/index.test.mjs` — 7 tests.
+- `mcp/handler.test.mjs` — 51 tests, run against the real reservation code with an in-memory storage. `redirect/index.test.mjs` — 7 tests.
 
 ## Cost and abuse controls
 
 Requests are rejected in the **cheapest order**; everything up to step 8 happens before the body is read:
 
-1. Edge **WAF rule**: `/mcp*`, 6 requests / 10 s per IP, block 10 s — the Worker never runs for blocked requests.
+1. Edge **WAF rule**: `/mcp*`, 6 requests / 10 s per IP, block 10 s — the Worker never runs for blocked requests. It caps the rate (up to ~51,840 requests per IP per day still get through), it does not stop a flood outright; see [Which limit binds](#which-limit-binds).
 2. Path must be exactly `/mcp` (else 404).
 3. **Origin:** any `Origin` header that is present — **even an empty one** — must be exactly `https://patrickjv.com`, else 403. Server-side clients send no Origin and are allowed. CORS is granted only to `patrickjv.com`.
 4. Method: `OPTIONS` → 204; anything but `POST` → 405.
@@ -55,9 +55,17 @@ For `request_intro` additionally:
 16. **What the Durable Object stores:** only **HMAC-SHA256** keys, never an IP or an address — keyed with the `QUOTA_SALT` Worker secret (set on 6 Oct 2026), separately for the IP key and the sender key. The sender key is deliberately coarser than the address: lower-cased, `+tag` removed, and for Gmail (`gmail.com`/`googlemail.com`) dots removed, so trivial variants of one mailbox share one cap (`Reply-To` still uses the original). Only today's counters are kept: a new day replaces them, and an **alarm** at the end of their day (UTC midnight) deletes them even if no request follows. Whenever counters are stored an alarm is kept no earlier than the end of their day: a reservation moves a still-pending alarm from the previous day forward, an alarm that finds today's counters schedules the next midnight, and counters stored before alarms existed get one on the next reservation (even a refused one). **`QUOTA_SALT` is required:** if it is missing or shorter than 32 characters, `request_intro` refuses with a tool error (logged as subsystem `config`) before any rate limit, reservation or email — there is no fallback key, since a key in public source would protect nothing. The read tools are unaffected.
 17. Binding, quota and email failures return a JSON-RPC or tool error rather than crashing; the tool asks the caller not to retry.
 
-**Observability:** Workers Logs are enabled (`observability.enabled`), with `observability.redact_query_string: true` so query strings are stripped from request URLs in invocation logs and traces. Every caught failure logs a redacted `{"event":"mcp_failure","subsystem":…}` event (e.g. `ratelimit`, `body_read`, `json_parse`, `quota`, `email`, `config`) and quota refusals log `intro_quota_rejected` with which cap — never message bodies, addresses or IPs.
+**Observability:** Workers Logs keep **only the handler's own console events**: `observability.logs.invocation_logs: false` (since round 3, review C3-F4/R40) turns off the per-request invocation logs, which would otherwise record each request's metadata (client IP, location, user agent); `redact_query_string: true` stays as a second line of defence. Verified against the installed Wrangler schema and with `npx wrangler deploy --dry-run -c mcp/wrangler.jsonc`. Every caught failure logs a redacted `{"event":"mcp_failure","subsystem":…}` event (e.g. `ratelimit`, `body_read`, `json_parse`, `quota`, `email`, `config`) and quota refusals log `intro_quota_rejected` with which cap — never message bodies, addresses or IPs.
 
 **Security headers** (`nosniff`, `Referrer-Policy: no-referrer`, HSTS, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`) are sent on **every** MCP response, including errors; the redirect Worker sends the same set.
+
+<a id="which-limit-binds"></a>
+### Which limit binds (accepted trade-offs, review C3-F2 / C3-F12)
+
+- **The edge WAF rule is stricter than the Worker.** It counts *every* request per IP — handshakes included — at 6 per 10 s; the Worker allows 30 per minute and 10 non-handshake calls per 10 s. For IPv4 the WAF is therefore the binding limit, and the R15 handshake exemption only helps within it (or for IPv6, where the WAF counts single addresses but the Worker counts a /64). A blocked request gets Cloudflare's **1015 HTML page** (status 429), which MCP clients cannot parse as JSON-RPC.
+- **Shared egress.** An MCP session is about 4 requests, so one IPv4 address (a hosted MCP client's egress, or corporate NAT) gets roughly **one and a half sessions per 10 s** for all its users together. The per-IP intro cap (4 a day) is shared the same way.
+- **Global cap.** 10 introductions a day in total. Exhausting it needs 5 sender addresses (2 each) and 3 IPs (4 each), and takes about 4 minutes at 1 per minute per IP — then `request_intro` refuses everyone until UTC midnight, with the error naming `hello@patrickjv.com`. Accepted: email volume to one personal mailbox is the thing being protected, and the fallback is always email.
+- **Owner option:** raise the WAF threshold (e.g. to 20 per 10 s), so the Worker's own limits bind and a shared egress address is not blocked by the handshake. That is a dashboard change; until decided, the numbers above stand.
 
 **Lesson learned:** the Workers rate-limit *binding* is approximate and per-machine (counted per Cloudflare location) — live, it blocked only **1 of 40** rapid requests. The edge WAF rule is what makes rate limiting real: with it, a 40-request burst gives exactly **6 × 200 then 34 × 429** from the edge.
 
@@ -71,9 +79,25 @@ Hardened over **three Codex (gpt-6.1-sol) adversarial review rounds** until only
 | 2 | Quota day could roll backwards at midnight → DO-owned monotonic day. IPv6 key normalisation → strict parser. First Subject line > 76 chars → first-word budget. Loose media-type match → exact. `arguments: null` / extra args on read tools → rejected. Confirmed DO atomicity is correct. |
 | 3 | IPv4-mapped IPv6 forms produced different keys → full parse then numeric `::ffff:0:0/96` detection. Everything else verified (tens of thousands of generated cases). |
 
-A fourth, whole-site review on the evening of 6 Oct (Claude Opus 5.5 and Codex, [merged findings](reviews/2026-10-06-merged-review.md)) led to the protocol polish above: R14 (observability), R15 (handshake-exempt burst limit, per-IP cap 4), R19 (headers on every response), R30–R36 (ids, empty Origin, dot-atom, code points, CRLF, `initialize`/response validation, bidi stripping), R37 (sender key folding), R38 (308), R39 (version from `server.json`), R40 (HMAC keys, alarm pruning, privacy note), R41 (tests on the real reservation path; protocol header, OPTIONS and Content-Length tests) and R42 (absent protocol header accepted). A Codex round-2 review of those fixes added: alarm rescheduling (N2), a required `QUOTA_SALT` (N4), query-string redaction in logs (N6) and the protocol headers on the page's WebMCP request (R42).
+A fourth, whole-site review on the evening of 6 Oct (Claude Opus 5.5 and Codex, [merged findings](reviews/2026-10-06-merged-review.md)) led to the protocol polish above: R14 (observability), R15 (handshake-exempt burst limit, per-IP cap 4), R19 (headers on every response), R30–R36 (ids, empty Origin, dot-atom, code points, CRLF, `initialize`/response validation, bidi stripping), R37 (sender key folding), R38 (308), R39 (version from `server.json`), R40 (HMAC keys, alarm pruning, privacy note), R41 (tests on the real reservation path; protocol header, OPTIONS and Content-Length tests) and R42 (absent protocol header accepted). A Codex round-2 review of those fixes added: alarm rescheduling (N2), a required `QUOTA_SALT` (N4), query-string redaction in logs (N6) and the protocol headers on the page's WebMCP request (R42). Round 3 (Claude and Codex, 7 Oct) added: the `patrickjv/health` readiness method, invocation logs off, no country/client metadata in emails, an accurate retention statement, and WebMCP normalisation and uncertain-delivery wording (see [the merged review §8](reviews/2026-10-06-merged-review.md#8-round-3-claude--codex)).
 
 Key guards were proven with **revert-and-fail**: each was deliberately broken and the matching test failed. Confirmed in **production**: a test introduction arrived in Gmail's Inbox; the MCP server connects as a Claude custom connector showing all five tools.
+
+<a id="readiness"></a>
+### Readiness signal: `patrickjv/health`
+
+A read-only JSON-RPC method that says whether `request_intro` is **configured**, for monitoring (reviews Codex-2 / C3-F8):
+
+```json
+{"jsonrpc":"2.0","id":4,"method":"patrickjv/health"}
+→ {"jsonrpc":"2.0","id":4,"result":{"introReady":true,"salt":true,"email":true,"quota":true,"rateLimits":true}}
+```
+
+- **Booleans only**: `salt` (the `QUOTA_SALT` secret is present and at least 32 characters), `email` (the `EMAIL` send binding plus non-empty `INTRO_FROM`/`INTRO_TO`), `quota` (the `IntroQuota` Durable Object binding), `rateLimits` (`RL_INTRO`, `RL_MCP`, `RL_BURST`), and `introReady` = all four. Never a secret, its length or an address.
+- It goes through the **same rejection chain** as every request (WAF, Origin, method, media type, size, `RL_MCP`, protocol header) and counts against `RL_BURST` (it is not handshake-exempt).
+- **Why a custom method:** MCP requires a `ping` result to be empty, so extending `ping` would break the spec; a tool would be listed to users in every client. A vendor-prefixed method (`patrickjv/…`, the slash style MCP uses for its own methods) cannot collide with a future spec method, and any other server answers it with `-32601`.
+- It shows configuration, not delivery: an Email Routing outage would not show here. Routine monitoring never sends an email; delivery is confirmed by occasional manual tests and by redacted `mcp_failure` events (`email`, `quota`, `config`) in Workers Logs.
+- `smoke --mcp` FAILs unless `introReady` is `true` (exactly five boolean keys).
 
 <a id="sender-verification"></a>
 ### Why no sender verification
@@ -93,7 +117,7 @@ Listed on the official registry (`registry.modelcontextprotocol.io`) as **`com.p
 
 - **Claude:** Settings → Connectors → Add custom connector → `https://patrickjv.com/mcp`. Suggested permissions: read tools "Always allow", Request an introduction "Ask".
 - **Any MCP client:** add the URL as a remote (Streamable HTTP) server.
-- `npm run smoke -- https://patrickjv.com --mcp` runs the read-only lifecycle — `initialize` (checks the negotiated version, `serverInfo.name` = `patrickjv.com` and `serverInfo.version`), `notifications/initialized` (202), `tools/list` (exactly the five tools, each with icons), `tools/call list_faq` (`structuredContent.items` deep-equal to `content.json`'s `faq`) — sending `MCP-Protocol-Version` after initialisation and never calling `request_intro`.
+- `npm run smoke -- https://patrickjv.com --mcp` runs the read-only lifecycle — `initialize` (checks the negotiated version, `serverInfo.name` = `patrickjv.com` and `serverInfo.version`), `notifications/initialized` (202), `tools/list` (exactly the five tools, each with icons), `tools/call list_faq` (`structuredContent.items` deep-equal to `content.json`'s `faq`), `patrickjv/health` (`introReady` must be `true`) — five requests, sending `MCP-Protocol-Version` after initialisation and never calling `request_intro`.
 
 <a id="webmcp"></a>
 ## WebMCP
@@ -102,5 +126,7 @@ The page registers five tools with **`document.modelContext`** (the current draf
 
 - Tool names, titles, descriptions, input schemas and `readOnlyHint` annotations come from the MCP server's `tools()`, spliced in by the build, so the two surfaces describe the same tools in the same words (including "not the footballer").
 - The script feature-detects, uses `registerTool` (each returned promise's rejection is caught) or falls back to `provideContext`, and is wrapped in `try/catch`; the page works identically without JavaScript.
-- `request_intro` asks the **person** to confirm (the draft's `requestUserInteraction` if offered, else `window.confirm`) showing **all six fields** — From, Email, Organisation, Reason, Agent and Message — and sends a **snapshot** of exactly what was shown. It honours the caller's abort `signal`: checked before confirming, again before sending, and passed to `fetch`. It then POSTs a single `tools/call` to `/mcp`, so every server-side limit applies, with `MCP-Protocol-Version: 2025-11-25` and `Accept: application/json, text/event-stream`. It does not run the `initialize` handshake (one request, not three); the stateless server accepts that (step 8 above).
-- Tested in headless Chromium with a stubbed `modelContext` (before the review fixes): declining sends nothing; accepting sends exactly one correct request; no CSP violations.
+- `request_intro` first **normalises the input exactly as the server will** (single-line fields lose control, bidi and zero-width characters; the message gets LF newlines and loses control characters; `from_email` and `reason` are trimmed — review C3-F14), then asks the **person** to confirm (the draft's `requestUserInteraction` if offered, else `window.confirm`) showing **all six fields** — From, Email, Organisation, Reason, Agent and Message — and sends a **snapshot** of exactly what was shown, so the approved text is the text in the email. It honours the caller's abort `signal`: checked before confirming, again before sending, and passed to `fetch`. It then POSTs a single `tools/call` to `/mcp`, so every server-side limit applies, with `MCP-Protocol-Version: 2025-11-25` and `Accept: application/json, text/event-stream`. It does not run the `initialize` handshake (one request, not three); the stateless server accepts that (step 8 above).
+- **Delivery wording.** A server JSON-RPC error is passed on as the server's message. Once the request has been sent, a network error, an unreadable or unparseable response body, or a response with neither `result` nor `error` is reported as **uncertain** — "may or may not have been delivered. Do not retry; the person can email hello@patrickjv.com instead" — never "not sent" (review Codex-5).
+- `test/webmcp.test.mjs` runs the page's script in a VM: five tools register; hostile input (bidi, zero-width, control characters, CRLF) is shown and sent exactly as the server's `validateIntro` normalises it; declining sends nothing; unreadable or unexpected responses give the uncertain-delivery wording.
+- Tested in headless Chromium on 7 Oct (local `wrangler dev`, stubbed `document.modelContext`, `/mcp` stubbed): five tools registered; the confirm dialog showed the normalised values and exactly those were sent; declining sent nothing; an unreadable body gave the uncertain-delivery wording; no console or CSP errors.

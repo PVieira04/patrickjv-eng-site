@@ -193,29 +193,48 @@ test("a failing build writes nothing", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("changing a served asset's bytes moves dateModified (portrait, card, icon, font, .well-known text)", () => {
-  for (const [f, change] of [
-    ["public/photo.webp", (b) => Buffer.concat([b, Buffer.from([0])])],
-    ["public/og-card.jpg", (b) => Buffer.concat([b, Buffer.from([0])])],
-    ["public/favicon.ico", (b) => Buffer.concat([b, Buffer.from([0])])],
-    ["public/fonts/ibm-plex-mono-latin-400.woff2", (b) => Buffer.concat([b, Buffer.from([0])])],
-    ["public/.well-known/security.txt", (b) => Buffer.from(b.toString().replace(/^Expires:.*$/m, "Expires: 2027-06-01T00:00:00.000Z"))],
-    ["public/.well-known/mcp-registry-auth", (b) => Buffer.concat([b, Buffer.from("\n")])],
-  ]) {
+// dateModified hashes content-bearing outputs only: the page, index.md, llms.txt, sitemap.xml and
+// robots.txt (rendered with a placeholder date) plus the images the page references (C3-F10).
+test("changing a page-referenced image's bytes moves dateModified (portrait variants, share card, icons)", () => {
+  for (const f of ["public/photo.webp", "public/photo-320.webp", "public/og-card.jpg", "public/favicon.ico", "public/apple-touch-icon.png"]) {
     const dir = scratch();
     try {
       // Converge the scratch tree first, so the check below can only fail because of the asset.
       assert.deepEqual(build({ root: dir, today: "2098-01-01", now: NOW }).errors, []);
       assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, [], "baseline");
       const p = join(dir, f);
-      const changed = change(readFileSync(p));
-      assert.notDeepEqual(changed, readFileSync(p), `${f}: fixture did not change the file`);
-      writeFileSync(p, changed);
+      writeFileSync(p, Buffer.concat([readFileSync(p), Buffer.from([0])]));
       assert.ok(build({ root: dir, check: true, now: NOW }).errors.some((e) => /build-state\.json does not match/.test(e)), `${f}: --check did not notice`);
       const r = build({ root: dir, today: "2099-01-01", now: NOW });
       assert.deepEqual(r.errors, [], f);
       assert.equal(r.date, "2099-01-01", f);
       assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, [], `${f}: does not converge`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test("non-content changes leave dateModified alone (_headers inputs, 404 page, fonts, security.txt, mcp-registry-auth, unreferenced image)", () => {
+  for (const [f, change] of [
+    ["public/404.html", (b) => Buffer.from(b.toString().replace(/<h1([^>]*)>([^<]*)</, "<h1$1>$2 (moved)<"))],
+    ["public/fonts/ibm-plex-mono-latin-400.woff2", (b) => Buffer.concat([b, Buffer.from([0])])],
+    ["public/.well-known/security.txt", (b) => Buffer.from(b.toString().replace(/^Expires:.*$/m, "Expires: 2027-06-01T00:00:00.000Z"))],
+    ["public/.well-known/mcp-registry-auth", (b) => Buffer.concat([b, Buffer.from("\n")])],
+    ["public/unreferenced-test.png", () => Buffer.from([1, 2, 3])],
+  ]) {
+    const dir = scratch();
+    try {
+      assert.deepEqual(build({ root: dir, today: "2098-01-01", now: NOW }).errors, []);
+      const before = build({ root: dir, check: true, now: NOW });
+      assert.deepEqual(before.errors, [], "baseline");
+      const p = join(dir, f);
+      const old = existsSync(p) ? readFileSync(p) : Buffer.alloc(0);
+      const changed = change(old);
+      assert.notDeepEqual(changed, old, `${f}: fixture did not change the file`);
+      writeFileSync(p, changed);
+      const r = build({ root: dir, today: "2099-01-01", now: NOW });
+      assert.deepEqual(r.errors, [], f);
+      assert.equal(r.date, before.date, `${f}: dateModified moved`);
+      assert.ok(!r.stale.includes("build-state.json"), `${f}: build-state.json rewritten`);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }
 });

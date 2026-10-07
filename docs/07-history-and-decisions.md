@@ -37,6 +37,10 @@ Times are London time (BST, UTC+1), as recorded in the commits.
 | 23:22 | `2e49a17`, `b142785` | Fix branch 3 merged: section-aware build checks, generated head metadata, content-hash dates, per-path headers, 404 page, privacy note, WebMCP on `document.modelContext`. |
 | 23:23 | — | Manual deploy. **Incident:** production ignored the `_headers` detach line, so `/` received two CSPs and the page's style and script were blocked. The strict smoke check failed at once; rolled back at 23:25 with `wrangler rollback`. |
 | 23:27 | `8c90261` | Fix: each CSP set by exactly one rule, 404 page carries its own `<meta>` CSP, build guard against detach lines and duplicate CSPs. Deployed; smoke 22 PASS, 1 WARN (HTTP→HTTPS, an owner setting). See [06](06-operations.md#incidents). |
+| 23:51 | `8bd29f8` | Codex round-2 fixes: strict smoke, CI token isolation, quota alarm and required salt, exact font rules. |
+| 23:56 | `c616c58` | `pvieira.co.uk` mail DNS locked down (R2). |
+| 00:33 (7 Oct) | `06a1af7` | `patrickjv.com` zone hardening (Always Use HTTPS, TLS 1.2, CAA, DNSSEC enabled, NEL off, SPF `-all`, DMARC monitoring); **deploy-on-push enabled** — this push was the first CI deploy. |
+| 01:03 (7 Oct) | `1673080`, `ac61e8e` | Round-3 reviews (Codex and Claude): no Critical or High; findings mostly between components and outside the repo — see [§8 of the merged review](reviews/2026-10-06-merged-review.md#8-round-3-claude--codex). |
 
 ## The design competition
 
@@ -63,15 +67,19 @@ Working independently, Codex chose directions close to Claude's (editorial, syst
 | Custom Domains, not DNS edits | Wrangler can attach them (and creates records); its OAuth cannot edit DNS |
 | Employer-agnostic copy | A professional page about skills and work, not an employer |
 | Allow all AI crawlers | Public professional profile; answer bots matter most and training helps disambiguation long-term |
-| MCP server on its own route | Only `/mcp*` runs code; edge rule stops floods before it |
+| MCP server on its own route | Only `/mcp*` runs code; the edge rule caps the request rate before it (it bounds a flood, it does not stop one) |
 | Limits-only for `request_intro` | Double opt-in needs Workers Paid or an external sender |
 | No MCP server card / A2A card / `_agent` DNS | Nothing reads them yet; the MCP Registry does the discovery job |
-| No analytics script | Keeps zero third-party requests (Cloudflare NEL also disabled, 7 Oct — see [05](05-quality-and-audits.md#privacy)) |
+| No analytics script | Keeps zero third-party requests (Cloudflare NEL also disabled on `patrickjv.com`, 7 Oct; still on for the alias zone `pvieira.co.uk` until the owner turns it off — see [05](05-quality-and-audits.md#privacy)) |
 | Codex favicon over Claude's | Bolder and clearer at 16 px, where favicons are judged |
 | One CSP rule per path, none on `/*` | Production `_headers` ignores detach lines; two matching rules mean two policies (the 6 Oct incident) |
 | Keep the JSON-LD `identifier` → `did:web:patrickjv.com` (review D1) | `did.json`'s `alsoKnownAs` lists DIDs on an employer's domain — a subtle link — but the file is already public and the choice is reversible |
 | Dashboard config stays in prose for now (review D2) | A read-only export script into the repo is planned, later |
 | Per-IP intro cap 4, not 2 | Hosted MCP clients and NAT share one address; the per-sender (2) and global (10) caps bound email volume |
+| Global intro cap stays at 10 a day (review C3-F12) | Easy to exhaust (5 senders × 3 IPs, ~4 minutes), but what it protects is one personal mailbox, and every refusal points to `hello@patrickjv.com` |
+| Readiness via a custom `patrickjv/health` method, not `ping` or a tool | `ping` results must be empty; a tool would be shown to users. Booleans only, through the full rejection chain |
+| Deploy only `main`'s current head | GitHub re-runs keep the old SHA; a re-run must never put superseded code back. Rollback stays a deliberate `wrangler rollback` |
+| `/404` soft 404 accepted (review C3-F9) | `noindex`, unlinked; a fix would rely on asset-server behaviour that differs between `wrangler dev` and production |
 
 ## Lessons worth keeping
 
@@ -82,4 +90,5 @@ Working independently, Codex chose directions close to Claude's (editorial, syst
 - **Propagation is real.** Fresh Cloudflare deploys briefly served stale or 404 assets from some locations; re-test before chasing a bug.
 - **Two independent reviewers beat one.** The two models agreed on every High finding but each found things the other missed (Codex: WebMCP draft API, build write order; Claude: edge, DNS and quota exposure needing live access).
 - **Local dev is not production.** `wrangler dev` honoured a `_headers` detach line that production ignores; the result was a four-minute outage. Verify response headers on the live site after any header change, and turn a surprise into a build guard.
+- **The gaps move outward.** By round 3 the code held up line by line; what remained sat between components (CI re-runs vs. production, monitor vs. deploy, WAF vs. Worker limits) and outside the repo (the alias zone, the token's scope, DS publication, a subdomain's own DMARC). Review the whole system, not just the diff.
 - **Strict monitors catch real regressions.** The smoke check that compares the live CSP with the repo's `_headers` had been added minutes earlier, in the same release, and caught the incident straight after the deploy. A check that only tests for 200 would have passed.

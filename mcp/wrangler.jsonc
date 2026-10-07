@@ -7,10 +7,11 @@
   "workers_dev": false,
   "preview_urls": false,
   "routes": [{ "pattern": "patrickjv.com/mcp*", "zone_name": "patrickjv.com" }],
-  // Workers Logs: the handler logs redacted failure events (subsystem only, no personal data).
-  // redact_query_string strips query strings from request URLs in invocation logs and traces, so
-  // anything a client puts in "/mcp?..." is not retained there either.
-  "observability": { "enabled": true, "redact_query_string": true },
+  // Workers Logs: ONLY the handler's own console events (redacted failure and quota-refusal events:
+  // subsystem or cap name, no personal data). Invocation logs are off: they would record every
+  // request's metadata (client IP, location, user agent) for the log retention period.
+  // redact_query_string stays as a second line of defence for any request URL that is logged.
+  "observability": { "enabled": true, "redact_query_string": true, "logs": { "enabled": true, "invocation_logs": false } },
   "vars": { "INTRO_FROM": "intro@patrickjv.com", "INTRO_TO": "vieira.pjpv@gmail.com" },
   // Secret, not a var: QUOTA_SALT keys the HMAC of the IP and sender keys held by IntroQuota.
   // Set with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc` (a random value of at least 32
