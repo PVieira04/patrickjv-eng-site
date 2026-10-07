@@ -41,6 +41,7 @@ Times are London time (BST, UTC+1), as recorded in the commits.
 | 23:56 | `c616c58` | `pvieira.co.uk` mail DNS locked down (R2). |
 | 00:33 (7 Oct) | `06a1af7` | `patrickjv.com` zone hardening (Always Use HTTPS, TLS 1.2, CAA, DNSSEC enabled, NEL off, SPF `-all`, DMARC monitoring); **deploy-on-push enabled** — this push was the first CI deploy. |
 | 01:03 (7 Oct) | `1673080`, `ac61e8e` | Round-3 reviews (Codex and Claude): no Critical or High; findings mostly between components and outside the repo — see [§8 of the merged review](reviews/2026-10-06-merged-review.md#8-round-3-claude--codex). |
+| 7 Oct | `25b16e8`, `bbf5caa` | **Deploys switched to Cloudflare Workers Builds** (decision D4): all three Workers connected to the repo, `.node-version` 24; `bbf5caa` was the first build — three `Workers Builds: …` check runs green, the GitHub deploy job skipped (`DEPLOY_ENABLED=false`), live smoke 28 passed, 2 warned, 0 failed. Then `deploy.yml` deleted and the monitor moved onto Workers Builds' check runs (post-deploy smoke, build-failure alert). |
 
 ## The design competition
 
@@ -79,6 +80,7 @@ Working independently, Codex chose directions close to Claude's (editorial, syst
 | Global intro cap stays at 10 a day (review C3-F12) | Easy to exhaust (5 senders × 3 IPs, ~4 minutes), but what it protects is one personal mailbox, and every refusal points to `hello@patrickjv.com` |
 | Readiness via a custom `patrickjv/health` method, not `ping` or a tool | `ping` results must be empty; a tool would be shown to users. Booleans only, through the full rejection chain |
 | Deploy only `main`'s current head | GitHub re-runs keep the old SHA; a re-run must never put superseded code back. Rollback stays a deliberate `wrangler rollback` |
+| Deploy with Cloudflare Workers Builds, not GitHub Actions (review D4, 7 Oct) | A repository secret on GitHub Free is readable by a workflow on any branch, and a leaked Workers token could deploy a forged `did.json`. Workers Builds deploys with a Cloudflare-managed token, so GitHub holds no deploy credential; the monitor keeps the post-deploy smoke and alerts on failed builds |
 | `/404` soft 404 accepted (review C3-F9) | `noindex`, unlinked; a fix would rely on asset-server behaviour that differs between `wrangler dev` and production |
 
 ## Lessons worth keeping

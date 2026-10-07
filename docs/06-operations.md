@@ -2,63 +2,68 @@
 
 ## Deploying
 
-**Normal path: push to `main`.** `deploy.yml` runs the tests, deploys the three Workers and smokes the live site (see [CI](#ci)). Deploy-on-push has been **enabled since 6 Oct 2026** (`DEPLOY_ENABLED=true`, `CLOUDFLARE_API_TOKEN` secret set); verified by run [37547188717](https://github.com/PVieira04/patrickjv-eng-site/actions/runs/37547188717), which deployed and smoked the `06a1af7` push. Before a risky change, record the current version of each Worker (`npx wrangler deployments list`, with `-c redirect/wrangler.jsonc` and `-c mcp/wrangler.jsonc` for the others) so a rollback target is known.
+**Normal path: push to `main`. Cloudflare Workers Builds deploys** (since 7 Oct 2026, replacing the GitHub Actions `deploy.yml`; decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)). Each of the three Workers is connected to the GitHub repo `PVieira04/patrickjv-eng-site`, production branch `main`; Cloudflare clones the repo, runs the build command and then the deploy command with a **Cloudflare-managed build token**. **No Cloudflare credential is needed in GitHub** (the old Actions secret awaits deletion — [owner clean-up](#token-rotation)). Non-production (other-branch) builds are **off**. Node is pinned by `.node-version` (`24`).
 
-**Manual fallback** (CI unavailable, or the token revoked): `npm ci`, then `npm run deploy` — runs `npm test` (build drift check + 106 unit tests), then `wrangler deploy` for the site, the redirect Worker and the MCP Worker, using Wrangler's OAuth login. Then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https` — and check response headers on the live site, not just under `wrangler dev` (see [Incidents](#incidents)). A manual deploy is not recorded in Actions, so the monitor keeps comparing production with the last **CI** deploy and will FAIL "deployed = repo" if the manual deploy shipped a different commit: after a manual deploy of `main`, run `gh workflow run deploy.yml --ref main` to record it.
+| Worker | Build command | Deploy command | Build watch paths |
+|---|---|---|---|
+| `patrickjv-eng-site` | `npm ci && npm test` | `npx wrangler deploy` | include `*`; exclude `docs/*`, `README.md`, `designs/*` |
+| `patrickjv-redirect` | `npm ci && npm test` | `npx wrangler deploy -c redirect/wrangler.jsonc` | include `redirect/*` |
+| `patrickjv-mcp` | `npm ci && npm test` | `npx wrangler deploy -c mcp/wrangler.jsonc` | include `mcp/*`, `lib/*`, `content.json` |
+
+The tests (build drift check + unit tests) run inside every build, before its deploy command: a red `npm test` deploys nothing. The configuration lives in the Cloudflare dashboard (Worker → Settings → Build), not in the repo; the wrangler configs only carry a header comment saying so.
+
+**Watch-path caveat.** A Worker rebuilds only when a push changes a file inside its include list (and outside its excludes). Editing `content.json` rebuilds the site and the MCP Worker, **not** the redirect Worker; editing only `docs/` rebuilds nothing. A change to shared code outside a Worker's include list (for example `package.json` or `package-lock.json` for the MCP Worker) does **not** redeploy it until a later push touches its paths — redeploy by hand if it must ship now. The monitor's "main is deployed" ignore list must stay equal to the site's excludes (`test/workflows.test.mjs` checks this table against the workflow).
+
+**Seeing builds.** Cloudflare dashboard → Workers & Pages → the Worker → **Deployments** (versions) and **Builds** (logs per commit). In GitHub, each build reports a check run on its commit, named exactly `Workers Builds: patrickjv-eng-site`, `Workers Builds: patrickjv-redirect` and `Workers Builds: patrickjv-mcp` (app `cloudflare-workers-and-pages`) — first seen on `bbf5caa`, all three successful. Before a risky change, record the current version of each Worker (`npx wrangler deployments list`, with `-c redirect/wrangler.jsonc` and `-c mcp/wrangler.jsonc` for the others) so a rollback target is known.
+
+**Rollback.** `npx wrangler rollback <version-id>` per Worker, or the dashboard's Deployments view ([Rollback](#rollback)). A rollback holds only until the next build of that Worker: a later push inside its watch paths redeploys `main`, so fix or revert on `main` too.
+
+**Manual fallback** (Workers Builds unavailable): `npm ci`, then `npm run deploy` — runs `npm test`, then `wrangler deploy` for the site, the redirect Worker and the MCP Worker, using Wrangler's OAuth login. Then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https` — and check response headers on the live site, not just under `wrangler dev` (see [Incidents](#incidents)). Deploy only `main`'s head by hand. A manual deploy produces no check run, so the monitor keeps comparing production with the last commit whose **Workers Builds** site build succeeded and will FAIL "deployed = repo" if the manual deploy shipped a different commit, until the next successful site build (retrying the latest build in the dashboard should record it — not yet tried).
 
 Right after a deploy, Cloudflare can briefly serve the previous version from some locations (a minute or so); re-check before assuming a regression.
 
 <a id="ci"></a>
 ## CI
 
-All workflows use actions pinned to full commit SHAs — `actions/checkout` **v7.0.1** (`3d3c42e…`) and `actions/setup-node` **v7.0.0** (`8207627…`), both on the Node 24 action runtime (the Node 20 deprecation warning is gone; resolved with `gh api` from the release tags, which point straight at commits) — plus `persist-credentials: false`, least-privilege `permissions`, the `ubuntu-24.04` runner and Node 24, and `npm ci --ignore-scripts`. **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for GitHub Actions (bumping the pinned SHA and its version comment together) and npm (dev dependencies grouped into one PR); each PR runs `test.yml`, nothing merges itself. `test/workflows.test.mjs` guards the properties below (each guard revert-and-fail verified).
+GitHub Actions no longer deploys and holds **no secrets**. Both workflows use actions pinned to full commit SHAs — `actions/checkout` **v7.0.1** (`3d3c42e…`) and `actions/setup-node` **v7.0.0** (`8207627…`), both on the Node 24 action runtime — plus `persist-credentials: false`, least-privilege `permissions`, the `ubuntu-24.04` runner and Node 24. **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for GitHub Actions (bumping the pinned SHA and its version comment together) and npm (dev dependencies grouped into one PR); each PR runs `test.yml`, nothing merges itself. `test/workflows.test.mjs` guards the properties below (revert-and-fail verified).
 
 | Workflow | When | What |
 |---|---|---|
-| `test.yml` | Every push and pull request (also called by `deploy.yml`) | `npm test`. No secrets. |
-| `deploy.yml` | Push to `main`, unless only `docs/**`, `README.md` or `designs/**/*.md` changed (Markdown under `public/` **is** served, so it deploys — review Codex-7); and on demand | Calls `test.yml` (the only place tests run); then the `deploy` job — `main` only — checks the run's commit is still `main`'s head, runs the three `npx wrangler deploy` commands directly (not `npm run deploy`, which would rerun the tests with the token in their environment) and a post-deploy smoke (`--aliases --mcp --strict-https`) with up to 5 attempts and growing back-off. |
-| `monitor.yml` | Every 6 hours and on demand | Live smoke against the last deployed commit, plus "main is deployed" (see [Monitoring](#monitoring)). No secrets beyond its own read-only `GITHUB_TOKEN`. |
+| `test.yml` | Every push and pull request | `npm ci --ignore-scripts`, `npm test`. No secrets. (Workers Builds runs the same `npm test` again before each deploy.) |
+| `monitor.yml` | Every 6 hours, on demand, and on every completed `Workers Builds: …` check run | Scheduled/dispatch: live smoke against the last deployed commit, plus "main is deployed". Check run: build-failure alert and post-deploy smoke (see [Monitoring](#monitoring)). Permissions `contents: read`, `checks: read` only. |
 
-**Gates on the deploy job.** It shows as **skipped** unless the repository variable `DEPLOY_ENABLED` is `true` (secrets cannot be read in an `if:`), and it requires `github.ref == 'refs/heads/main'`, so a manual dispatch from another branch cannot deploy. The Cloudflare token is exposed **only to the deploy step**, which runs nothing but `wrangler deploy` — not to the job or the tests.
+**Stale SHAs and races (reviews Codex-1, Codex-6).** Workers Builds builds the commit that was pushed; there is no GitHub re-run that could redeploy an old SHA. Rollback is a deliberate `wrangler rollback`. Two residuals, both **unverified**: whether Workers Builds cancels or serialises a build that a newer push supersedes, and whether two quick pushes can finish out of order (leaving the older commit live). The monitor covers both: the post-deploy smoke is skipped if a newer `main` commit has its own site build, and the scheduled "deployed = repo" checks compare production with the newest successfully built commit, so an out-of-order finish FAILs there.
 
-**Stale-SHA guard (review Codex-1).** GitHub re-runs keep the original commit, so re-running an old deploy after a newer one would put superseded code back — and its own smoke would pass, because it compares production with that old checkout. Immediately before deploying, the job asks the API for `main`'s current head (`gh api repos/<repo>/commits/main` with the run's read-only `GITHUB_TOKEN`) and, if it differs from `$GITHUB_SHA`, **skips the deploy and the smoke** with a "Deploy skipped (superseded)" notice. If that API call fails, the step fails and nothing deploys. A deliberate rollback is a separate operation ([Rollback](#rollback)).
+**Concurrency.** Scheduled and dispatched monitor runs share the group `monitor` (queue, never cancel; GitHub keeps one pending run per group, and displacing a pending monitor is harmless). Check-run runs use one group per commit **and** Worker, so one Worker's pending run never displaces another's alert.
 
-**Concurrency.** `deploy.yml` and `monitor.yml` share the concurrency group `deploy` with `cancel-in-progress: false`: one runs at a time and a running deploy is never cancelled, so the monitor never compares production mid-deploy (review Codex-6/C3-F15). GitHub keeps at most **one pending** run per group — a newer arrival replaces a pending one. Displacing a pending monitor is harmless; a displaced pending deploy would leave `main` undeployed, which the monitor's "main is deployed" check reports.
-
-**Transitional note.** The monitor runs `smoke.mjs` from the *deployed* commit with the flags in `main`'s `monitor.yml`. A new smoke flag therefore reaches the monitor only once the commit that adds it is deployed; if that deploy fails, the monitor fails with a usage error until it succeeds.
+**Transitional note.** The monitor runs `smoke.mjs` from the *deployed* commit with the flags in `main`'s `monitor.yml`. A new smoke flag therefore reaches the monitor only once the commit that adds it is deployed; if that deploy fails, the monitor fails with a usage error until it succeeds. `check_run` runs always use the default branch's `monitor.yml`.
 
 <a id="token-rotation"></a>
-### The CI deploy token: scope, risk and rotation
+### No CI deploy token any more: owner clean-up
 
-**Current state.** `CLOUDFLARE_API_TOKEN` is a **repository-level** Actions secret holding a Cloudflare API token created from the "Edit Cloudflare Workers" template (6 Oct 2026). `CLOUDFLARE_ACCOUNT_ID` is a repository variable. The token's exact effective policy has not been re-inspected since; the template also grants account-level permissions this site does not need (Workers KV, R2 and others — review Codex-4).
+Until 7 Oct 2026 `deploy.yml` deployed with `CLOUDFLARE_API_TOKEN`, a repository-level Actions secret (an "Edit Cloudflare Workers" template token, readable by a workflow on any branch — review C3-F1). Workers Builds removes the need for it. Nothing in the repo reads `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` or `DEPLOY_ENABLED` any more (`test/workflows.test.mjs` fails if a workflow references any secret). Owner steps, in this order:
 
-**Risk (review C3-F1, owner decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)).** On a private repository on GitHub Free, branch protection, rulesets and environment protection are unavailable, so a repository-level secret is readable by a workflow on **any branch** pushed to this repo — the `github.ref` guard protects only `deploy.yml` itself. Anyone (or any tool) able to push a branch could add a workflow that prints or uses the token. With account-wide Workers permissions, a leaked token could deploy any Worker on the account — including a site that serves a forged `/.well-known/did.json`, which backs `did:web:patrickjv.com` sign-in; the repo's DID guards cannot constrain direct API deployments. Options, for the owner:
+1. Cloudflare → My Profile → API Tokens → the GitHub Actions Workers token (created 6 Oct 2026) → **Delete**. (Do not delete the Workers Builds token Cloudflare manages for the build.)
+2. `gh secret delete CLOUDFLARE_API_TOKEN -R PVieira04/patrickjv-eng-site`
+3. `gh variable delete DEPLOY_ENABLED -R PVieira04/patrickjv-eng-site` (currently `false`)
+4. `gh variable delete CLOUDFLARE_ACCOUNT_ID -R PVieira04/patrickjv-eng-site` (only `deploy.yml` used it; the wrangler configs do not need it)
 
-1. **Cloudflare Workers Builds** — Cloudflare builds and deploys from the GitHub repo itself, so **no Cloudflare token lives in GitHub** at all (the GitHub App needs read access to the repo). Strongest; the post-deploy smoke would move to the monitor.
-2. **Manual deploys only** — delete the secret and set `DEPLOY_ENABLED=false`; deploy with `npm run deploy` (Wrangler OAuth on the dev machine).
-3. **Least-privilege token at the next rotation** (the minimum): only the permissions below, with an expiry. This shrinks what a leak can do but does not remove the any-branch exposure.
-
-**What breaks if the secret is revoked or expires:** CI deploys only — the deploy step fails. **Production keeps running unchanged**, and the monitor keeps working (it uses no Cloudflare credential). Manual deploys still work with Wrangler OAuth.
-
-**Rotation procedure** (new token first, old one revoked last, so there is never a gap):
-
-1. Cloudflare → My Profile → API Tokens → **Create Custom Token** (not the template), with only:
-   - Account → **Workers Scripts: Edit** (this account only);
-   - Zone → **Workers Routes: Edit**, zone resources: **`patrickjv.com` only** (the MCP Worker's `patrickjv.com/mcp*` route is the only route in the three configs; the Custom Domains are attached outside them, so a deploy does not touch them, and `pvieira.co.uk` needs no permission);
-   - **no** Workers KV, R2, Pages, D1, Queues or account settings permissions; client IP filtering optional;
-   - **TTL**: an end date (e.g. 90 days), noted in [Renewals](#renewals-and-guards).
-2. From a **separate terminal** (never paste a token into a chat or a command line): `gh secret set CLOUDFLARE_API_TOKEN -R PVieira04/patrickjv-eng-site` and paste when prompted.
-3. `gh workflow run deploy.yml --ref main -R PVieira04/patrickjv-eng-site`, then `gh run watch`.
-4. Confirm the run is **green** — the deploy step ran all three `wrangler deploy` commands and the smoke passed. If Wrangler reports a missing permission, add exactly that permission to the new token and repeat step 3.
-5. **Revoke the old token** in Cloudflare (My Profile → API Tokens → the old token → Delete). Only now.
+Production does not depend on any of these: deleting them changes nothing live.
 
 ## Monitoring
 
-`.github/workflows/monitor.yml` runs **every 6 hours** at 00:17, 06:17, 12:17 and 18:17 UTC (and on demand), in three steps:
+`.github/workflows/monitor.yml` has two jobs.
 
-1. **Find the last deployed commit**: the newest successful `deploy.yml` run on `main` whose "Deploy site, redirect and MCP Workers" step actually ran (a superseded or disabled run succeeds without deploying). Needs `actions: read`.
+**`smoke`** — every **6 hours** at 00:17, 06:17, 12:17 and 18:17 UTC, and on demand:
+
+1. **Find the last deployed commit**: the newest of `main`'s last 30 commits whose `Workers Builds: patrickjv-eng-site` check run (app `cloudflare-workers-and-pages`) concluded `success`. Commits that only touch files outside the site's watch paths have no site build and are skipped. Errors if none is found.
 2. **Smoke** that commit — checked out at that SHA, so "deployed = repo" compares like with like (review Codex-6): `node smoke.mjs https://patrickjv.com --aliases --mcp --registry --strict-https --dns` — **30 checks**, each **PASS**, **WARN** or **FAIL**, written to the run's step summary.
-3. **main is deployed**: if `main`'s head differs from the deployed commit in any file `deploy.yml` does not ignore, and no deploy run is queued, the step FAILs ("the deploy failed, was cancelled or is disabled"). Docs-only differences pass.
+3. **main is deployed**: if `main`'s head differs from the deployed commit in any file outside the site's watch-path excludes (`docs/*`, `README.md`, `designs/*` — keep equal to the dashboard), it reads the head's `Workers Builds: patrickjv-eng-site` check run: queued or in progress → notice; concluded `failure`, `cancelled` or anything but success → **error "Workers Builds failed"**; no check run at all → **error** "main is not deployed".
+
+**`build-result`** — on every completed check run whose app is `cloudflare-workers-and-pages` and whose name starts with `Workers Builds: ` (other check runs start the workflow but skip the job):
+
+- **Build-failure alert**: any conclusion other than `success` fails the run with an error naming the Worker ("Workers Builds failed: patrickjv-mcp"). This is the deploy-failure notification.
+- **Post-deploy smoke**, site build only (one smoke per push, not three): skipped if a newer `main` commit has its own site build; otherwise checks out the check run's `head_sha` and runs `node smoke.mjs https://patrickjv.com --aliases --mcp --strict-https` up to 5 times, waiting 20, 40, 60, 80 s between attempts (edge propagation). The result goes to the step summary.
 
 The run fails on any FAIL. Every check requires its exact success status, and media types are compared exactly (`type/subtype`, parameters ignored). No redirects are followed, each request has a 10 s deadline, and one failing check never stops the rest. `test/smoke.test.mjs` runs the script against a local mock of the site, correct by default and broken one way at a time, and unit-tests the verdict helpers.
 
@@ -76,7 +81,7 @@ The run fails on any FAIL. Every check requires its exact success status, and me
 
 On 7 Oct, after the round-2 deploy and the zone hardening, the then 24-check run with `--strict-https` gave 24 passed. On 7 Oct after the round-3 fixes (not yet deployed), the 30-check run gave 23 passed, 3 warned (`pvieira.co.uk` NEL, DNSSEC DS pending, Registry timeout), 4 failed — all four expected until the deploy: `/` and `/sitemap.xml` bytes and the `/` CSP (the page script and `dateModified` changed) and `patrickjv/health` (method not yet deployed). The Registry check allows 30 s and reports an unreachable Registry as WARN (it is a third-party service; 12 s responses and timeouts have been observed), while a wrong or missing listing FAILs.
 
-A failed scheduled run notifies according to GitHub's Actions notification settings — GitHub sends scheduled-run notifications to the user who last modified the cron schedule, and only if that user has Actions notifications on. Check those settings rather than assuming an email will arrive. The monitor does **not** check email delivery: `patrickjv/health` shows configuration only; delivery failures appear as redacted `mcp_failure` events (`email`, `quota`, `config`) in Workers Logs, so an occasional manual test introduction is still worthwhile.
+A failed scheduled run notifies according to GitHub's Actions notification settings — GitHub sends scheduled-run notifications to the user who last modified the cron schedule, and only if that user has Actions notifications on. Check those settings rather than assuming an email will arrive. Runs started by a `check_run` event (the build-failure alert) are triggered by Cloudflare's app, not by you or a schedule: **whether GitHub notifies you of a failed `build-result` run is unverified** — check after the first real failure, and watch the Actions tab (or Cloudflare's own build notifications) until then. The monitor does **not** check email delivery: `patrickjv/health` shows configuration only; delivery failures appear as redacted `mcp_failure` events (`email`, `quota`, `config`) in Workers Logs, so an occasional manual test introduction is still worthwhile.
 
 <a id="rollback"></a>
 ## Rollback
@@ -90,7 +95,7 @@ npx wrangler rollback <version-id> -c redirect/wrangler.jsonc  # redirect Worker
 npx wrangler rollback <version-id> -c mcp/wrangler.jsonc       # MCP Worker
 ```
 
-Each Worker is rolled back separately — record all three versions before a deploy. Wrangler's OAuth login can do this; no dashboard needed.
+Each Worker is rolled back separately — record all three versions before a deploy. Wrangler's OAuth login can do this; the dashboard (Worker → Deployments) can too. A rollback lasts until the next Workers Builds build of that Worker: a later push inside its watch paths redeploys `main`.
 
 **`patrickjv.com` to the old `patrickjv-did` Worker** (static assets: `did.json` only — still deployed):
 
@@ -123,8 +128,8 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 | MCP Registry signing key | `~/.config/mcp-registry/key.pem` (600) | Back it up (password manager). Public half: `public/.well-known/mcp-registry-auth` (keep deployed). **If lost:** generate a new ed25519 key, replace the public key in `mcp-registry-auth`, deploy, then `mcp-publisher login http` with the new key — ownership is proven by the domain, not the old key. |
 | Google Search Console proof | DNS TXT on `patrickjv.com` | Keep it |
 | `QUOTA_SALT` | Worker secret on `patrickjv-mcp` (set 6 Oct 2026 with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc`) | Keys the HMAC of the quota counters' IP and sender keys. **Required**: if it is missing or shorter than 32 characters, `request_intro` is refused (tool error, logged as subsystem `config`); the read tools carry on. Not stored anywhere else and not needed elsewhere; if it is changed, the day's per-IP and per-sender counts restart (the global count does not). |
-| Cloudflare API token for CI | GitHub repository secret `CLOUDFLARE_API_TOKEN` (created 6 Oct 2026 from the "Edit Cloudflare Workers" template; deploy-on-push enabled) | Readable by a workflow on any branch; broader than needed. Rotate to least privilege — see [the CI deploy token](#token-rotation) and decision D4 |
-| GitHub Actions `GITHUB_TOKEN` | Per run, automatic | `contents: read` (deploy, test); `contents: read` + `actions: read` (monitor, to read deploy history) |
+| Workers Builds build token | Managed by Cloudflare (Workers Builds, since 7 Oct 2026) | Not in GitHub. The old GitHub Actions token `CLOUDFLARE_API_TOKEN` is unused — delete it ([owner clean-up](#token-rotation)) |
+| GitHub Actions `GITHUB_TOKEN` | Per run, automatic | `contents: read` (test); `contents: read` + `checks: read` (monitor, to read Workers Builds check runs) |
 | GitHub | `gh` CLI (has `user` scope, used to set the profile website/bio) | Remove with `gh auth refresh -h github.com -r user` if unwanted |
 
 Not stored anywhere: the Immich API key used to fetch the portrait (deleted locally and revoked in Immich).
@@ -148,7 +153,6 @@ mcp-publisher publish
 | Domain `patrickjv.com` | 2027-04-03 | Check auto-renew and payment method in Cloudflare Registrar |
 | Domain `pvieira.co.uk` | 2027-06-14 | As above |
 | `did.json` | Never edit | Build + 6-hourly monitor |
-| CI deploy token | At its TTL (set one at the next rotation) | Rotate with the [procedure](#token-rotation) before expiry; an expired token breaks CI deploys only |
 | Google TXT record | Permanent | — |
 
 ## Follow-ups
@@ -176,7 +180,7 @@ From the [review](reviews/2026-10-06-merged-review.md) (rounds 1–3). These nee
 | C3-F6 | `tenlines.patrickjv.com` is a CNAME to `pvieira04.github.io` (GitHub Pages) whose custom domain is **not verified** in GitHub — if the Pages site is removed but the CNAME stays, someone else's Pages site could claim the name | GitHub → **Settings → Pages → Verified domains** → add `patrickjv.com` (GitHub gives a `_github-pages-challenge-…` TXT record to add). If the Pages site is retired, **delete the `tenlines` CNAME** first |
 | R6 | Tighten the "Markdown for agents" rule so `q=0` or an HTML-first `Accept` does not get Markdown | — |
 | R7 | The redirect Worker is still metered with no rate limit — an alias flood could use up the account's daily Worker quota (which the MCP Worker shares). Replace it with free Single Redirect rules, or widen the WAF rule to the alias hosts | — |
-| C3-F1 / Codex-4 / D4 | The CI deploy token is account-wide and readable from any branch's workflow | Decide: Workers Builds, manual deploys, or least-privilege token — and at minimum rotate to least privilege ([procedure](#token-rotation)) |
+| C3-F1 / Codex-4 / D4 | **Decided 7 Oct: Workers Builds** deploys; no deploy credential is used from GitHub. The old token, secret and variables still exist | Delete them ([owner clean-up](#token-rotation)) |
 | C3-F2 / C3-F12 | The edge WAF rule (6 / 10 s per IP) is stricter than the Worker's limits and is shared by everyone behind one egress address | Decide whether to raise the threshold (e.g. 20 / 10 s) so the Worker's limits bind ([trade-offs](04-mcp-and-webmcp.md#which-limit-binds)) |
 
 ## Useful commands

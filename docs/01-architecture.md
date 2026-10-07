@@ -29,6 +29,8 @@ browser / crawler ────► │ URL Rewrite rule "Markdown for agents"    
 | `patrickjv-redirect` | Custom Domains `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` | Every request → the fixed origin `https://patrickjv.com`, keeping path and query: `301` for GET/HEAD, `308` for any other method. No host list, so no trailing-dot bypass and no open redirect. Every response carries security headers. `workers_dev` and `preview_urls` are off. It is a metered Worker with no edge rate limit (review R7, still open). | `redirect/wrangler.jsonc` |
 | `patrickjv-mcp` | **Route** `patrickjv.com/mcp*` | Remote MCP server (see [04](04-mcp-and-webmcp.md)). A zone route takes precedence over the Custom Domain for matching paths, so only `/mcp*` ever invokes code. Workers Logs keep only the handler's own redacted events (invocation logs off, query strings redacted); `workers_dev` and `preview_urls` are off. One secret, `QUOTA_SALT` (required for `request_intro`). | `mcp/wrangler.jsonc` |
 
+All three are deployed by **Cloudflare Workers Builds** from this repo's `main` branch (build `npm ci && npm test`, then `wrangler deploy` with the Worker's config), each rebuilt only when a push touches its watch paths; GitHub holds no deploy credential (see [06](06-operations.md#deploying)).
+
 A fourth Worker, **`patrickjv-did`**, predates this site: it served only `/.well-known/did.json`. It is **kept deployed as the rollback** until the new site is proven (see [06](06-operations.md#rollback)).
 
 ### Why assets-only for the site

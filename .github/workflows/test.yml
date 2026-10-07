@@ -1,4 +1,4 @@
-# Build drift check + unit tests on every push and pull request. Also called by deploy.yml.
+# Build drift check + unit tests on every push and pull request (Workers Builds runs the same `npm test` before deploying).
 # No secrets; install scripts are skipped (nothing in the test path needs them).
 name: test
 on:

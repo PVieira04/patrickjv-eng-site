@@ -8,8 +8,8 @@ Source for **https://patrickjv.com** — Patrick Vieira's professional site (pla
 | **Hosting** | Cloudflare Workers, Free plan — static assets (unmetered) + two small Workers |
 | **Agents** | MCP server at `https://patrickjv.com/mcp` · listed on the MCP Registry as `com.patrickjv/profile` · WebMCP tools on the page |
 | **Quality** | Lighthouse 100 / 100 / 100 / 100 (mobile and desktop) and axe 0 violations — re-run 7 Oct after all review fixes ([docs/05](docs/05-quality-and-audits.md)) · strict per-path CSP, no third-party requests |
-| **Monitoring** | GitHub Actions smoke check every 6 hours against the last deployed commit (30 checks incl. `request_intro` readiness and DNS, each PASS / WARN / FAIL), plus a "main is deployed" check; a failed run notifies according to GitHub's notification settings |
-| **Deploys** | On push to `main` (GitHub Actions: tests, then `wrangler deploy`, then smoke); superseded commits are never deployed |
+| **Monitoring** | GitHub Actions smoke check every 6 hours against the last deployed commit (30 checks incl. `request_intro` readiness and DNS, each PASS / WARN / FAIL), plus a "main is deployed" check; a post-deploy smoke and a build-failure alert on every Workers Builds result; a failed run notifies according to GitHub's notification settings |
+| **Deploys** | Cloudflare Workers Builds on push to `main` (each Worker: `npm ci && npm test`, then `wrangler deploy`); no deploy credential in GitHub ([docs/06](docs/06-operations.md#deploying)) |
 
 The whole site was designed, built and launched on 6 October 2026, then adversarially reviewed and hardened the same evening. [`docs/`](docs/) records everything: what was built, why, how it was verified, and how to run it.
 
@@ -19,8 +19,8 @@ Requires Node 24 or later (`engines: >=24`). `npm ci` once (Wrangler is a pinned
 
 ```bash
 npm run build    # regenerate every machine-readable copy from content.json
-npm test         # build drift check + 106 unit tests (build, smoke, workflows, WebMCP, MCP Worker, redirect Worker)
-npm run deploy   # manual fallback: npm test, then deploy all three Workers (CI deploys on push to main)
+npm test         # build drift check + 107 unit tests (build, smoke, workflows, WebMCP, MCP Worker, redirect Worker)
+npm run deploy   # manual fallback: npm test, then deploy all three Workers (Workers Builds deploys on push to main)
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```
 
@@ -30,7 +30,7 @@ npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https
 
 1. Edit `content.json` **and** the matching visible text in `public/index.html` (the page body is hand-written; it is the design).
 2. `npm run build` — regenerates the head metadata (title, description, Open Graph, Twitter), JSON-LD, WebMCP data, `index.md`, `llms.txt`, `sitemap.xml`, `robots.txt`, `_headers` (with the CSP hashes), the 404 page's CSP `<meta>` and `build-state.json`. It **fails before writing anything** if any `content.json` item is not the whole visible text of its element in its own section, if a contact link points anywhere else, if an employer denylist term appears, if `did.json` changed, or if `security.txt` expires within 30 days (or more than a year ahead).
-3. Commit and push to `main`: `deploy.yml` runs the tests, deploys the three Workers and smokes the live site (see [06](docs/06-operations.md#ci)). Manual fallback: `npm run deploy`, then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https`.
+3. Commit and push to `main`: Cloudflare Workers Builds runs the tests and deploys each Worker whose watch paths changed; `monitor.yml` then smokes the live site (see [06](docs/06-operations.md#deploying)). Manual fallback: `npm run deploy`, then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https`.
 
 ## Repository layout
 
@@ -53,7 +53,7 @@ test/                     Build, smoke (against a local mock site), workflow and
 lib/smoke-lib.mjs         Pure helpers for smoke.mjs (media type, CSP count, MCP body, redirect, readiness, NEL and DNS verdicts)
 smoke.mjs                 Live checks (did.json, pages, headers/CSP, redirects, NEL, MCP lifecycle + readiness, Registry, DNS)
 designs/                  Archived design round (PROVENANCE.md), favicon candidates, share-card generator
-.github/workflows/        test.yml (every push/PR), deploy.yml (deploy on push to main), monitor.yml (every 6 h); dependabot.yml (weekly)
+.github/workflows/        test.yml (every push/PR), monitor.yml (every 6 h + on Workers Builds results); dependabot.yml (weekly)
 docs/                     Full documentation (start below)
 ```
 

@@ -1,44 +1,51 @@
-# Checks the live site every 6 hours (and on demand). A failed scheduled run notifies according to
-# the owner's GitHub Actions notification settings. Read-only: no secrets (only the run's own
-# read-only GITHUB_TOKEN, to read deploy history). Never calls request_intro.
+# Watches production. Deploys are done by Cloudflare Workers Builds (docs/06), which reports each
+# build back to GitHub as a check run named "Workers Builds: <worker>" from the app
+# cloudflare-workers-and-pages. Read-only: no secrets (only the run's own read-only GITHUB_TOKEN, to
+# read commits and check runs). Never calls request_intro.
 #
-# Like with like: production is compared with the commit the last successful CI deploy actually
-# deployed (not whatever main is now), and the run shares deploy.yml's concurrency group, so it never
-# runs while a deploy is in progress. Whether main itself is deployed is a separate check.
+# - Every 6 hours (and on demand): smoke the live site against the last deployed commit (like with
+#   like: the newest main commit whose site build succeeded, not whatever main is now), then check
+#   that main itself is deployed.
+# - On every completed Workers Builds check run: a failed build is an error naming the Worker (the
+#   deploy-failure alert); a successful SITE build gets a post-deploy smoke. Only the site build
+#   smokes, so one push does not run the smoke three times.
+# A failed run notifies according to the owner's GitHub Actions notification settings.
 name: monitor
 on:
   schedule:
     - cron: "17 */6 * * *" # 00:17, 06:17, 12:17, 18:17 UTC
   workflow_dispatch:
+  # Runs from the default branch's copy of this file, whatever commit the check run is for.
+  check_run:
+    types: [completed]
 permissions:
   contents: read
-  actions: read
-# Queue behind a running deploy; never cancel one. (GitHub keeps one pending run per group: a newer
-# arrival replaces a pending one. A pending deploy displaced this way is caught by the
-# "main is deployed" step below.)
-concurrency:
-  group: deploy
-  cancel-in-progress: false
+  checks: read
 jobs:
   smoke:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Queue, never cancel. (GitHub keeps one pending run per group: a newer arrival replaces it.)
+    concurrency:
+      group: monitor
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      # The newest successful deploy.yml run on main whose "Deploy site, redirect and MCP Workers"
-      # step actually ran (a superseded or DEPLOY_ENABLED-off run succeeds without deploying).
+      # The newest of main's last 30 commits whose "Workers Builds: patrickjv-eng-site" check run
+      # (from cloudflare-workers-and-pages) succeeded. Commits that touch only files outside the
+      # site's watch paths have no site build and are skipped.
       - name: Find the last deployed commit
         id: deployed
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha=""
-          while read -r id head; do
-            step=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" \
-              --jq '[.jobs[] | select(.name == "deploy") | .steps[] | select(.name == "Deploy site, redirect and MCP Workers") | .conclusion][0] // ""')
-            if [ "$step" = success ]; then sha=$head; break; fi
-          done < <(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=20" \
-            --jq '.workflow_runs[] | "\(.id) \(.head_sha)"')
-          if [ -z "$sha" ]; then echo "::error::no successful CI deploy among the last 20 deploy runs"; exit 1; fi
+          for c in $(gh api "repos/$GITHUB_REPOSITORY/commits?sha=main&per_page=30" --jq '.[].sha'); do
+            ok=$(gh api "repos/$GITHUB_REPOSITORY/commits/$c/check-runs?check_name=Workers%20Builds%3A%20patrickjv-eng-site" \
+              --jq '[.check_runs[] | select(.app.slug == "cloudflare-workers-and-pages" and .name == "Workers Builds: patrickjv-eng-site" and .conclusion == "success")] | length')
+            if [ "$ok" -gt 0 ]; then sha=$c; break; fi
+          done
+          if [ -z "$sha" ]; then echo "::error::no successful Workers Builds site build among main's last 30 commits"; exit 1; fi
           echo "Last deployed commit: $sha"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,7 +72,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
       # Convergence: main's head should be deployed, unless it differs from the deployed commit only
-      # in files deploy.yml ignores (keep this list equal to its paths-ignore), or a deploy is queued.
+      # in files outside the site's watch paths, or its site build is still queued or running.
       - name: main is deployed
         if: always() && steps.deployed.outputs.sha != ''
         env:
@@ -76,15 +83,105 @@ jobs:
           if [ "$head" = "$DEPLOYED" ]; then echo "main ($head) is deployed"; exit 0; fi
           served=""
           while read -r f; do
+            # Must match the site Worker's build watch-path EXCLUDES in the Cloudflare dashboard
+            # (docs/06, "Deploying"). Change both together.
             case "$f" in
-              docs/*|README.md|designs/*.md) ;;
+              docs/*|README.md|designs/*) ;;
               *) served="$served $f" ;;
             esac
           done < <(gh api "repos/$GITHUB_REPOSITORY/compare/$DEPLOYED...$head" --jq '.files[].filename')
-          if [ -z "$served" ]; then echo "main ($head) differs from the deployed commit only in ignored files"; exit 0; fi
-          pending=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&per_page=20" \
-            --jq '[.workflow_runs[] | select(.status != "completed")] | length')
-          if [ "$pending" -gt 0 ]; then echo "::notice::main ($head) not yet deployed; $pending deploy run(s) queued"; exit 0; fi
-          echo "::error title=main is not deployed::main ($head) has served changes not in the last deployed commit ($DEPLOYED):$served — the deploy failed, was cancelled or is disabled"
-          echo "### main is NOT deployed: $head vs deployed $DEPLOYED" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$served" ]; then echo "main ($head) differs from the deployed commit only in files the site build ignores"; exit 0; fi
+          build=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs?check_name=Workers%20Builds%3A%20patrickjv-eng-site" \
+            --jq '([.check_runs[] | select(.app.slug == "cloudflare-workers-and-pages" and .name == "Workers Builds: patrickjv-eng-site")][0] // empty) | "\(.status) \(.conclusion)"')
+          case "$build" in
+            "")
+              echo "::error title=main is not deployed::main ($head) has served changes not in the last deployed commit ($DEPLOYED):$served — and no Workers Builds site check run on main's head"
+              echo "### main is NOT deployed: $head vs deployed $DEPLOYED (no site build)" >> "$GITHUB_STEP_SUMMARY"
+              exit 1 ;;
+            "completed success")
+              echo "::notice::main ($head) site build succeeded after the deployed commit was resolved" ;;
+            completed\ *)
+              echo "::error title=Workers Builds failed::main ($head) site build concluded '${build#completed }'; production is still $DEPLOYED. Served changes:$served"
+              echo "### Workers Builds failed for main $head (deployed: $DEPLOYED)" >> "$GITHUB_STEP_SUMMARY"
+              exit 1 ;;
+            *)
+              echo "::notice::main ($head) not yet deployed; its site build is ${build%% *} (queued or in progress)" ;;
+          esac
+
+  build-result:
+    if: >-
+      github.event_name == 'check_run' &&
+      github.event.check_run.app.slug == 'cloudflare-workers-and-pages' &&
+      startsWith(github.event.check_run.name, 'Workers Builds: ')
+    # One run per check run: keyed by commit AND Worker, so one Worker's pending run can never
+    # displace another's (GitHub keeps only one pending run per group).
+    concurrency:
+      group: monitor-build-${{ github.event.check_run.head_sha }}-${{ github.event.check_run.name }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # The deploy-failure alert: any Workers Builds check run that did not succeed fails this run.
+      - name: Workers Builds result
+        env:
+          NAME: ${{ github.event.check_run.name }}
+          CONCLUSION: ${{ github.event.check_run.conclusion }}
+          SHA: ${{ github.event.check_run.head_sha }}
+          DETAILS: ${{ github.event.check_run.details_url }}
+        run: |
+          worker=${NAME#Workers Builds: }
+          if [ "$CONCLUSION" != success ]; then
+            echo "::error title=Workers Builds failed: $worker::$worker build/deploy for $SHA concluded '$CONCLUSION' — that Worker was NOT updated. $DETAILS"
+            echo "### Workers Builds FAILED: $worker at $SHA ($CONCLUSION)" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "$worker deployed $SHA"
+      # Post-deploy smoke, site build only. Skipped if a newer main commit has its own site build
+      # (that build will smoke), so an out-of-order completion never compares against the wrong commit.
+      - name: Still the newest site build on main?
+        id: current
+        if: >-
+          github.event.check_run.name == 'Workers Builds: patrickjv-eng-site'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.check_run.head_sha }}
+        run: |
+          current=false
+          for c in $(gh api "repos/$GITHUB_REPOSITORY/commits?sha=main&per_page=30" --jq '.[].sha'); do
+            if [ "$c" = "$SHA" ]; then current=true; break; fi
+            n=$(gh api "repos/$GITHUB_REPOSITORY/commits/$c/check-runs?check_name=Workers%20Builds%3A%20patrickjv-eng-site" \
+              --jq '[.check_runs[] | select(.app.slug == "cloudflare-workers-and-pages" and .name == "Workers Builds: patrickjv-eng-site")] | length')
+            if [ "$n" -gt 0 ]; then echo "::notice::newer main commit $c has its own site build; skipping the smoke for $SHA"; break; fi
+          done
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.current.outputs.current == 'true'
+        with:
+          ref: ${{ github.event.check_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.current.outputs.current == 'true'
+        with:
+          node-version: 24
+      # The edge can serve the previous version for a minute or so: retry with growing back-off.
+      - name: Smoke the live site
+        if: steps.current.outputs.current == 'true'
+        shell: bash
+        env:
+          SHA: ${{ github.event.check_run.head_sha }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if node smoke.mjs https://patrickjv.com --aliases --mcp --strict-https > smoke.out 2>&1; then
+              cat smoke.out
+              { echo "### Post-deploy smoke against $SHA: passed (attempt $attempt)"; echo '```'; cat smoke.out; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            cat smoke.out
+            if [ "$attempt" -lt 5 ]; then
+              echo "::warning::smoke attempt $attempt failed; retrying in $((attempt * 20)) s"
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error title=Post-deploy smoke failed::live site does not match $SHA after 5 attempts"
+          { echo "### Post-deploy smoke against $SHA: FAILED"; echo '```'; cat smoke.out; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit 1
