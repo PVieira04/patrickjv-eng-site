@@ -28,7 +28,7 @@ The email arrives from "patrickjv.com intro" `<intro@patrickjv.com>` with subjec
 
 - `mcp/handler.js` — all protocol and safety logic, including the quota Durable Object's reservation (`reserveIntro`) and alarm (`pruneQuota`) logic, with no Cloudflare-only imports, so it is fully unit-tested in Node.
 - `mcp/index.js` — wires in `EmailMessage` (`cloudflare:email`) and the `IntroQuota` Durable Object, whose methods call `reserveIntro` / `pruneQuota`.
-- `mcp/handler.test.mjs` — 51 tests, run against the real reservation code with an in-memory storage. `redirect/index.test.mjs` — 7 tests.
+- `mcp/handler.test.mjs` — 51 tests, run against the real reservation code with an in-memory storage.
 
 ## Cost and abuse controls
 
@@ -57,7 +57,7 @@ For `request_intro` additionally:
 
 **Observability:** Workers Logs keep **only the handler's own console events**: `observability.logs.invocation_logs: false` (since round 3, review C3-F4/R40) turns off the per-request invocation logs, which would otherwise record each request's metadata (client IP, location, user agent); `redact_query_string: true` stays as a second line of defence. Verified against the installed Wrangler schema and with `npx wrangler deploy --dry-run -c mcp/wrangler.jsonc`. Every caught failure logs a redacted `{"event":"mcp_failure","subsystem":…}` event (e.g. `ratelimit`, `body_read`, `json_parse`, `quota`, `email`, `config`) and quota refusals log `intro_quota_rejected` with which cap — never message bodies, addresses or IPs.
 
-**Security headers** (`nosniff`, `Referrer-Policy: no-referrer`, HSTS, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`) are sent on **every** MCP response, including errors; the redirect Worker sends the same set.
+**Security headers** (`nosniff`, `Referrer-Policy: no-referrer`, HSTS, `X-Frame-Options: DENY`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`) are sent on **every** MCP response, including errors.
 
 <a id="which-limit-binds"></a>
 ### Which limit binds (accepted trade-offs, review C3-F2 / C3-F12)

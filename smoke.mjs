@@ -176,6 +176,16 @@ if (flags.has("--aliases")) {
       return FAIL(`present: ${v.present.join(", ")} — disable Network Error Logging on the ${host} zone`);
     });
   }
+  // The alias redirects are Single Redirect rules (R7), which add no headers of their own; HSTS on
+  // pvieira.co.uk comes from that zone's HSTS setting. (www.patrickjv.com relies on the apex's
+  // includeSubDomains.)
+  await check("pvieira.co.uk redirect: HSTS max-age >= 1 year, includeSubDomains", async () => {
+    const headers = aliasHeaders["pvieira.co.uk"];
+    if (!headers) return FAIL("no response to inspect (its request failed above)");
+    const hsts = headers.get("strict-transport-security") ?? "";
+    const maxAge = Number(/max-age=(\d+)/i.exec(hsts)?.[1] ?? 0);
+    return expect(maxAge >= 31536000 && /includesubdomains/i.test(hsts), hsts || "absent — turn on HSTS for the pvieira.co.uk zone");
+  });
 }
 
 // ---- MCP lifecycle (read-only) ----

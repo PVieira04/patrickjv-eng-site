@@ -2,23 +2,22 @@
 
 ## Deploying
 
-**Normal path: push to `main`. Cloudflare Workers Builds deploys** (since 7 Oct 2026, replacing the GitHub Actions `deploy.yml`; decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)). Each of the three Workers is connected to the GitHub repo `PVieira04/patrickjv-eng-site`, production branch `main`; Cloudflare clones the repo, runs the build command and then the deploy command with a **Cloudflare-managed build token**. **No Cloudflare credential is needed in GitHub** (the old Actions secret was deleted on 7 Oct — [owner clean-up](#no-ci-deploy-token-any-more-owner-clean-up)). Non-production (other-branch) builds are **off**. Node is pinned by `.node-version` (`24`).
+**Normal path: push to `main`. Cloudflare Workers Builds deploys** (since 7 Oct 2026, replacing the GitHub Actions `deploy.yml`; decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)). Each of the two Workers is connected to the GitHub repo `PVieira04/patrickjv-eng-site`, production branch `main`; Cloudflare clones the repo, runs the build command and then the deploy command with a **Cloudflare-managed build token**. **No Cloudflare credential is needed in GitHub** (the old Actions secret was deleted on 7 Oct — [owner clean-up](#no-ci-deploy-token-any-more-owner-clean-up)). Non-production (other-branch) builds are **off**. Node is pinned by `.node-version` (`24`).
 
 | Worker | Build command | Deploy command | Build watch paths |
 |---|---|---|---|
 | `patrickjv-eng-site` | `npm ci && npm test` | `npx wrangler deploy` | include `*`; exclude `docs/*`, `README.md`, `designs/*` |
-| `patrickjv-redirect` | `npm ci && npm test` | `npx wrangler deploy -c redirect/wrangler.jsonc` | include `redirect/*` |
 | `patrickjv-mcp` | `npm ci && npm test` | `npx wrangler deploy -c mcp/wrangler.jsonc` | include `mcp/*`, `lib/*`, `content.json` |
 
 The tests (build drift check + unit tests) run inside every build, before its deploy command: a red `npm test` deploys nothing. The configuration lives in the Cloudflare dashboard (Worker → Settings → Build), not in the repo; the wrangler configs only carry a header comment saying so.
 
-**Watch-path caveat.** A Worker rebuilds only when a push changes a file inside its include list (and outside its excludes). Editing `content.json` rebuilds the site and the MCP Worker, **not** the redirect Worker; editing only `docs/` rebuilds nothing. A change to shared code outside a Worker's include list (for example `package.json` or `package-lock.json` for the MCP Worker) does **not** redeploy it until a later push touches its paths — redeploy by hand if it must ship now. The monitor's "main is deployed" ignore list must stay equal to the site's excludes (`test/workflows.test.mjs` checks this table against the workflow).
+**Watch-path caveat.** A Worker rebuilds only when a push changes a file inside its include list (and outside its excludes). Editing `content.json` rebuilds the site and the MCP Worker; editing only `docs/` rebuilds nothing. A change to shared code outside a Worker's include list (for example `package.json` or `package-lock.json` for the MCP Worker) does **not** redeploy it until a later push touches its paths — redeploy by hand if it must ship now. The monitor's "main is deployed" ignore list must stay equal to the site's excludes (`test/workflows.test.mjs` checks this table against the workflow).
 
-**Seeing builds.** Cloudflare dashboard → Workers & Pages → the Worker → **Deployments** (versions) and **Builds** (logs per commit). In GitHub, each build reports a check run on its commit, named exactly `Workers Builds: patrickjv-eng-site`, `Workers Builds: patrickjv-redirect` and `Workers Builds: patrickjv-mcp` (app `cloudflare-workers-and-pages`) — first seen on `bbf5caa`, all three successful. Before a risky change, record the current version of each Worker (`npx wrangler deployments list`, with `-c redirect/wrangler.jsonc` and `-c mcp/wrangler.jsonc` for the others) so a rollback target is known.
+**Seeing builds.** Cloudflare dashboard → Workers & Pages → the Worker → **Deployments** (versions) and **Builds** (logs per commit). In GitHub, each build reports a check run on its commit, named exactly `Workers Builds: patrickjv-eng-site` and `Workers Builds: patrickjv-mcp` (app `cloudflare-workers-and-pages`) — first seen on `bbf5caa`. (A third, `patrickjv-redirect`, existed until the redirect Worker was deleted on 7 Oct.) Before a risky change, record the current version of each Worker (`npx wrangler deployments list`, with `-c mcp/wrangler.jsonc` for the MCP Worker) so a rollback target is known.
 
 **Rollback.** `npx wrangler rollback <version-id>` per Worker, or the dashboard's Deployments view ([Rollback](#rollback)). A rollback holds only until the next build of that Worker: a later push inside its watch paths redeploys `main`, so fix or revert on `main` too.
 
-**Manual fallback** (Workers Builds unavailable): `npm ci`, then `npm run deploy` — runs `npm test`, then `wrangler deploy` for the site, the redirect Worker and the MCP Worker, using Wrangler's OAuth login. Then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https` — and check response headers on the live site, not just under `wrangler dev` (see [Incidents](#incidents)). Deploy only `main`'s head by hand. A manual deploy produces no check run, so the monitor keeps comparing production with the last commit whose **Workers Builds** site build succeeded and will FAIL "deployed = repo" if the manual deploy shipped a different commit, until the next successful site build (retrying the latest build in the dashboard should record it — not yet tried).
+**Manual fallback** (Workers Builds unavailable): `npm ci`, then `npm run deploy` — runs `npm test`, then `wrangler deploy` for the site and the MCP Worker, using Wrangler's OAuth login. Then `npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https` — and check response headers on the live site, not just under `wrangler dev` (see [Incidents](#incidents)). Deploy only `main`'s head by hand. A manual deploy produces no check run, so the monitor keeps comparing production with the last commit whose **Workers Builds** site build succeeded and will FAIL "deployed = repo" if the manual deploy shipped a different commit, until the next successful site build (retrying the latest build in the dashboard should record it — not yet tried).
 
 Right after a deploy, Cloudflare can briefly serve the previous version from some locations (a minute or so); re-check before assuming a regression.
 
@@ -91,7 +90,6 @@ A failed scheduled run notifies according to GitHub's Actions notification setti
 ```bash
 npx wrangler deployments list                                  # find the previous version id
 npx wrangler rollback <version-id> -m "reason"                 # site Worker
-npx wrangler rollback <version-id> -c redirect/wrangler.jsonc  # redirect Worker
 npx wrangler rollback <version-id> -c mcp/wrangler.jsonc       # MCP Worker
 ```
 
@@ -177,8 +175,6 @@ From the [review](reviews/2026-10-06-merged-review.md) (rounds 1–3). These nee
 | R3 | `patrickjv.com` DMARC is `p=none; rua=mailto:hello@patrickjv.com; fo=1` (monitoring) | After ~2 weeks of clean aggregate reports, `p=quarantine`, then `p=reject`. `fo=1` does nothing without a `ruf` address (C3-F13) — drop it at the same edit, or leave it as harmless |
 | Codex-3 / C3-F13 | `marineweather.patrickjv.com` has its **own** DMARC `v=DMARC1; p=none;` with **no `rua`**: it overrides the apex policy and reports nowhere | Add `rua=mailto:hello@patrickjv.com`; check the actual From, DKIM (`resend._domainkey`, a **1024-bit** key — regenerate at 2048 if Resend allows) and MAIL FROM (`send.marineweather`, Amazon SES) alignment in the reports; then tighten its own policy |
 | R4 / C3-F7 | DNSSEC is enabled on `patrickjv.com`, but the **DS record is not published** at the registrar (RDAP `delegationSigned: false`), so there is no protection yet | Cloudflare Registrar should publish it automatically; if `smoke --dns` still WARNs after a few days, chase it (Cloudflare dashboard → DNS → Settings → DNSSEC, or Registrar support) |
-| R6 | Tighten the "Markdown for agents" rule so `q=0` or an HTML-first `Accept` does not get Markdown | — |
-| R7 | The redirect Worker is still metered with no rate limit — an alias flood could use up the account's daily Worker quota (which the MCP Worker shares). Replace it with free Single Redirect rules, or widen the WAF rule to the alias hosts | — |
 
 ## Useful commands
 

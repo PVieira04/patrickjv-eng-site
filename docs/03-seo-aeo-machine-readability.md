@@ -42,7 +42,7 @@ A visible **Quick answers** section (section 07) with five Q&As written to be qu
 |---|---|
 | `llms.txt` | `/llms.txt` — summary, disambiguation, work, side projects, background, Quick answers, links, privacy note, and a "Machine-readable" section listing `index.md`, the sitemap and the MCP server |
 | Markdown twin | `/index.md`, linked by `<link rel="alternate" type="text/markdown">` and from `llms.txt` |
-| Markdown negotiation | `GET /` with `Accept: text/markdown` → `text/markdown; charset=utf-8` (Cloudflare URL Rewrite rule, no code). Browsers still get HTML. `/` and `/index.md` send `Vary: Accept` so caches keep the two apart. The rule matches any `Accept` containing `text/markdown`, even with `q=0` (review R6, open). |
+| Markdown negotiation | `GET /` with `Accept: text/markdown` → `text/markdown; charset=utf-8` (Cloudflare URL Rewrite rule, no code). Browsers still get HTML. `/` and `/index.md` send `Vary: Accept` so caches keep the two apart. The rule matches only an `Accept` that **starts with** `text/markdown` (7 Oct, review R6), so `text/html, text/markdown;q=0.1` and `text/html, text/markdown;q=0` get HTML. |
 | WebMCP | Five tools on the page (see [04](04-mcp-and-webmcp.md#webmcp)) |
 | Remote MCP | `/mcp`, listed on the MCP Registry |
 

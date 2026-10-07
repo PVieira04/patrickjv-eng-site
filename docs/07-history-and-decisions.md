@@ -42,6 +42,7 @@ Times are London time (BST, UTC+1), as recorded in the commits.
 | 00:33 (7 Oct) | `06a1af7` | `patrickjv.com` zone hardening (Always Use HTTPS, TLS 1.2, CAA, DNSSEC enabled, NEL off, SPF `-all`, DMARC monitoring); **deploy-on-push enabled** — this push was the first CI deploy. |
 | 01:03 (7 Oct) | `1673080`, `ac61e8e` | Round-3 reviews (Codex and Claude): no Critical or High; findings mostly between components and outside the repo — see [§8 of the merged review](reviews/2026-10-06-merged-review.md#8-round-3-claude--codex). |
 | 7 Oct | `25b16e8`, `bbf5caa` | **Deploys switched to Cloudflare Workers Builds** (decision D4): all three Workers connected to the repo, `.node-version` 24; `bbf5caa` was the first build — three `Workers Builds: …` check runs green, the GitHub deploy job skipped (`DEPLOY_ENABLED=false`), live smoke 28 passed, 2 warned, 0 failed. Then `deploy.yml` deleted and the monitor moved onto Workers Builds' check runs (post-deploy smoke, build-failure alert). |
+| 7 Oct | `54f2ace`, this commit | Alias zone `pvieira.co.uk` hardened (NEL off, TLS 1.2, Always Use HTTPS, CAA, HSTS); `patrickjv.com` verified for GitHub Pages. **Redirect Worker replaced by Single Redirect rules** (R7) and `patrickjv-redirect` deleted; Markdown rule now needs `Accept` to start with `text/markdown` (R6). |
 
 ## The design competition
 
@@ -64,7 +65,7 @@ Working independently, Codex chose directions close to Claude's (editorial, syst
 |---|---|
 | Plain static HTML, no framework | The chosen design was a single complete file; a framework would add a build step and nothing else |
 | Assets-only site Worker | Static assets are unmetered; `did.json` cannot be knocked out by quota |
-| Separate redirect Worker, fixed destination | No host list → no trailing-dot bypass, no open redirect |
+| Alias redirects as Single Redirect rules, fixed destination (redirect Worker until 7 Oct) | Unmetered, so an alias flood cannot use up the Worker quota (R7); the literal destination means no open redirect |
 | Custom Domains, not DNS edits | Wrangler can attach them (and creates records); its OAuth cannot edit DNS |
 | Employer-agnostic copy | A professional page about skills and work, not an employer |
 | Allow all AI crawlers | Public professional profile; answer bots matter most and training helps disambiguation long-term |

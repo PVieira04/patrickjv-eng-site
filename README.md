@@ -19,8 +19,8 @@ Requires Node 24 or later (`engines: >=24`). `npm ci` once (Wrangler is a pinned
 
 ```bash
 npm run build    # regenerate every machine-readable copy from content.json
-npm test         # build drift check + 107 unit tests (build, smoke, workflows, WebMCP, MCP Worker, redirect Worker)
-npm run deploy   # manual fallback: npm test, then deploy all three Workers (Workers Builds deploys on push to main)
+npm test         # build drift check + 100 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
+npm run deploy   # manual fallback: npm test, then deploy both Workers (Workers Builds deploys on push to main)
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```
 
@@ -46,7 +46,6 @@ public/                   Static site (served by the patrickjv-eng-site Worker, 
   _headers                Security headers, per-path CSP, content types, caching (generated)
   .well-known/            did.json (DID document — never edit), security.txt, mcp-registry-auth
   fonts/                  Self-hosted IBM Plex (OFL)
-redirect/                 patrickjv-redirect Worker: alias domains → 301 (308 for non-GET) to patrickjv.com
 mcp/                      patrickjv-mcp Worker: remote MCP server on the route patrickjv.com/mcp*
   server.json             MCP Registry entry (com.patrickjv/profile); also the server's version
 test/                     Build, smoke (against a local mock site), workflow and WebMCP (page script in a VM) tests

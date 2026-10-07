@@ -7,7 +7,7 @@ Everything runs on one **personal Cloudflare account** (Free plan) with two zone
 ```
                         ┌──────────────────────────── Cloudflare edge ───────────────────────────────┐
 browser / crawler ────► │ URL Rewrite rule "Markdown for agents"                                      │
-                        │   path = "/" and Accept contains text/markdown → rewrite to /index.md       │
+                        │   path = "/" and Accept starts with text/markdown → rewrite to /index.md    │
                         │ WAF rate-limiting rule "MCP flood guard"                                    │
                         │   path starts with /mcp: 6 requests / 10 s per IP → block 10 s (error 1015) │
                         └──────────────┬──────────────────────────────┬───────────────────────────────┘
@@ -16,36 +16,45 @@ browser / crawler ────► │ URL Rewrite rule "Markdown for agents"    
    patrickjv.com ──────────────► patrickjv-eng-site      patrickjv.com/mcp* ──► patrickjv-mcp
                                  (static assets only,    (MCP server: Durable Object quota,
                                   never runs code)        Email Routing send, rate limits)
-   www.patrickjv.com ┐
-   pvieira.co.uk     ├──────────► patrickjv-redirect  (301 → https://patrickjv.com + path + query;
-   www.pvieira.co.uk ┘                                308 for non-GET/HEAD, so method and body survive)
+   www.patrickjv.com ┐   Single Redirect rules (no Worker, unmetered):
+   pvieira.co.uk     ├──► 301 → https://patrickjv.com + path + query;
+   www.pvieira.co.uk ┘    308 for non-GET/HEAD, so method and body survive
 ```
 
-## The three Workers
+## The Workers
 
 | Worker | Attached by | What it does | Config |
 |---|---|---|---|
 | `patrickjv-eng-site` | Custom Domain `patrickjv.com` | Serves `public/` as **static assets with no Worker script**. Asset requests are free and unmetered on the Free plan, so the site and `did.json` cannot be taken down by the 100,000 requests/day Worker quota. `_headers` adds security headers, a per-path CSP, content types and caching; unknown paths get `public/404.html` with status 404 (`not_found_handling: "404-page"`). `workers_dev` and `preview_urls` are off, so there is no duplicate `*.workers.dev` origin. | `wrangler.jsonc` |
-| `patrickjv-redirect` | Custom Domains `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` | Every request → the fixed origin `https://patrickjv.com`, keeping path and query: `301` for GET/HEAD, `308` for any other method. No host list, so no trailing-dot bypass and no open redirect. Every response carries security headers. `workers_dev` and `preview_urls` are off. It is a metered Worker with no edge rate limit (review R7, still open). | `redirect/wrangler.jsonc` |
 | `patrickjv-mcp` | **Route** `patrickjv.com/mcp*` | Remote MCP server (see [04](04-mcp-and-webmcp.md)). A zone route takes precedence over the Custom Domain for matching paths, so only `/mcp*` ever invokes code. Workers Logs keep only the handler's own redacted events (invocation logs off, query strings redacted); `workers_dev` and `preview_urls` are off. One secret, `QUOTA_SALT` (required for `request_intro`). | `mcp/wrangler.jsonc` |
 
-All three are deployed by **Cloudflare Workers Builds** from this repo's `main` branch (build `npm ci && npm test`, then `wrangler deploy` with the Worker's config), each rebuilt only when a push touches its watch paths; GitHub holds no deploy credential (see [06](06-operations.md#deploying)).
+Both are deployed by **Cloudflare Workers Builds** from this repo's `main` branch (build `npm ci && npm test`, then `wrangler deploy` with the Worker's config), each rebuilt only when a push touches its watch paths; GitHub holds no deploy credential (see [06](06-operations.md#deploying)).
 
-A fourth Worker, **`patrickjv-did`**, predates this site: it served only `/.well-known/did.json`. It is **kept deployed as the rollback** until the new site is proven (see [06](06-operations.md#rollback)).
+A third Worker, **`patrickjv-did`**, predates this site: it served only `/.well-known/did.json`. It is **kept deployed as the rollback** until the new site is proven (see [06](06-operations.md#rollback)).
 
 ### Why assets-only for the site
 
-The first version used one Worker with `run_worker_first: true` to handle redirects. A Codex review pointed out that this meters *every* request, and once the account's daily Worker quota is exhausted Cloudflare fails requests with a platform error (1027) — including `did.json`, which would break sign-in. Splitting into an assets-only site plus a separate redirect Worker removed that failure mode entirely.
+The first version used one Worker with `run_worker_first: true` to handle redirects. A Codex review pointed out that this meters *every* request, and once the account's daily Worker quota is exhausted Cloudflare fails requests with a platform error (1027) — including `did.json`, which would break sign-in. Splitting into an assets-only site plus a separate redirect Worker removed that failure mode entirely. On 7 Oct the redirect Worker was replaced by free **Single Redirect rules** (review R7), so alias traffic no longer counts against the Worker quota either.
+
+### Alias redirects
+
+`www.patrickjv.com`, `pvieira.co.uk` and `www.pvieira.co.uk` are proxied `AAAA 100::` placeholder records; nothing behind them is ever reached. A **Single Redirect** rule set on each zone (Rules → Redirect Rules) answers at the edge, before any Worker, with a fixed destination:
+
+| Rule | Expression | Action |
+|---|---|---|
+| GET/HEAD | `http.host in {<alias hosts, with and without a trailing dot>} and http.request.method in {"GET" "HEAD"}` | `301` to `concat("https://patrickjv.com", http.request.uri.path)`, query string kept |
+| Other methods | the same hosts, `not http.request.method in {"GET" "HEAD"}` | `308`, same target |
+
+The destination host is a literal, so no request can choose where it goes (no open redirect). Over HTTP, Always Use HTTPS answers first (an edge 301 to the same host over HTTPS; review R38). The redirects carry no security headers except HSTS on `pvieira.co.uk` (zone HSTS setting, `max-age=31536000; includeSubDomains`); `www.patrickjv.com` is covered by the apex's own `includeSubDomains` HSTS. Free plan: 10 Single Redirect rules per zone, 2 used on each.
 
 ## Domains and DNS
 
 | Name | Records | Managed by |
 |---|---|---|
 | `patrickjv.com` | Worker Custom Domain (auto-managed) | Workers |
-| `www.patrickjv.com` | Worker Custom Domain (auto-managed) | Workers |
-| `pvieira.co.uk`, `www.pvieira.co.uk` | Worker Custom Domains (auto-managed). The old proxied A/CNAME records (which caused a 525 error) were deleted in the dashboard first — Custom Domains refuse to overwrite external records (error `100117`). | Workers |
+| `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` | Proxied `AAAA 100::` placeholders (since 7 Oct; they were the redirect Worker's Custom Domains until then). Only the Single Redirect rules answer them — see [Alias redirects](#alias-redirects) | Manual (API/dashboard) |
 | `pvieira.co.uk` mail | **Locked down (sends and receives no mail):** null MX `0 .`, SPF `v=spf1 -all`, DMARC `v=DMARC1; p=reject; adkim=s; aspf=s`, `*._domainkey` `v=DKIM1; p=` (revoked). Replaced legacy Hostinger/Elastic Email records on 6 Oct (review R2). | Manual (API/dashboard) |
-| `patrickjv.com` MX | `route1/2/3.mx.cloudflare.net` + SPF `v=spf1 include:_spf.mx.cloudflare.net -all`; DMARC `v=DMARC1; p=none; rua=mailto:hello@patrickjv.com; fo=1` (monitoring; tighten later); CAA for letsencrypt.org, pki.goog, ssl.com (+ Cloudflare's own) and `iodef`; DNSSEC enabled (7 Oct; the DS record is **not yet published** at the registrar — the monitor WARNs until it is). Subdomains keep their own records: `marineweather` sends via Resend (MAIL FROM `send.marineweather` on Amazon SES; 1024-bit DKIM key `resend._domainkey`) and has its **own** DMARC `p=none` with no `rua` (it overrides the apex policy; owner action, review Codex-3/C3-F13); `tenlines` is a GitHub Pages CNAME whose custom domain is not yet verified in GitHub (owner action, C3-F6) | Email Routing (auto) |
+| `patrickjv.com` MX | `route1/2/3.mx.cloudflare.net` + SPF `v=spf1 include:_spf.mx.cloudflare.net -all`; DMARC `v=DMARC1; p=none; rua=mailto:hello@patrickjv.com; fo=1` (monitoring; tighten later); CAA for letsencrypt.org, pki.goog, ssl.com (+ Cloudflare's own) and `iodef`; DNSSEC enabled (7 Oct; the DS record is **not yet published** at the registrar — the monitor WARNs until it is). Subdomains keep their own records: `marineweather` sends via Resend (MAIL FROM `send.marineweather` on Amazon SES; 1024-bit DKIM key `resend._domainkey`) and has its **own** DMARC `p=none` with no `rua` (it overrides the apex policy; owner action, review Codex-3/C3-F13); `tenlines` is a GitHub Pages CNAME; `patrickjv.com` is a verified GitHub Pages domain (TXT `_github-pages-challenge-pvieira04`, 7 Oct, C3-F6) | Email Routing (auto) |
 | `patrickjv.com` TXT | `google-site-verification=…` — **keep**, Google re-checks it | Google Search Console |
 
 The `patrickjv.com` custom domain was moved from `patrickjv-did` to `patrickjv-eng-site` **in place** (`PUT /workers/domains` with `override_existing_origin: true`), so DNS and the certificate never changed and `did.json` served `200` with identical bytes throughout the switch.
@@ -57,12 +66,12 @@ The `patrickjv.com` custom domain was moved from `patrickjv-did` to `patrickjv-e
 
 ## Zone settings changed in the dashboard
 
-All on the **`patrickjv.com`** zone. The alias zone `pvieira.co.uk` was hardened the same way on 7 Oct (review C3-F3): NEL off, minimum TLS 1.2, Always Use HTTPS, and the same 11 CAA records as `patrickjv.com`. Its redirect Worker answers only over HTTPS with a 301/308 to `https://patrickjv.com`.
+All on the **`patrickjv.com`** zone. The alias zone `pvieira.co.uk` was hardened the same way on 7 Oct (review C3-F3): NEL off, minimum TLS 1.2, Always Use HTTPS, and the same 11 CAA records as `patrickjv.com`. Zone HSTS is on for `pvieira.co.uk` (7 Oct), so its redirects carry `Strict-Transport-Security`.
 
 | Setting | Value | Why |
 |---|---|---|
 | Security → Settings → Bot traffic → **Configure AI bot policies** | Search, Agent and Training all **Allow** | Cloudflare blocked AI training crawlers (GPTBot, ClaudeBot, CCBot, Bytespider, Amazonbot) by default with `403`. See [03](03-seo-aeo-machine-readability.md#ai-crawlers). |
-| Rules → **URL Rewrite Rule** "Markdown for agents" | `(http.request.uri.path eq "/" and any(http.request.headers["accept"][*] contains "text/markdown"))` → path `/index.md`, query preserved | Markdown content negotiation with no Worker code |
+| Rules → **URL Rewrite Rule** "Markdown for agents" | `(http.request.uri.path eq "/" and any(starts_with(http.request.headers["accept"][*], "text/markdown")))` → path `/index.md`, query preserved | Markdown content negotiation with no Worker code. Only an `Accept` that lists `text/markdown` **first** gets Markdown (7 Oct, review R6); `text/html, text/markdown;q=0.1` gets HTML. Free-plan rules cannot parse q-values, so `text/markdown;q=0` listed first would still get Markdown — no real client sends that |
 | Security → Security rules → **Rate limiting rule** "MCP flood guard" | URI path starts with `/mcp`; per IP; 6 requests / 10 s; block 10 s | The Free plan's one rate-limiting rule. It **caps the rate** per IP before the MCP Worker runs — at most ~51,840 requests per IP per day get through, so it bounds a flood rather than stopping one; it is also stricter than the Worker's own limits (see [04](04-mcp-and-webmcp.md#cost-and-abuse-controls)) |
 | Caching → Configuration → **Crawler Hints** | On | Tells search engines about changes via IndexNow |
 | SSL/TLS → Edge Certificates → **Always Use HTTPS** | On (7 Oct) | HTTP → HTTPS at the edge, no Worker invoked; HSTS now takes effect from the first HTTPS visit |

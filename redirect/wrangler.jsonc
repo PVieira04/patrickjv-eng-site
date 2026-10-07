@@ -1,8 +1,0 @@
-{
-  // Deployed by Cloudflare Workers Builds on push to main (build: npm ci && npm test).
-  "name": "patrickjv-redirect",
-  "main": "index.js",
-  "compatibility_date": "2026-10-01",
-  "workers_dev": false,
-  "preview_urls": false
-}
