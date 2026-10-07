@@ -103,3 +103,10 @@ test("workflows: every action pinned to a full commit SHA, checkout/setup-node o
   assert.match(dep, /package-ecosystem: github-actions\n\s+directory: \/\n\s+schedule:\n\s+interval: weekly/);
   assert.match(dep, /package-ecosystem: npm\n\s+directory: \/\n\s+schedule:\n\s+interval: weekly\n\s+groups:\n\s+dev-dependencies:\n\s+dependency-type: development/);
 });
+
+// The repo is public: the intro mailbox lives in the INTRO_TO_ADDRESS Worker secret, never in config.
+test("mcp/wrangler.jsonc names no destination mailbox (it is the INTRO_TO_ADDRESS secret)", () => {
+  const cfg = readFileSync(new URL("../mcp/wrangler.jsonc", import.meta.url), "utf8");
+  assert.doesNotMatch(cfg, /"destination_address"|"INTRO_TO(_ADDRESS)?"\s*:/);
+  assert.doesNotMatch(cfg, /[\w.+-]+@(?!patrickjv\.com)[\w-]+\.[\w.]+/, "no mailbox other than @patrickjv.com addresses");
+});

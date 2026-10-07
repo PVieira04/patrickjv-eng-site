@@ -13,12 +13,16 @@
   // request's metadata (client IP, location, user agent) for the log retention period.
   // redact_query_string stays as a second line of defence for any request URL that is logged.
   "observability": { "enabled": true, "redact_query_string": true, "logs": { "enabled": true, "invocation_logs": false } },
-  "vars": { "INTRO_FROM": "intro@patrickjv.com", "INTRO_TO": "vieira.pjpv@gmail.com" },
+  "vars": { "INTRO_FROM": "intro@patrickjv.com" },
+  // Secret, not a var: INTRO_TO_ADDRESS, the verified mailbox introductions are delivered to (kept
+  // out of this public repo). Set with `wrangler secret put INTRO_TO_ADDRESS -c mcp/wrangler.jsonc`.
   // Secret, not a var: QUOTA_SALT keys the HMAC of the IP and sender keys held by IntroQuota.
   // Set with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc` (a random value of at least 32
   // characters); without it request_intro is refused (fail closed) and read tools carry on.
-  // Email Routing send_email can only deliver to verified destination addresses (free plan).
-  "send_email": [{ "name": "EMAIL", "destination_address": "vieira.pjpv@gmail.com" }],
+  // Email Routing send_email can only deliver to the account's verified destination addresses
+  // (free plan), so strangers can never use it to email anyone else. No destination_address here:
+  // the address stays out of the repo, and the handler sends to INTRO_TO_ADDRESS only.
+  "send_email": [{ "name": "EMAIL" }],
   // Atomic daily quota for request_intro (SQLite-backed Durable Objects are on the Free plan).
   "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "IntroQuota" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IntroQuota"] }],

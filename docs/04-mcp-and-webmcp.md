@@ -93,7 +93,7 @@ A read-only JSON-RPC method that says whether `request_intro` is **configured**,
 → {"jsonrpc":"2.0","id":4,"result":{"introReady":true,"salt":true,"email":true,"quota":true,"rateLimits":true}}
 ```
 
-- **Booleans only**: `salt` (the `QUOTA_SALT` secret is present and at least 32 characters), `email` (the `EMAIL` send binding plus non-empty `INTRO_FROM`/`INTRO_TO`), `quota` (the `IntroQuota` Durable Object binding), `rateLimits` (`RL_INTRO`, `RL_MCP`, `RL_BURST`), and `introReady` = all four. Never a secret, its length or an address.
+- **Booleans only**: `salt` (the `QUOTA_SALT` secret is present and at least 32 characters), `email` (the `EMAIL` send binding plus non-empty `INTRO_FROM`/`INTRO_TO_ADDRESS`), `quota` (the `IntroQuota` Durable Object binding), `rateLimits` (`RL_INTRO`, `RL_MCP`, `RL_BURST`), and `introReady` = all four. Never a secret, its length or an address.
 - It goes through the **same rejection chain** as every request (WAF, Origin, method, media type, size, `RL_MCP`, protocol header) and counts against `RL_BURST` (it is not handshake-exempt).
 - **Why a custom method:** MCP requires a `ping` result to be empty, so extending `ping` would break the spec; a tool would be listed to users in every client. A vendor-prefixed method (`patrickjv/…`, the slash style MCP uses for its own methods) cannot collide with a future spec method, and any other server answers it with `-32601`.
 - It shows configuration, not delivery: an Email Routing outage would not show here. Routine monitoring never sends an email; delivery is confirmed by occasional manual tests and by redacted `mcp_failure` events (`email`, `quota`, `config`) in Workers Logs.

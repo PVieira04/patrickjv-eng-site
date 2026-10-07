@@ -246,7 +246,7 @@ export function introReadiness(env) {
   const r = {
     salt: saltConfigured(env),
     email: typeof env.EMAIL?.send === "function" && typeof env.INTRO_FROM === "string" && env.INTRO_FROM !== ""
-      && typeof env.INTRO_TO === "string" && env.INTRO_TO !== "",
+      && typeof env.INTRO_TO_ADDRESS === "string" && env.INTRO_TO_ADDRESS !== "",
     quota: typeof env.QUOTA?.idFromName === "function" && typeof env.QUOTA?.get === "function",
     rateLimits: ["RL_INTRO", "RL_MCP", "RL_BURST"].every((k) => typeof env[k]?.limit === "function"),
   };
@@ -384,9 +384,9 @@ async function callTool(name, args, ctx) {
         console.log(JSON.stringify({ event: "intro_quota_rejected", which: reservation.which }));
         return toolError(`Daily limit reached (${reservation.which}). Please try again tomorrow, or email ${d.profile.links.email}.`);
       }
-      const raw = buildMime(v, { from: ctx.env.INTRO_FROM, to: ctx.env.INTRO_TO, messageId: `${crypto.randomUUID()}@patrickjv.com`, date: ctx.now });
+      const raw = buildMime(v, { from: ctx.env.INTRO_FROM, to: ctx.env.INTRO_TO_ADDRESS, messageId: `${crypto.randomUUID()}@patrickjv.com`, date: ctx.now });
       try {
-        await ctx.sendEmail(ctx.env.INTRO_FROM, ctx.env.INTRO_TO, raw);
+        await ctx.sendEmail(ctx.env.INTRO_FROM, ctx.env.INTRO_TO_ADDRESS, raw);
       } catch {
         logFailure("email");
         return toolError(`The introduction could not be confirmed as delivered. Please do not retry; email ${d.profile.links.email} instead.`);

@@ -22,7 +22,7 @@ npm run build    # regenerate every machine-readable copy from content.json
 npm run cf:check  # live Cloudflare dashboard config vs infra/cloudflare/ (needs CLOUDFLARE_READ_TOKEN; cf:export to update)
 npm run cv       # print public/cv.html to public/cv.pdf (A4, max two pages; run npm run build first)
 npm run images   # regenerate the icons and share card (after changing the name, headline, tagline, photo or icon)
-npm test         # build drift check + 111 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
+npm test         # build drift check + 112 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
 npm run deploy   # manual fallback: npm test, then deploy both Workers (Workers Builds deploys on push to main)
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```

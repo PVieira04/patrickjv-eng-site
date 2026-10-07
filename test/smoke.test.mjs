@@ -91,7 +91,7 @@ function mockSite(faults = {}) {
   const base = { "strict-transport-security": "max-age=31536000; includeSubDomains", "x-content-type-options": "nosniff" };
   const allow = { limit: async () => ({ success: true }) };
   const env = {
-    RL_MCP: allow, RL_BURST: allow, RL_INTRO: allow, INTRO_FROM: "intro@patrickjv.com", INTRO_TO: "owner@example.com",
+    RL_MCP: allow, RL_BURST: allow, RL_INTRO: allow, INTRO_FROM: "intro@patrickjv.com", INTRO_TO_ADDRESS: "owner@example.com",
     EMAIL: { send: async () => { throw new Error("never"); } }, QUOTA: { idFromName: () => ({}), get: () => ({}) },
     ...(faults.noSalt ? {} : { QUOTA_SALT: "mock-salt-0123456789abcdef0123456789" }),
   };

@@ -58,7 +58,7 @@ function harness({ burst = 1e9, minute = 1e9, intro = 1e9, sendFails = false, re
   };
   const rl = { burst: limiter(burst), minute: limiter(minute) };
   const env = {
-    INTRO_FROM: "intro@patrickjv.com", INTRO_TO: "owner@example.com", RL_BURST: rl.burst, RL_MCP: rl.minute, RL_INTRO: limiter(intro), ...(salt ? { QUOTA_SALT: salt } : {}),
+    INTRO_FROM: "intro@patrickjv.com", INTRO_TO_ADDRESS: "owner@example.com", RL_BURST: rl.burst, RL_MCP: rl.minute, RL_INTRO: limiter(intro), ...(salt ? { QUOTA_SALT: salt } : {}),
     // Binding stand-ins (the handler only checks that they are present, for patrickjv/health).
     EMAIL: { send: async () => {} }, QUOTA: { idFromName: () => ({}), get: () => ({}) },
   };
@@ -576,7 +576,7 @@ test("patrickjv/health: only booleans; introReady when salt, email, quota and ra
   assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true });
   const broken = [
     ["salt", (h) => { delete h.env.QUOTA_SALT; }], ["salt", (h) => { h.env.QUOTA_SALT = "x".repeat(31); }],
-    ["email", (h) => { delete h.env.EMAIL; }], ["email", (h) => { delete h.env.INTRO_TO; }], ["email", (h) => { h.env.INTRO_FROM = ""; }],
+    ["email", (h) => { delete h.env.EMAIL; }], ["email", (h) => { delete h.env.INTRO_TO_ADDRESS; }], ["email", (h) => { h.env.INTRO_FROM = ""; }],
     ["quota", (h) => { delete h.env.QUOTA; }], ["rateLimits", (h) => { delete h.env.RL_INTRO; }],
   ];
   for (const [key, breakIt] of broken) {
