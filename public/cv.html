@@ -60,33 +60,34 @@ dd { margin: 0; }
   </header>
   <section>
     <h2>Profile</h2>
-    <p>Platform engineer who owns architecture, infrastructure, identity and security at a London fintech, reporting to the CEO. I build and run the internal developer platform the company ships with, and I hold AI-written code to the same standard as anyone's: a written spec first, tests first, gated by CI and reviewed by a model from a second vendor.</p>
+    <p>I lead platform engineering at a London fintech, reporting to the CEO, and own its architecture, infrastructure, identity and security. I build and run the internal developer platform the company ships with, and hold AI-written code to the same standard as anyone's: a written spec first, tests first, gated by CI and reviewed by a model from a second vendor.</p>
   </section>
   <section>
     <h2>Experience</h2>
     <article>
       <div class="row"><h3>Lead Platform Engineer<span class="org">, Altimist Ltd</span></h3><span class="dates">Aug 2023 – present</span></div>
       <ul>
-        <li>Built the internal developer platform for AI-assisted delivery: a Claude Code plugin of 21 skills and 3 hook events (spec-first authoring, test-driven implementation, cross-vendor adversarial review), and a versioned engineering baseline rolled out to about 26 repositories by automated pull request.</li>
+        <li>Built the internal developer platform for AI-assisted delivery and rolled its engineering standards out to about 26 repositories by automated pull request: specs before code, tests first, a gate that stops an agent finishing until typecheck, lint and tests pass, and review by a model from a second vendor.</li>
         <li>1,400+ merged pull requests across 40 repositories between Dec 2025 and Sep 2026; monthly volume rose from 76 to 381.</li>
-        <li>Designed the Software Factory, an agent execution and evaluation platform: queue-driven dispatch with a dead-letter queue and transactional outbox, sandboxed containers with per-run credentials, rubric-graded review gates and an instant kill switch. Chose the platform from a measured spike (3.3 s cold start, 32 ms warm).</li>
-        <li>Built the company's identity provider from scratch: did:web with WebAuthn passkeys and W3C Verifiable Credentials. The sign-in for internal applications since May 2026, with federation to self-hosted DIDs.</li>
+        <li>Built the company's identity provider from scratch: WebAuthn passkeys on did:web with W3C Verifiable Credentials. The sign-in for the company's internal applications since May 2026, with federation to self-hosted identities.</li>
         <li>Run cloud and SaaS infrastructure as code through Terraform Cloud (plan on pull request, apply on merge, daily drift detection) across GitHub, Cloudflare, Kafka, Databricks and observability. AWS and Microsoft 365 as code; joiner, mover and leaver access automated.</li>
-        <li>Moved all application hosting to Cloudflare Workers and retired Vercel (Sep 2026), cutting the monthly hosting bill roughly tenfold.</li>
-        <li>Built an on-premises speech pipeline on an NVIDIA DGX Spark (NeMo ASR, diarisation, voiceprint speaker naming) for audio that cannot leave the building.</li>
-        <li>Set technical direction through architecture decision records: 44 of the company's 61, including the identity move from OIDC to did:web. Own vendor selection and compliance.</li>
+        <li>Moved all application hosting to Cloudflare Workers and retired Vercel (Sep 2026); removing Vercel's per-seat charges cut the monthly hosting bill roughly tenfold.</li>
+        <li>Built an on-premises Python speech pipeline on an NVIDIA DGX Spark (NeMo transcription, diarisation, voiceprint speaker naming) for audio that cannot leave the building. It feeds searchable, human-verified records for decision and action tracking.</li>
+        <li>Built an iOS and web location-tracking demonstration, with privacy controls, for a prospective client.</li>
+        <li>Set technical direction through architecture decision records: 44 of the company's 61, including the identity move from OIDC to did:web. Own vendor selection.</li>
+        <li>Designed an agent execution and evaluation platform, now at design and feasibility stage: sandboxed runs with per-run credentials, durable queue-driven dispatch and review gates against written criteria. A container spike measured a 3.3 s cold start and 32 ms warm.</li>
       </ul>
     </article>
     <article>
-      <div class="row"><h3>Career transition into software development<span class="org">, Self-employed</span></h3><span class="dates">Sep 2021 – Aug 2023</span></div>
+      <div class="row"><h3>Software development and retraining<span class="org">, Self-employed</span></h3><span class="dates">Sep 2021 – Aug 2023</span></div>
       <ul>
-        <li>Self-taught full-stack development (JavaScript, React, Python, REST APIs, SQL). Delivered a paid client website; explored Motoko on the Internet Computer. Tutored A-Level and IB mathematics privately.</li>
+        <li>Delivered a paid client website while retraining in full-stack development (JavaScript, React, Python, REST APIs, SQL). Tutored A-Level and IB mathematics privately.</li>
       </ul>
     </article>
     <article>
       <div class="row"><h3>Teacher of Mathematics<span class="org">, Wimbledon High School GDST</span></h3><span class="dates">Sep 2019 – Jul 2021</span></div>
       <ul>
-        <li>Taught mathematics across Key Stages 3–5, including GCSE and A-Level. Completed the NQT induction year and a further year.</li>
+        <li>Taught mathematics across Key Stages 3–5, including GCSE and A-Level, adapting lessons to gaps in pupils' understanding. Completed the NQT induction year and a further year.</li>
       </ul>
     </article>
     <p class="earlier">Earlier: academic tutor and mentor, Leading Lights Tuition (2015–2018); special projects coordinator and volunteer corps member, City Year UK (2014–2016).</p>
@@ -94,19 +95,18 @@ dd { margin: 0; }
   <section>
     <h2>Selected personal projects</h2>
     <ul>
-      <li><b>patrickjv.com</b>: An agent-ready digital twin of a person. One content file generates the page, JSON-LD, llms.txt, Markdown and WebMCP tools; a remote MCP server listed on the MCP Registry, with Durable Object quotas on Cloudflare Workers; 110+ tests and a production smoke monitor.</li>
-      <li><b>Kaizen Kingdom</b>: An adaptive maths learning platform (in development).</li>
-      <li><b>Marine-weather agent</b>: Emails forecasts to a sailing yacht.</li>
+      <li><b>patrickjv.com</b>: One content file generates the page, schema.org data, llms.txt, Markdown and WebMCP tools, plus a remote MCP server listed on the MCP Registry; Cloudflare Workers with Durable Object quotas, 110+ tests and a production smoke monitor.</li>
+      <li><b>Kaizen Kingdom</b>: An adaptive maths learning platform, in development.</li>
     </ul>
   </section>
   <section>
     <h2>Skills</h2>
     <dl>
-      <dt>Platform and delivery</dt><dd>internal developer platforms, CI/CD (GitHub Actions), GitOps, test-driven development, code review, architecture decision records</dd>
-      <dt>AI</dt><dd>agentic AI, Claude Code, Model Context Protocol, LLM evaluation, speech recognition (NVIDIA NeMo)</dd>
-      <dt>Infrastructure</dt><dd>Cloudflare (Workers, Containers, Queues, Durable Objects, R2), Terraform, AWS, Microsoft 365</dd>
-      <dt>Identity and security</dt><dd>WebAuthn passkeys, did:web, Verifiable Credentials</dd>
-      <dt>Languages</dt><dd>TypeScript, Python, SQL, PowerShell</dd>
+      <dt>Programming</dt><dd>TypeScript, Python, SQL, PowerShell</dd>
+      <dt>Platform and delivery</dt><dd>internal developer platforms, developer experience, CI/CD (GitHub Actions), GitOps, infrastructure as code, test-driven development, code review, architecture decision records</dd>
+      <dt>AI</dt><dd>agentic AI, AI agents, Claude Code, Model Context Protocol (MCP), LLM evaluation (review gates), speech recognition (NVIDIA NeMo)</dd>
+      <dt>Infrastructure</dt><dd>Cloudflare (Workers, Containers, Queues, Durable Objects, R2), Terraform Cloud, AWS (organisation and IAM), Microsoft 365</dd>
+      <dt>Identity and security</dt><dd>WebAuthn passkeys, did:web, Verifiable Credentials, identity and access management, secrets management (1Password)</dd>
     </dl>
   </section>
   <section>
