@@ -917,7 +917,7 @@ export async function handle(request, env, deps) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "patrickjv.com", title: "Patrick Vieira — platform engineer", version: SERVER_VERSION, websiteUrl: "https://patrickjv.com/", icons: ICONS },
           instructions:
-            "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.",
+            "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message. To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it from their own inbox.",
         });
       }
       case "ping":
