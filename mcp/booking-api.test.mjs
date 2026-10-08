@@ -420,3 +420,31 @@ test("kill switch: links for holds made before it was turned off still work", as
   assert.equal(h.svc.status(booking_id).status, "confirmed");
   assert.equal((await h.post(booking({ email: "new@example.com", start: "2026-10-22T10:00:00+01:00" }), { ip: "198.51.100.9" })).status, 503);
 });
+
+// ---- Health ----
+
+const healthOf = async (h) => (await mcp(h, rpc("patrickjv/health"))).result;
+
+test("patrickjv/health: bookingEnabled is the flag; bookingReady means secrets set, Google token refresh works and the store answers", async () => {
+  const on = await healthOf(harness());
+  assert.equal(on.bookingEnabled, true);
+  assert.equal(on.bookingReady, true);
+  assert.equal(on.introReady, true);
+  // Readiness is independent of the flag, so it can be checked before launch.
+  assert.deepEqual([(await healthOf(harness({ enabled: false }))).bookingEnabled, (await healthOf(harness({ enabled: false }))).bookingReady], [false, true]);
+  assert.equal((await healthOf(harness({ fetchOpts: { fail: { token: true } } }))).bookingReady, false, "revoked refresh token");
+  assert.equal((await quiet(() => healthOf(harness({ storeDown: true })))).bookingReady, false, "Durable Object unreachable");
+  for (const k of ["QUOTA_SALT", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RESEND_API_KEY", "BOOKING_OWNER_EMAIL", "BOOKING_FROM", "CAL_PERSONAL_MAIN", "CAL_PERSONAL_FAMILY", "BOOKING"]) {
+    const h = harness({ env: { [k]: undefined } });
+    const r = await healthOf(h);
+    assert.equal(r.bookingReady, false, k);
+    assert.equal(h.storeCalls(), 0, `${k}: not configured, so no Google or store call`);
+  }
+});
+
+test("patrickjv/health: never reveals booking secrets, calendar IDs or the owner's address", async () => {
+  const h = harness();
+  const text = await (await h.call("/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: rpc("patrickjv/health") })).text();
+  for (const k of ["GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RESEND_API_KEY", "BOOKING_OWNER_EMAIL", "CAL_PERSONAL_MAIN"]) assert.ok(!text.includes(h.env[k]), k);
+  assert.equal(h.f.mails().length, 0);
+});

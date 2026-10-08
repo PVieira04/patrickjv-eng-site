@@ -570,11 +570,12 @@ test("failures and quota refusals are logged as redacted events naming the subsy
 
 // patrickjv/health: a read-only readiness signal for request_intro (smoke --mcp requires introReady).
 const health = async (h, opts) => (await (await h.call(rpc("patrickjv/health"), opts)).json());
-const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits"];
+const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits", "bookingEnabled", "bookingReady"];
 
 test("patrickjv/health: only booleans; introReady when salt, email, quota and rate limits are all configured", async () => {
   const r = await health(harness());
-  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true });
+  // No booking configuration in this harness: booking is off and not ready (mcp/booking-api.test.mjs covers it).
+  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false });
   const broken = [
     ["salt", (h) => { delete h.env.QUOTA_SALT; }], ["salt", (h) => { h.env.QUOTA_SALT = "x".repeat(31); }],
     ["email", (h) => { delete h.env.EMAIL; }], ["email", (h) => { delete h.env.INTRO_TO_ADDRESS; }], ["email", (h) => { h.env.INTRO_FROM = ""; }],
