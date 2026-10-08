@@ -251,6 +251,115 @@ test("request: if the hold email fails, the hold is released at once and nothing
   assert.equal((await request(again, {}, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
 });
 
+// ---- Confirm ---------------------------------------------------------------------------------
+
+const act = (t, token, now = later(HOUR)) => store.act(t.sql, { token, now, cfg, deps: t.deps });
+const linkOf = (t, kind, link) => tokenOf(t.calls.emails.filter((e) => e.kind === kind).at(-1).links[link]);
+// A hold made through the real path, with its emailed tokens.
+async function hold(t, over = {}, keys = {}) {
+  const r = await request(t, over, keys);
+  return { id: r.booking_id, confirm: linkOf(t, "hold", "confirmUrl"), decline: linkOf(t, "hold", "declineUrl") };
+}
+// A row written directly, for states the test needs to start from.
+function seed(t, { id = store.newId(), start = SLOT, minutes = 30, status = "confirmed", holdExpires = null } = {}) {
+  t.sql.exec(
+    `INSERT INTO bookings (id, type, start_utc, end_utc, status, source, guest_name, guest_email, ip_key, email_key, hold_expires, created_at, delete_after)
+     VALUES (?, 'consultation', ?, ?, ?, 'page', 'Seed', 'seed@example.com', ?, ?, ?, ?, ?)`,
+    id, start, later(minutes * 60e3, new Date(start)).toISOString(), status, `ip-${id}`, `em-${id}`, holdExpires, NOW.toISOString(), "2027-01-01T00:00:00.000Z",
+  );
+  return id;
+}
+
+test("confirm: re-checks, creates the event (Meet, guest invited, type in the title), then emails a cancel link", async () => {
+  const t = setup();
+  const h = await hold(t);
+  assert.deepEqual(await act(t, h.confirm), { result: "confirmed" });
+  const [ev] = t.calls.inserted;
+  assert.equal(t.calls.inserted.length, 1);
+  assert.equal(ev.id, h.id, "the booking ID is the event ID");
+  assert.equal(ev.summary, "Consultation: Jane Smith");
+  assert.equal(ev.start, SLOT);
+  assert.equal(ev.end, "2026-10-21T10:30:00.000Z");
+  assert.ok(ev.attendees.some((a) => a.email === "jane@example.com"));
+  assert.equal(t.calls.freeBusy, 2, "free/busy checked again at confirm");
+  const b = row(t, h.id);
+  assert.equal(b.status, "confirmed");
+  assert.equal(b.event_id, h.id);
+  const booked = t.calls.emails.find((e) => e.kind === "booked");
+  assert.ok(booked.links.cancelUrl.startsWith(ACT));
+  assert.equal(booked.links.meetLink, "https://meet.google.com/abc-defg-hij");
+  const cancel = await store.hashToken(tokenOf(booked.links.cancelUrl));
+  assert.deepEqual(t.sql.exec("SELECT action, expires_at, used_at FROM tokens WHERE hash = ?", cancel).one(), { action: "cancel", expires_at: SLOT, used_at: null }, "cancel link expires at the meeting start");
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action IN ('confirm', 'decline') AND used_at IS NULL"), 0, "confirm and decline links are spent");
+});
+
+test("confirm: a 409 from Google (event already exists) still counts as created", async () => {
+  const t = setup();
+  t.deps.insertEvent = async () => { await tick(); return { created: false, meetLink: null }; };
+  const h = await hold(t);
+  assert.deepEqual(await act(t, h.confirm), { result: "confirmed" });
+  assert.equal(row(t, h.id).status, "confirmed");
+});
+
+test("confirm: the slot became busy in a calendar → declined, slot_taken, no event", async () => {
+  const t = setup();
+  const h = await hold(t);
+  t.deps.freeBusy = async () => { await tick(); return { busy: [{ start: SLOT, end: "2026-10-21T11:00:00.000Z" }] }; };
+  assert.deepEqual(await act(t, h.confirm), { result: "declined", reason: "slot_taken" });
+  assert.equal(t.calls.inserted.length, 0);
+  const b = row(t, h.id);
+  assert.deepEqual([b.status, b.status_reason], ["declined", "slot_taken"]);
+  assert.deepEqual(await act(t, h.confirm), { error: "used" });
+});
+
+test("confirm: a 4th meeting on a day → declined, day_full", async () => {
+  const t = setup();
+  const h = await hold(t);
+  for (const hh of ["13", "14", "15"]) seed(t, { start: `2026-10-21T${hh}:00:00.000Z` });
+  assert.deepEqual(await act(t, h.confirm), { result: "declined", reason: "day_full" });
+  assert.equal(t.calls.inserted.length, 0);
+  assert.equal(row(t, h.id).status_reason, "day_full");
+});
+
+test("confirm: notice is not re-applied (25 hours' notice when held, 23 when confirmed)", async () => {
+  const t = setup();
+  const start = later(25 * HOUR).toISOString();
+  const h = await hold(t, { start });
+  assert.deepEqual(await act(t, h.confirm, later(119 * 60e3)), { result: "confirmed" });
+});
+
+test("confirm: if Google fails to create the event, the hold is rolled back and the link still works", async () => {
+  const t = setup({ insertFails: true });
+  const h = await hold(t);
+  assert.deepEqual(await act(t, h.confirm), { error: "unavailable" });
+  const b = row(t, h.id);
+  assert.equal(b.status, "pending_confirmation");
+  assert.equal(b.event_id, null);
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action = 'confirm' AND used_at IS NULL"), 1);
+  t.deps.insertEvent = async (ev) => { await tick(); t.calls.inserted.push(ev); return { created: true, meetLink: null }; };
+  assert.deepEqual(await act(t, h.confirm), { result: "confirmed" }, "a retry of the same link succeeds");
+});
+
+test("confirm: if free/busy fails, the hold is rolled back", async () => {
+  const t = setup();
+  const h = await hold(t);
+  t.deps.freeBusy = async () => { await tick(); throw new Error("google down"); };
+  assert.deepEqual(await act(t, h.confirm), { error: "unavailable" });
+  assert.equal(row(t, h.id).status, "pending_confirmation");
+  assert.equal(t.calls.inserted.length, 0);
+});
+
+test("confirm: a failed 'booked' email is logged but the booking stands", async () => {
+  const t = setup({ emailFails: (kind) => kind === "booked" });
+  const h = await hold(t);
+  let r;
+  const logs = await capturingLogs(async () => { r = await act(t, h.confirm); });
+  assert.deepEqual(r, { result: "confirmed" });
+  assert.equal(row(t, h.id).status, "confirmed");
+  assert.equal(logs.length, 1);
+  assert.ok(!/jane|example/i.test(logs[0]));
+});
+
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
