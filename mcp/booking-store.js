@@ -87,11 +87,22 @@ const forEmail = (b) => ({
 const TAKEN = new Set(["busy", "taken", "day_full"]);
 const slotError = (reason) => ({ error: TAKEN.has(reason) ? "slot_taken" : "invalid_slot", reason });
 
+// One live hold at a time per IP and per email, so fake holds cost an attacker many of both.
+function holdPending(sql, { now, ipKey, emailKey, cfg }) {
+  const limit = cfg.caps.liveHoldsPerKey ?? 1;
+  const live = (col, key) => sql.exec(
+    `SELECT count(*) AS c FROM bookings WHERE status = 'pending_confirmation' AND hold_expires > ? AND ${col} = ?`,
+    now.toISOString(), key,
+  ).one().c;
+  return live("ip_key", ipKey) >= limit || live("email_key", emailKey) >= limit;
+}
+
 export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, deps }) {
   const nowIso = now.toISOString();
   const quota = reserveQuota(sql, { day: deps.day(nowIso), ipKey, emailKey, caps: cfg.caps });
   if (!quota.ok) return { error: "rate_limited", reason: quota.which };
   const flag = quota.globalJustExhausted ? { globalJustExhausted: true } : {};
+  if (holdPending(sql, { now, ipKey, emailKey, cfg })) return { error: "hold_pending", ...flag };
   const type = cfg.meetingTypes.find((t) => t.id === input.type);
   const slot = { cfg, typeId: input.type, start: input.start, now };
   // Cheap pre-check, so an invalid or already-taken slot never reaches Google.
@@ -112,6 +123,8 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
   const holdExpires = new Date(now.getTime() + cfg.holdHours * HOUR).toISOString();
 
   // ---- Claim: synchronous from here to the inserts. No await. ----
+  // Both rules again: other requests ran while free/busy was awaited.
+  if (holdPending(sql, { now, ipKey, emailKey, cfg })) return { error: "hold_pending", ...flag };
   const check = deps.checkSlot({ ...slot, busy, bookings: liveBookings(sql, now) });
   if (!check.ok) return { ...slotError(check.reason), ...flag };
   sql.exec(
