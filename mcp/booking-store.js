@@ -156,6 +156,94 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
   return { booking_id: id, status: "pending_confirmation", hold_expires: holdExpires, ...flag };
 }
 
+// Meetings that exist or are being made: what a confirm must not collide with. Pending holds are
+// left out, so a hold can never stop a guest who confirms (two live holds can't overlap anyway).
+const meetings = (sql) => sql.exec(
+  `SELECT id, start_utc AS start, end_utc AS "end", status FROM bookings WHERE status IN ('confirming', 'confirmed', 'cancelling')`,
+).toArray();
+
+// A link token's row and its booking, or why it can't be used. Synchronous.
+function lookupToken(sql, hash, now) {
+  const tok = sql.exec("SELECT * FROM tokens WHERE hash = ?", hash).toArray()[0];
+  const booking = tok && sql.exec("SELECT * FROM bookings WHERE id = ?", tok.booking_id).toArray()[0];
+  if (!booking) return { error: "unknown" };
+  if (tok.used_at) return { error: "used" };
+  if (tok.expires_at <= now.toISOString()) return { error: "expired" };
+  return { tok, booking };
+}
+
+// Performs what an emailed link does (on POST; a GET only peeks).
+export async function act(sql, { token, now, cfg, deps }) {
+  if (typeof token !== "string" || token === "") return { error: "unknown" };
+  const hash = await hashToken(token);
+  const found = lookupToken(sql, hash, now);
+  if (found.error) return found;
+  if (found.tok.action === "confirm") return confirmHold(sql, found, { now, cfg, deps });
+  return { error: "unknown" };
+}
+
+async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
+  const nowIso = now.toISOString();
+  // A hold that already left pending has spent its links; this is a backstop.
+  if (b.status !== "pending_confirmation" || b.hold_expires <= nowIso) return { error: "used" };
+  const slot = { cfg, typeId: b.type, start: b.start_utc, now, ignoreNotice: true, excludeId: b.id };
+  const decline = (reason) => {
+    const why = reason === "day_full" ? "day_full" : "slot_taken";
+    settle(sql, b.id, "declined", why, nowIso);
+    return { result: "declined", reason: why };
+  };
+
+  // ---- Claim: synchronous, no await. A double click finds the token used. ----
+  const claim = deps.checkSlot({ ...slot, busy: [], bookings: meetings(sql) });
+  if (!claim.ok) return decline(claim.reason);
+  sql.exec("UPDATE bookings SET status = 'confirming' WHERE id = ?", b.id);
+  sql.exec("UPDATE tokens SET used_at = ? WHERE hash = ?", nowIso, tok.hash);
+  // ---- End of claim. ----
+
+  // Google failed: back to a hold whose link still works, so the guest can try again.
+  const rollback = (subsystem) => {
+    logFailure(subsystem);
+    sql.exec("UPDATE bookings SET status = 'pending_confirmation' WHERE id = ? AND status = 'confirming'", b.id);
+    sql.exec("UPDATE tokens SET used_at = NULL WHERE hash = ?", tok.hash);
+    return { error: "unavailable" };
+  };
+  const buffer = cfg.bufferMinutes * MINUTE;
+  let busy;
+  try {
+    ({ busy } = await deps.freeBusy(plus(b.start_utc, -buffer), plus(b.end_utc, buffer)));
+  } catch {
+    return rollback("google_freebusy");
+  }
+  const check = deps.checkSlot({ ...slot, busy, bookings: meetings(sql) });
+  if (!check.ok) return decline(check.reason);
+
+  const type = cfg.meetingTypes.find((t) => t.id === b.type);
+  const attendees = [{ email: b.guest_email, displayName: b.guest_name }];
+  if (deps.ownerEmail) attendees.push({ email: deps.ownerEmail });
+  const description = [`${type?.title ?? b.type}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${b.note}` : ""].join("");
+  let event;
+  try {
+    // 409 (already created by an earlier attempt) comes back as created:false: still a success.
+    event = await deps.insertEvent({ id: b.id, summary: `${type?.title ?? b.type}: ${b.guest_name}`, description, start: b.start_utc, end: b.end_utc, attendees });
+  } catch {
+    return rollback("google_insert");
+  }
+
+  const cancel = await newToken();
+  sql.exec(
+    "UPDATE bookings SET status = 'confirmed', status_reason = NULL, event_id = ?, hold_expires = NULL, delete_after = ? WHERE id = ?",
+    b.id, plus(b.end_utc, cfg.retentionDays * DAY), b.id,
+  );
+  sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND used_at IS NULL", nowIso, b.id);
+  sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel', ?)", cancel.hash, b.id, b.start_utc);
+  try {
+    await deps.sendEmail("booked", forEmail(b), { cancelUrl: deps.actUrl(cancel.token), meetLink: event?.meetLink ?? null });
+  } catch {
+    logFailure("email"); // Google's invite still reaches the guest.
+  }
+  return { result: "confirmed" };
+}
+
 // A booking's state for whoever holds its ID (a bearer secret): never the guest's details.
 export function getStatus(sql, bookingId) {
   return sql.exec(
