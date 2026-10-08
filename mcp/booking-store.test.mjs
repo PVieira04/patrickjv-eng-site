@@ -435,6 +435,56 @@ test("alarm: next at the earliest hold expiry, or the next UTC midnight (for pru
   assert.equal(store.nextAlarmAt(t.sql, new Date("2026-10-20T00:00:00.000Z")), Date.parse("2026-10-20T01:00:00.000Z"));
 });
 
+// ---- Guest cancels ---------------------------------------------------------------------------
+
+async function booked(t, over = {}) {
+  const h = await hold(t, over);
+  assert.deepEqual(await act(t, h.confirm), { result: "confirmed" });
+  return { ...h, cancel: linkOf(t, "booked", "cancelUrl") };
+}
+
+test("guest cancel: deletes the event (attendees notified by Google), cancels the booking, frees the slot", async () => {
+  const t = setup();
+  const b = await booked(t);
+  assert.deepEqual(await act(t, b.cancel), { result: "cancelled" });
+  assert.deepEqual(t.calls.deleted, [b.id]);
+  const r = row(t, b.id);
+  assert.deepEqual([r.status, r.status_reason], ["cancelled", "guest_cancelled"]);
+  assert.deepEqual(store.liveBookings(t.sql, later(HOUR)), []);
+  assert.deepEqual(await act(t, b.cancel), { error: "used" });
+});
+
+test("guest cancel: an event already gone from Google (404) still cancels", async () => {
+  const t = setup();
+  t.deps.deleteEvent = async () => { await tick(); return { deleted: false }; };
+  const b = await booked(t);
+  assert.deepEqual(await act(t, b.cancel), { result: "cancelled" });
+});
+
+test("guest cancel: the link expires at the meeting start", async () => {
+  const t = setup();
+  const b = await booked(t);
+  assert.deepEqual(await act(t, b.cancel, new Date(SLOT)), { error: "expired" });
+  assert.equal(row(t, b.id).status, "confirmed");
+});
+
+test("guest cancel: if Google fails, the booking stays confirmed and the link still works", async () => {
+  const t = setup({ deleteFails: true });
+  const b = await booked(t);
+  assert.deepEqual(await act(t, b.cancel), { error: "unavailable" });
+  assert.equal(row(t, b.id).status, "confirmed");
+  t.deps.deleteEvent = async (id) => { await tick(); t.calls.deleted.push(id); return { deleted: true }; };
+  assert.deepEqual(await act(t, b.cancel), { result: "cancelled" });
+});
+
+test("race: a cancel link clicked 20 times at once deletes the event once", async () => {
+  const t = setup();
+  const b = await booked(t);
+  const results = await Promise.all(Array.from({ length: 20 }, () => act(t, b.cancel)));
+  assert.equal(results.filter((r) => r.result === "cancelled").length, 1);
+  assert.equal(t.calls.deleted.length, 1);
+});
+
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
