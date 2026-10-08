@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Holding agent-written code to the same standard as anyone's — Patrick Vieira</title>
+<meta name="description" content="The golden path I use so that code drafted by AI agents meets the same bar as code written by people, enforced by the system rather than by attention.">
+<link rel="canonical" href="https://patrickjv.com/writing/gating-agent-written-code">
+<link rel="alternate" type="text/markdown" href="/writing/gating-agent-written-code.md">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Holding agent-written code to the same standard as anyone's — Patrick Vieira">
+<meta property="og:description" content="The golden path I use so that code drafted by AI agents meets the same bar as code written by people, enforced by the system rather than by attention.">
+<meta property="og:url" content="https://patrickjv.com/writing/gating-agent-written-code">
+<meta property="og:image" content="https://patrickjv.com/og-card.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Holding agent-written code to the same standard as anyone's",
+  "description": "The golden path I use so that code drafted by AI agents meets the same bar as code written by people, enforced by the system rather than by attention.",
+  "datePublished": "2026-10-08T00:00:00Z",
+  "inLanguage": "en-GB",
+  "url": "https://patrickjv.com/writing/gating-agent-written-code",
+  "author": {
+    "@type": "Person",
+    "@id": "https://patrickjv.com/#person",
+    "name": "Patrick Vieira",
+    "url": "https://patrickjv.com/"
+  }
+}
+</script>
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+:root { --bg: #f4f3ee; --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --code: #e9e7e0; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0c0e11; --ink: #e7e9ec; --muted: #9aa3ae; --line: #262b33; --signal: #ffb547; --code: #1a1e24; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.0625rem; line-height: 1.65; }
+.wrap { box-sizing: border-box; max-width: 44rem; margin: 0 auto; padding: 24px 16px 64px; }
+.bar { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 0.875rem; margin-bottom: 40px; }
+a { color: var(--signal); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 2em 0 0.5em; font-weight: 600; }
+.meta { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); margin: 0 0 32px; }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--code); padding: 0.1em 0.3em; border-radius: 3px; }
+pre { background: var(--code); padding: 12px 16px; overflow-x: auto; border-radius: 4px; }
+pre code { padding: 0; background: none; }
+li { margin: 0.35em 0; }
+.posts { list-style: none; padding: 0; }
+.posts li { margin: 0 0 28px; }
+.posts a { font-size: 1.2rem; font-weight: 600; }
+.posts p { margin: 4px 0 0; color: var(--muted); }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 0.875rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a><a href="/writing/">Writing</a></nav>
+<main>
+<article>
+<p class="meta">2026-10-08</p>
+<h1>Holding agent-written code to the same standard as anyone&#39;s</h1>
+<p>Most of the code I ship is now drafted by an agent. Producing it is no longer the hard part. Trusting it is. My rule is simple: agent-written code has to meet the same bar as mine, and the system has to enforce that bar, because my attention will not hold out at a few hundred pull requests a month.</p>
+<p>What follows is the golden path I use: the one supported route from an idea to a merged change. Every step exists because skipping it went wrong at least once.</p>
+<h2>1. A written spec before any code</h2>
+<p>An agent fills gaps confidently. If &quot;done&quot; is not written down, it will decide what done means. So every feature starts as a short spec with user stories and numbered acceptance criteria, and the spec is reviewed before anything is built.</p>
+<p>The spec is also what the reviewer checks the code against. A review without one can only find bugs; a review with one can find the feature that was quietly not built.</p>
+<h2>2. Tests first</h2>
+<p>For each acceptance criterion, a failing test comes first, then the smallest change that makes it pass. This is ordinary test-driven development. With agents it matters more, because an agent asked to &quot;add tests&quot; afterwards writes tests that describe what the code does, bugs included.</p>
+<h2>3. A gate the agent cannot talk its way past</h2>
+<p>Agents are good at sounding finished. The gate does not listen. A hook runs typecheck, lint and the test suite whenever an agent tries to end a turn that changed code, and the turn does not end until they pass. No summary, however confident, gets past a red test.</p>
+<h2>4. Review by a model from a second vendor</h2>
+<p>Every change gets an adversarial review from a model trained by a different company from the one that wrote it. Different training, different blind spots. The reviewer reads the change against the spec and is asked to find what is wrong, not to approve.</p>
+<p>Two rules keep this honest. When the two models disagree, that is a pause for a human decision, not a vote to average. And a review round is repeated until the findings narrow, because each round&#39;s fixes tend to introduce the next round&#39;s bugs.</p>
+<h2>5. Prove each test can fail</h2>
+<p>A test that passes against the bug is decoration. So for anything that matters I revert the fix, watch the test fail, and put the fix back: revert-and-fail. It takes a minute and regularly catches tests that only looked like they were checking something.</p>
+<h2>What it caught on this site</h2>
+<p>This site was built on that path, and its <a href="https://github.com/PVieira04/patrickjv-eng-site">source is public</a>. It went through three rounds of review by two models, and every finding is recorded with its outcome in <a href="https://github.com/PVieira04/patrickjv-eng-site/blob/main/docs/reviews/2026-10-06-merged-review.md">the merged review</a>. A few that tests alone would not have found:</p>
+<ul>
+<li>The alias domains redirected a <code>POST</code> with a <code>301</code>, which lets a client turn it into a <code>GET</code> and drop the body. They now answer <code>308</code> for anything that is not a read.</li>
+<li>The per-sender limit on introductions counted <code>jane.smith@</code> and <code>janesmith+x@</code> as different people. It now normalises Gmail&#39;s ignored dots and <code>+tags</code> before counting.</li>
+<li>One release sent the page two security policies at once, and the stricter one blocked its own stylesheet. The build now refuses any header rule that could do that again, and a test proves the refusal works.</li>
+</ul>
+<p>None of these were exotic. They were the ordinary mistakes that slip through when nobody is made to look.</p>
+<h2>What it does not do</h2>
+<p>It does not replace judgement. The spec still has to be right, and choosing what to build is still my job. It also costs time: a review round takes minutes, and a disagreement can take an hour to settle. That is cheaper than finding the same problem in production.</p>
+<h2>The same path at work</h2>
+<p>At work the same golden path is the default for every repository. A versioned engineering-standards baseline is rolled out to about 26 repositories by automated pull request, and CI rejects any change to the baseline that does not bump its version, so every repository can say which rules it follows.</p>
+<p>The gate is boring, and that is the point. Agents can draft code faster than anyone can read it. The system decides what is allowed to merge.</p>
+</article>
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a></footer>
+</div>
+</body>
+</html>

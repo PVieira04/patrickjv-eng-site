@@ -41,6 +41,7 @@
   "earlier": "Earlier: academic tutor and mentor, Leading Lights Tuition (2015–2018); special projects coordinator and volunteer corps member, City Year UK (2014–2016).",
   "projects": [
     { "title": "patrickjv.com", "text": "One content file generates the page, schema.org data, llms.txt, Markdown and WebMCP tools, plus a remote MCP server listed on the MCP Registry; Cloudflare Workers, 110+ tests and a production smoke monitor." },
+    { "title": "Writing (patrickjv.com/writing)", "text": "Holding agent-written code to the same standard as anyone's; Rehearse the restore, time the rollback." },
     { "title": "Marine forecast service", "text": "A Python service, running unattended since February 2026, that emails twice-daily ensemble forecasts to a yacht at sea, with database migrations, a watchdog and delivery tracking." }
   ],
   "skills": [

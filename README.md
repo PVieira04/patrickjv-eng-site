@@ -22,7 +22,7 @@ npm run build    # regenerate every machine-readable copy from content.json
 npm run cf:check  # live Cloudflare dashboard config vs infra/cloudflare/ (needs CLOUDFLARE_READ_TOKEN; cf:export to update)
 npm run cv       # print public/cv.html to public/cv.pdf (A4, max two pages; run npm run build first)
 npm run images   # regenerate the icons and share card (after changing the name, headline, tagline, photo or icon)
-npm test         # build drift check + 112 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
+npm test         # build drift check + 115 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
 npm run deploy   # manual fallback: npm test, then deploy both Workers (Workers Builds deploys on push to main)
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```
@@ -55,6 +55,7 @@ test/                     Build, smoke (against a local mock site), workflow and
 lib/smoke-lib.mjs         Pure helpers for smoke.mjs (media type, CSP count, MCP body, redirect, readiness, NEL and DNS verdicts)
 smoke.mjs                 Live checks (did.json, pages, headers/CSP, redirects, NEL, MCP lifecycle + readiness, Registry, DNS)
 designs/                  Archived design round (PROVENANCE.md), favicon candidates, icon + share-card generators (npm run images; hashes in images.json)
+writing/                  Write-ups (Markdown + front matter) → /writing/<slug> and /writing/<slug>.md, listed at /writing/
 infra/                    Read-only export of the Cloudflare dashboard config (cloudflare-export.mjs → cloudflare/*.json; docs/06)
 .github/workflows/        test.yml (every push/PR), monitor.yml (every 6 h + on Workers Builds results); dependabot.yml (weekly)
 docs/                     Full documentation (start below)

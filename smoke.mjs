@@ -5,7 +5,7 @@
 // Every check requires its exact success status and exact media type (parameters ignored).
 // "deployed = repo" checks compare the live bytes with this checkout, so they also FAIL when
 // commits are not deployed yet.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict } from "./lib/smoke-lib.mjs";
@@ -82,6 +82,12 @@ const PAGES = [
   ["/favicon.ico", ["image/x-icon", "image/vnd.microsoft.icon"], "public/favicon.ico"],
   ["/cv", ["text/html"], "public/cv.html"],
   ["/cv.pdf", ["application/pdf"], "public/cv.pdf"],
+  ["/writing/", ["text/html"], "public/writing/index.html"],
+  // Every post, as HTML and as Markdown.
+  ...readdirSync(new URL("writing/", import.meta.url)).filter((f) => f.endsWith(".md")).sort().flatMap((f) => {
+    const s = f.slice(0, -3);
+    return [[`/writing/${s}`, ["text/html"], `public/writing/${s}.html`], [`/writing/${s}.md`, ["text/markdown"], `public/writing/${s}.md`]];
+  }),
 ];
 for (const [p, types, file] of PAGES) {
   await check(`${p}: 200 ${types.join("|")}, deployed = repo ${file}`, async () => {

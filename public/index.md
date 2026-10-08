@@ -104,6 +104,11 @@ By holding it to the same standard as anyone's: a written spec before code, test
 
 Email hello@patrickjv.com, or through LinkedIn or GitHub.
 
+## Writing
+
+- [Holding agent-written code to the same standard as anyone's](https://patrickjv.com/writing/gating-agent-written-code.md) (2026-10-08): The golden path I use so that code drafted by AI agents meets the same bar as code written by people, enforced by the system rather than by attention.
+- [Rehearse the restore, time the rollback](https://patrickjv.com/writing/rehearse-the-restore.md) (2026-10-08): Why I time database restores and rollbacks before a release needs them, with a four-minute incident on this site and a Postgres restore drill as worked examples.
+
 ## Links
 
 - [Email](mailto:hello@patrickjv.com): hello@patrickjv.com

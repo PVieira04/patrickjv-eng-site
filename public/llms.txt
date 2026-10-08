@@ -37,6 +37,11 @@ Teaching shaped how I build tooling: it only counts if people pick it up and use
 - **How does he make AI-written code trustworthy?**: By holding it to the same standard as anyone's: a written spec before code, tests first, a hook that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a model from a second vendor.
 - **How can I contact him?**: Email hello@patrickjv.com, or through LinkedIn or GitHub.
 
+## Writing
+
+- [Holding agent-written code to the same standard as anyone's](https://patrickjv.com/writing/gating-agent-written-code.md): The golden path I use so that code drafted by AI agents meets the same bar as code written by people, enforced by the system rather than by attention.
+- [Rehearse the restore, time the rollback](https://patrickjv.com/writing/rehearse-the-restore.md): Why I time database restores and rollbacks before a release needs them, with a four-minute incident on this site and a Postgres restore drill as worked examples.
+
 ## Links
 
 - [Email](mailto:hello@patrickjv.com): hello@patrickjv.com

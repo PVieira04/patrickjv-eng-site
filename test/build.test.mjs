@@ -6,7 +6,7 @@ import { readFileSync, cpSync, mkdtempSync, writeFileSync, rmSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build, checkPage, inlineCode, safeJson, checkSecurityTxt, checkHeaders, writeStaged } from "../build.mjs";
+import { build, checkPage, inlineCode, safeJson, checkSecurityTxt, checkHeaders, writeStaged, parsePost } from "../build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const content = JSON.parse(readFileSync(join(ROOT, "content.json"), "utf8"));
@@ -145,6 +145,7 @@ function scratch() {
   const dir = mkdtempSync(join(tmpdir(), "site-build-"));
   cpSync(join(ROOT, "content.json"), join(dir, "content.json"));
   cpSync(join(ROOT, "cv.json"), join(dir, "cv.json"));
+  cpSync(join(ROOT, "writing"), join(dir, "writing"), { recursive: true });
   cpSync(join(ROOT, "build-state.json"), join(dir, "build-state.json"));
   cpSync(join(ROOT, "public"), join(dir, "public"), { recursive: true });
   return dir;
@@ -289,5 +290,41 @@ test("head metadata is generated from content.json", () => {
     assert.ok(build({ root: dir, check: true, now: NOW }).errors.some((e) => /out of date.*index\.html/.test(e)));
     assert.deepEqual(build({ root: dir, now: NOW }).errors, []);
     assert.ok(readFileSync(p, "utf8").includes(`<meta property="og:description" content="${content.person.tagline}">`));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Writing: posts are parsed strictly, published as HTML and Markdown with their own CSP rules, and
+// covered by the employer guard like the page.
+test("writing: front matter is required and checked", () => {
+  assert.throws(() => parsePost("x", "# no front matter"), /missing front matter/);
+  assert.throws(() => parsePost("x", "---\ntitle: T\ndescription: D\n---\nbody"), /needs date/);
+  assert.throws(() => parsePost("x", "---\ntitle: T\ndescription: D\ndate: 8 Oct\n---\nbody"), /YYYY-MM-DD/);
+  assert.throws(() => parsePost("Bad_Slug", "---\ntitle: T\ndescription: D\ndate: 2026-10-08\n---\nbody"), /slug/);
+  assert.equal(parsePost("ok", "---\ntitle: T\ndescription: D\ndate: 2026-10-08\n---\n\n# T\n").title, "T");
+});
+
+test("writing: every post is published as HTML and Markdown, listed, mapped and given one CSP rule per path", () => {
+  const headers = readFileSync(join(ROOT, "public/_headers"), "utf8");
+  const sitemap = readFileSync(join(ROOT, "public/sitemap.xml"), "utf8");
+  const llms = readFileSync(join(ROOT, "public/llms.txt"), "utf8");
+  const index = readFileSync(join(ROOT, "public/writing/index.html"), "utf8");
+  const slugs = readdirSync(join(ROOT, "writing")).filter((f) => f.endsWith(".md")).map((f) => f.slice(0, -3));
+  assert.ok(slugs.length >= 1);
+  for (const s of slugs) {
+    assert.ok(existsSync(join(ROOT, `public/writing/${s}.html`)) && existsSync(join(ROOT, `public/writing/${s}.md`)), s);
+    assert.match(index, new RegExp(`href="/writing/${s}"`));
+    assert.match(sitemap, new RegExp(`/writing/${s}</loc>`));
+    assert.match(llms, new RegExp(`/writing/${s}\\.md\\)`));
+    for (const path of [`/writing/${s}`, `/writing/${s}.html`]) assert.equal(headers.split("\n").filter((l) => l === path).length, 1, `one rule for ${path}`);
+  }
+  assert.deepEqual(checkHeaders(headers), []);
+});
+
+test("writing: a post naming an employer fails the build", () => {
+  const dir = scratch();
+  try {
+    writeFileSync(join(dir, "writing/zz-test.md"), "---\ntitle: T\ndescription: D\ndate: 2026-10-08\n---\n\n# T\n\nAt Altimist we do this.\n");
+    const r = build({ root: dir, check: true, today: "2026-10-08" });
+    assert.ok(r.errors.some((e) => /writing\/zz-test\.(html|md) names an employer/.test(e)), r.errors.join("\n"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

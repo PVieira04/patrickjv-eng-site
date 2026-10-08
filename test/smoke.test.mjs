@@ -118,7 +118,9 @@ function mockSite(faults = {}) {
       return send(404, { "content-type": "text/html", ...(faults.fontCsp ? { "content-security-policy": "default-src 'none', default-src 'none'" } : {}) }, file("public/404.html"));
     try {
       // Like the asset server's html_handling: /cv serves cv.html.
-      const path = url.pathname === "/cv" ? "/cv.html" : url.pathname;
+      const path = url.pathname === "/cv" ? "/cv.html"
+        : url.pathname.endsWith("/") ? url.pathname + "index.html"
+        : url.pathname.startsWith("/writing/") && !url.pathname.includes(".") ? url.pathname + ".html" : url.pathname;
       let body = file("public" + path);
       if (faults.emptyImages && /\.(webp|jpg|ico)$/.test(url.pathname)) body = Buffer.alloc(0);
       return send(200, { "content-type": TYPES[ext(path)] ?? "application/octet-stream" }, body);

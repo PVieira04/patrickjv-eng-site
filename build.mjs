@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync } from
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { marked } from "marked";
 import { agentData } from "./lib/agent-data.mjs";
 import { tools as mcpTools } from "./mcp/handler.js";
 
@@ -407,9 +408,104 @@ ${cv.education.map((x) => `      <div class="row"><h3>${e(x.qual)}<span class="o
 }
 
 // ---------------------------------------------------------------------------------------------
+// Writing (/writing/): one Markdown file per post in writing/, with title, description and date in
+// a front-matter block. Each post is served as HTML at /writing/<slug> and as its Markdown source at
+// /writing/<slug>.md, listed on /writing/, in the sitemap, llms.txt and index.md. Posts are
+// employer-agnostic like the page (the BANNED guard covers them).
+// ---------------------------------------------------------------------------------------------
+export function parsePost(slug, src) {
+  const m = src.match(/^---\n([\s\S]*?)\n---\n+([\s\S]*)$/);
+  if (!m) throw new Error(`writing/${slug}.md: missing front matter`);
+  const meta = Object.fromEntries(m[1].split("\n").map((l) => l.match(/^(\w+):\s*(.*)$/)).filter(Boolean).map(([, k, v]) => [k, v.trim()]));
+  for (const k of ["title", "description", "date"]) if (!meta[k]) throw new Error(`writing/${slug}.md: front matter needs ${k}`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(meta.date)) throw new Error(`writing/${slug}.md: date must be YYYY-MM-DD`);
+  if (!/^[a-z0-9-]+$/.test(slug)) throw new Error(`writing/${slug}.md: slug must be lower-case letters, digits and hyphens`);
+  return { slug, ...meta, body: m[2] };
+}
+
+const WRITING_STYLE = `
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+:root { --bg: #f4f3ee; --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --code: #e9e7e0; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0c0e11; --ink: #e7e9ec; --muted: #9aa3ae; --line: #262b33; --signal: #ffb547; --code: #1a1e24; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.0625rem; line-height: 1.65; }
+.wrap { box-sizing: border-box; max-width: 44rem; margin: 0 auto; padding: 24px 16px 64px; }
+.bar { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 0.875rem; margin-bottom: 40px; }
+a { color: var(--signal); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 2em 0 0.5em; font-weight: 600; }
+.meta { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); margin: 0 0 32px; }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--code); padding: 0.1em 0.3em; border-radius: 3px; }
+pre { background: var(--code); padding: 12px 16px; overflow-x: auto; border-radius: 4px; }
+pre code { padding: 0; background: none; }
+li { margin: 0.35em 0; }
+.posts { list-style: none; padding: 0; }
+.posts li { margin: 0 0 28px; }
+.posts a { font-size: 1.2rem; font-weight: 600; }
+.posts p { margin: 4px 0 0; color: var(--muted); }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 0.875rem; color: var(--muted); }
+`;
+
+function writingPage({ title, description, canonical, alternate, jsonld, main }) {
+  return `<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${attr(title)}</title>
+<meta name="description" content="${attr(description)}">
+<link rel="canonical" href="${canonical}">
+${alternate ? `<link rel="alternate" type="text/markdown" href="${alternate}">\n` : ""}<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:title" content="${attr(title)}">
+<meta property="og:description" content="${attr(description)}">
+<meta property="og:url" content="${canonical}">
+<meta property="og:image" content="${SITE}og-card.jpg">
+<script type="application/ld+json">
+${safeJson(jsonld, 2)}
+</script>
+<style>${WRITING_STYLE}</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a><a href="/writing/">Writing</a></nav>
+<main>
+${main}
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a></footer>
+</div>
+</body>
+</html>
+`;
+}
+
+export function renderWriting(posts) {
+  const sorted = [...posts].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.slug.localeCompare(b.slug)));
+  const author = { "@id": SITE + "#person" };
+  const files = {};
+  for (const p of sorted) {
+    const url = `${SITE}writing/${p.slug}`;
+    const md = `${p.body.trimEnd()}\n\n---\n\nPatrick Vieira, ${p.date}. Canonical: ${url}\n`;
+    files[`public/writing/${p.slug}.md`] = md;
+    files[`public/writing/${p.slug}.html`] = writingPage({
+      title: `${p.title} — Patrick Vieira`, description: p.description, canonical: url, alternate: `/writing/${p.slug}.md`,
+      jsonld: { "@context": "https://schema.org", "@type": "BlogPosting", headline: p.title, description: p.description, datePublished: `${p.date}T00:00:00Z`, inLanguage: "en-GB", url, author: { "@type": "Person", ...author, name: "Patrick Vieira", url: SITE } },
+      main: `<article>\n<p class="meta">${attr(p.date)}</p>\n${marked.parse(p.body)}</article>`,
+    });
+  }
+  files["public/writing/index.html"] = writingPage({
+    title: "Writing — Patrick Vieira", description: "Short engineering write-ups by Patrick Vieira on platform engineering, AI-assisted delivery and reliability.", canonical: `${SITE}writing/`,
+    jsonld: { "@context": "https://schema.org", "@type": "Blog", name: "Writing — Patrick Vieira", url: `${SITE}writing/`, inLanguage: "en-GB", author: { "@type": "Person", ...author, name: "Patrick Vieira", url: SITE } },
+    main: `<h1>Writing</h1>\n<ul class="posts">\n${sorted.map((p) => `<li><a href="/writing/${p.slug}">${attr(p.title)}</a><p>${attr(p.date)} · ${attr(p.description)}</p></li>`).join("\n")}\n</ul>`,
+  });
+  return { files, sorted };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Rendering: every generated file, as a function of the content and the dateModified value.
 // ---------------------------------------------------------------------------------------------
-function render(c, cv, html0, html404, imageFiles, fontFiles, date) {
+function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
+  const writing = renderWriting(posts);
   const city = c.person.location.split(",")[0].trim();
   const title = `${c.person.name} — ${c.person.headline}, ${city}`;
 
@@ -492,6 +588,7 @@ function render(c, cv, html0, html404, imageFiles, fontFiles, date) {
     "## Background", "", ...c.background.flatMap((p) => [p, ""]),
     "## Skills", "", ...c.skills.map((s) => `- ${s}`), "",
     "## Quick answers", "", ...c.faq.flatMap((f) => [`### ${f.q}`, "", f.a, ""]),
+    "## Writing", "", ...writing.sorted.map((p) => `- [${p.title}](${SITE}writing/${p.slug}.md) (${p.date}): ${p.description}`), "",
     "## Links", "", ...links,
   ].join("\n");
 
@@ -505,6 +602,7 @@ function render(c, cv, html0, html404, imageFiles, fontFiles, date) {
     "## Side projects", "", ...c.side_projects.map((p) => `- **${p.title}**: ${p.summary}`), "",
     "## Background", "", ...c.background.flatMap((p) => [p, ""]),
     "## Quick answers", "", ...c.faq.map((f) => `- **${f.q}**: ${f.a}`), "",
+    "## Writing", "", ...writing.sorted.map((p) => `- [${p.title}](${SITE}writing/${p.slug}.md): ${p.description}`), "",
     "## Links", "", ...links,
     "## Machine-readable", "",
     `- [Markdown version of this page](${SITE}index.md): the full profile as clean Markdown`,
@@ -517,6 +615,8 @@ function render(c, cv, html0, html404, imageFiles, fontFiles, date) {
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${SITE}</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}cv</loc><lastmod>${date}</lastmod></url>
+  <url><loc>${SITE}writing/</loc><lastmod>${date}</lastmod></url>
+${writing.sorted.map((p) => `  <url><loc>${SITE}writing/${p.slug}</loc><lastmod>${p.date}</lastmod></url>`).join("\n")}
 </urlset>
 `;
 
@@ -535,6 +635,17 @@ Sitemap: ${SITE}sitemap.xml
   const page = inlineCode(html, { styles: 1, scripts: 1 });
   const cvHtml = renderCv(cv, c);
   const cvPage = inlineCode(cvHtml, { styles: 1, scripts: 0 });
+  const writingPages = Object.entries(writing.files).filter(([f]) => f.endsWith(".html"));
+  const writingCsp = Object.fromEntries(writingPages.map(([f, h]) => {
+    const ic = inlineCode(h, { styles: 1, scripts: 0 });
+    return [f, { errors: ic.errors.map((e) => `${f.slice(7)}: ${e}`), csp: ["default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${ic.styles.map(cspHash).join(" ")}`, "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests"].join("; ") }];
+  }));
+  const writingRules = writingPages.map(([f]) => {
+    const csp = writingCsp[f].csp, path = "/" + f.slice("public/".length);
+    const clean = path.endsWith("/index.html") ? path.slice(0, -"index.html".length) : path.slice(0, -".html".length);
+    return `${clean}\n  Content-Security-Policy: ${csp}\n\n${path}\n  Content-Security-Policy: ${csp}`;
+  }).join("\n\n");
+  const writingMd = () => writing.sorted.map((p) => `/writing/${p.slug}.md\n  Content-Type: text/markdown; charset=utf-8\n  Content-Security-Policy: ${baseCsp}`).join("\n\n");
   const cvCsp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${cvPage.styles.map(cspHash).join(" ")}`,
     "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
@@ -588,6 +699,11 @@ Sitemap: ${SITE}sitemap.xml
 /cv.html
   Content-Security-Policy: ${cvCsp}
 
+# Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
+${writingRules}
+
+${writingMd()}
+
 ${CV_PDF}
   Content-Type: application/pdf
   Cache-Control: public, max-age=3600
@@ -613,8 +729,8 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
     : html404.replace(/<meta charset="utf-8">/, `<meta charset="utf-8">\n${cspMeta}`);
 
   return {
-    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml },
-    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...headerErrors],
+    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, ...writing.files },
+    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
     md, llms,
   };
 }
@@ -658,15 +774,16 @@ export function build({ root = process.cwd(), check = false, today = new Date().
 
   const c = JSON.parse(read("content.json"));
   const cv = JSON.parse(read("cv.json"));
+  const posts = readdirSync(p("writing")).filter((f) => f.endsWith(".md")).sort().map((f) => parsePost(f.slice(0, -3), read(`writing/${f}`)));
   const html0 = read("public/index.html");
   const html404 = read("public/404.html");
   const imageFiles = readdirSync(p("public")).filter((f) => /\.(webp|jpe?g|png|ico|svg|avif|gif)$/i.test(f)).sort();
   const fontFiles = readdirSync(p("public/fonts")).filter((f) => !f.startsWith(".")).sort();
-  const probe = render(c, cv, html0, html404, imageFiles, fontFiles, "0000-00-00").files;
+  const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00").files;
   // Images the page references by path (src, srcset, icons, og:image / twitter:image).
   const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
   const assetDigests = referenced.map((f) => [f, sha256(readFileSync(p(`public/${f}`))).toString("hex")]);
-  const outputs = CONTENT_OUTPUTS.map((f) => [f, probe[f]]);
+  const outputs = [...CONTENT_OUTPUTS, ...Object.keys(probe).filter((f) => f.startsWith("public/writing/")).sort()].map((f) => [f, probe[f]]);
   const hash = sha256(JSON.stringify({ outputs, assets: assetDigests })).toString("hex");
   let state = null;
   try { state = JSON.parse(readOr("build-state.json") ?? "null"); } catch { state = null; }
@@ -675,13 +792,14 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   else if (check) { errors.push("build-state.json does not match the generated output (run npm run build)"); date = state?.date ?? today; }
   else date = today;
 
-  const { files, inlineErrors, md, llms } = render(c, cv, html0, html404, imageFiles, fontFiles, date);
+  const { files, inlineErrors, md, llms } = render(c, cv, posts, html0, html404, imageFiles, fontFiles, date);
   files["build-state.json"] = JSON.stringify({ hash, date }, null, 2) + "\n";
 
   // ---- checks (all before any write) ----
   errors.push(...inlineErrors);
   errors.push(...checkPage(files["public/index.html"], c).map((e) => "index.html: " + e));
-  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms]]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
+  const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
+  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
   const nf = parseHtml(html404);
   if (elements(nf, { visible: false }).filter((e) => e.tag === "h1").length !== 1) errors.push("404.html must have exactly one <h1>");
   if (!elements(nf, { visible: false }).some((e) => e.tag === "meta" && e.attrs.name === "robots" && /noindex/.test(e.attrs.content ?? ""))) errors.push("404.html must carry <meta name=\"robots\" content=\"noindex\">");
