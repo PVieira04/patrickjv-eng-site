@@ -224,6 +224,33 @@ test("request: free/busy failing returns unavailable and holds nothing", async (
   assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
 });
 
+// Captures console output, to check what is (and is not) logged.
+async function capturingLogs(fn) {
+  const lines = [];
+  const saved = { error: console.error, warn: console.warn, log: console.log };
+  for (const k of Object.keys(saved)) console[k] = (...a) => lines.push(a.join(" "));
+  try { await fn(); } finally { Object.assign(console, saved); }
+  return lines;
+}
+
+test("request: if the hold email fails, the hold is released at once and nothing personal is logged", async () => {
+  const t = setup({ emailFails: true });
+  let r;
+  const logs = await capturingLogs(async () => { r = await request(t, {}, { ipKey: "ipA", emailKey: "a" }); });
+  assert.deepEqual(r, { error: "email_failed" });
+  const b = t.sql.exec("SELECT * FROM bookings").one();
+  assert.equal(b.status, "cancelled");
+  assert.equal(b.status_reason, "email_failed");
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE used_at IS NULL"), 0, "its links are dead");
+  assert.deepEqual(store.liveBookings(t.sql, NOW), [], "the slot is free");
+  assert.equal(logs.length, 1);
+  assert.ok(!/jane|example|Hello|ipA/i.test(logs.join("\n")));
+  // The person isn't stuck behind the one-live-hold rule either.
+  const again = setup();
+  again.sql = t.sql;
+  assert.equal((await request(again, {}, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
+});
+
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
