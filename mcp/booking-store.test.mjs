@@ -210,6 +210,25 @@ test("status: by booking ID, with no name, email or note", async () => {
   assert.equal(store.getStatus(t.sql, store.newId()), null);
 });
 
+test("status: the internal in-between states read as what callers know (confirming → pending_confirmation, cancelling → confirmed)", async () => {
+  const t = setup();
+  const { booking_id: a } = await request(t);
+  t.sql.exec("UPDATE bookings SET status = 'confirming' WHERE id = ?", a);
+  assert.equal(store.getStatus(t.sql, a, later(3 * HOUR)).status, "pending_confirmation", "not expired: a confirm is being finished");
+  const b = seed(t, { start: "2026-10-22T10:00:00.000Z", status: "cancelling" });
+  assert.equal(store.getStatus(t.sql, b, NOW).status, "confirmed");
+});
+
+test("agent cancel: a booking being confirmed or cancelled is not cancellable, reported in the caller's terms, and left alone", async () => {
+  const t = setup();
+  const { booking_id: a } = await request(t);
+  t.sql.exec("UPDATE bookings SET status = 'confirming' WHERE id = ?", a);
+  assert.deepEqual(await store.cancelByAgent(t.sql, { bookingId: a, now: NOW, deps: t.deps }), { error: "not_cancellable", status: "pending_confirmation" });
+  assert.equal(row(t, a).status, "confirming", "not withdrawn under the confirm");
+  const b = seed(t, { start: "2026-10-22T10:00:00.000Z", status: "cancelling" });
+  assert.deepEqual(await store.cancelByAgent(t.sql, { bookingId: b, now: NOW, deps: t.deps }), { error: "not_cancellable", status: "confirmed" });
+});
+
 test("request: a refused cap returns 429-style error before any Google call or email", async () => {
   const t = setup();
   for (let i = 0; i < 4; i++) reserve(t.sql, "busyIp", `x${i}`, DAY);
