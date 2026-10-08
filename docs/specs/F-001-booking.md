@@ -234,7 +234,6 @@ Flat files in `mcp/` so the existing `npm test` glob (`mcp/*.test.mjs`) picks th
   // "idSecret" names the Worker secret that holds the calendar ID.
   "calendars": [
     { "account": "personal", "label": "Main", "idSecret": "CAL_PERSONAL_MAIN", "blocks": true },
-    { "account": "personal", "label": "Family", "idSecret": "CAL_PERSONAL_FAMILY", "blocks": true },
     { "account": "personal", "label": "Birthdays", "blocks": false },
     { "account": "hello", "label": "Bookings", "id": "primary", "blocks": true }
   ]

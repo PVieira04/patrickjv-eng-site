@@ -266,13 +266,13 @@ test("validateConfig: every bad value is refused, naming the field", () => {
     ["meetingTypes[1].minutes", bad((c) => { c.meetingTypes[1].minutes = "15"; })],
     ["calendars", bad((c) => { c.calendars = "primary"; })],
     ["calendars[0]", bad((c) => { c.calendars[0].id = "primary"; })], // both id and idSecret
-    ["calendars[3]", bad((c) => { delete c.calendars[3].id; })], // blocks, but neither
-    ["calendars[2]", bad((c) => { c.calendars[2].id = "x"; c.calendars[2].idSecret = "CAL_X"; })],
+    ["calendars[2]", bad((c) => { delete c.calendars[2].id; })], // blocks, but neither
+    ["calendars[1]", bad((c) => { c.calendars[1].id = "x"; c.calendars[1].idSecret = "CAL_X"; })],
     ["calendars[0].blocks", bad((c) => { c.calendars[0].blocks = "yes"; })],
     ["calendars[0].idSecret", bad((c) => { c.calendars[0].idSecret = "cal-main"; })],
-    ["calendars[3].id", bad((c) => { c.calendars[3].id = ""; })],
+    ["calendars[2].id", bad((c) => { c.calendars[2].id = ""; })],
     // A personal calendar's ID is an email address: it belongs in a Worker secret, not this public file.
-    ["calendars[3].id", bad((c) => { c.calendars[3].id = "someone@googlemail.com"; })],
+    ["calendars[2].id", bad((c) => { c.calendars[2].id = "someone@googlemail.com"; })],
     ["calendars[1].account", bad((c) => { delete c.calendars[1].account; })],
     ["calendars[1].label", bad((c) => { c.calendars[1].label = ""; })],
   ]) {
@@ -282,7 +282,7 @@ test("validateConfig: every bad value is refused, naming the field", () => {
 
 test("validateConfig: a calendar that doesn't block needs no ID (it is never queried)", () => {
   const cfg = realConfig();
-  assert.deepEqual(cfg.calendars[2], { account: "personal", label: "Birthdays", blocks: false });
+  assert.deepEqual(cfg.calendars[1], { account: "personal", label: "Birthdays", blocks: false });
   assert.equal(validateConfig(cfg), cfg);
 });
 

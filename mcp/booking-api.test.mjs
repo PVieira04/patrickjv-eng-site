@@ -475,7 +475,7 @@ test("patrickjv/health: bookingEnabled is the flag; bookingReady means secrets s
   assert.deepEqual([(await healthOf(harness({ enabled: false }))).bookingEnabled, (await healthOf(harness({ enabled: false }))).bookingReady], [false, true]);
   assert.equal((await healthOf(harness({ fetchOpts: { fail: { token: true } } }))).bookingReady, false, "revoked refresh token");
   assert.equal((await quiet(() => healthOf(harness({ storeDown: true })))).bookingReady, false, "Durable Object unreachable");
-  for (const k of ["QUOTA_SALT", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RESEND_API_KEY", "BOOKING_OWNER_EMAIL", "BOOKING_FROM", "CAL_PERSONAL_MAIN", "CAL_PERSONAL_FAMILY", "BOOKING"]) {
+  for (const k of ["QUOTA_SALT", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RESEND_API_KEY", "BOOKING_OWNER_EMAIL", "BOOKING_FROM", "CAL_PERSONAL_MAIN", "BOOKING"]) {
     const h = harness({ env: { [k]: undefined } });
     const r = await healthOf(h);
     assert.equal(r.bookingReady, false, k);

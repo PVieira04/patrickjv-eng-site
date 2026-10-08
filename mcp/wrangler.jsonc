@@ -33,8 +33,8 @@
   //   wrangler secret put GOOGLE_REFRESH_TOKEN -c mcp/wrangler.jsonc   hello@'s production refresh token (never a Testing one)
   //   wrangler secret put RESEND_API_KEY -c mcp/wrangler.jsonc         key "patrickjv-booking / patrickjv-mcp / send-only"
   //   wrangler secret put BOOKING_OWNER_EMAIL -c mcp/wrangler.jsonc    Patrick's address, invited to every meeting
-  //   wrangler secret put CAL_PERSONAL_MAIN -c mcp/wrangler.jsonc      calendar IDs named by idSecret in booking.json,
-  //   wrangler secret put CAL_PERSONAL_FAMILY -c mcp/wrangler.jsonc    copied exactly from Settings → Integrate calendar
+  //   wrangler secret put CAL_PERSONAL_MAIN -c mcp/wrangler.jsonc      a calendar ID named by idSecret in booking.json,
+  //                                                                    copied exactly from Settings → Integrate calendar
   // Booking quota keys are HMACs with QUOTA_SALT too.
   // Email Routing send_email can only deliver to the account's verified destination addresses
   // (free plan), so strangers can never use it to email anyone else. No destination_address here:

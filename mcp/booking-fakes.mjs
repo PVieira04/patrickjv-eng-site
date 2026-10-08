@@ -3,7 +3,7 @@
 export const ENV = {
   GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret", GOOGLE_REFRESH_TOKEN: "refresh-token",
   RESEND_API_KEY: "re_key", BOOKING_OWNER_EMAIL: "owner@example.net", BOOKING_FROM: "Patrick Vieira <hello@patrickjv.com>",
-  CAL_PERSONAL_MAIN: "main@example.net", CAL_PERSONAL_FAMILY: "family@example.net",
+  CAL_PERSONAL_MAIN: "main@example.net",
 };
 
 // opts: busy [{start,end}] reported for every calendar; fail: {token, freebusy, insert, delete, mail,

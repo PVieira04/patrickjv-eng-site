@@ -40,7 +40,7 @@ test("service: free/busy asks only the blocking calendars (secret IDs resolved, 
   const { svc, f } = service();
   await svc.request(guest(), "ip1", "em1");
   const fb = f.calls.find((c) => c.url.endsWith("/freeBusy"));
-  assert.deepEqual(fb.body.items.map((i) => i.id).sort(), ["family@example.net", "main@example.net", "primary"]);
+  assert.deepEqual(fb.body.items.map((i) => i.id).sort(), ["main@example.net", "primary"]);
 });
 
 test("service: confirming creates the event as hello@ with Patrick and the guest as plain-email attendees, then emails 'Booked'", async () => {
