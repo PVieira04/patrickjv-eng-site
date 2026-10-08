@@ -262,9 +262,32 @@ async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
   return { result: "confirmed" };
 }
 
-// A booking's state for whoever holds its ID (a bearer secret): never the guest's details.
-export function getStatus(sql, bookingId) {
+// A booking's state for whoever holds its ID (a bearer secret): never the guest's details. With
+// `now`, a hold that has lapsed but not yet been swept by the alarm reads as expired.
+export function getStatus(sql, bookingId, now) {
+  const b = sql.exec(
+    `SELECT status, status_reason, start_utc AS start, end_utc AS "end", type, hold_expires FROM bookings WHERE id = ?`, bookingId,
+  ).toArray()[0];
+  if (!b) return null;
+  const { hold_expires: exp, ...view } = b;
+  if (now && view.status === "pending_confirmation" && exp <= now.toISOString()) return { ...view, status: "expired", status_reason: "hold_expired" };
+  return view;
+}
+
+// Alarm work: holds past their 2 hours become expired. Returns how many.
+export function expireHolds(sql, now) {
+  const nowIso = now.toISOString();
   return sql.exec(
-    `SELECT status, status_reason, start_utc AS start, end_utc AS "end", type FROM bookings WHERE id = ?`, bookingId,
-  ).toArray()[0] ?? null;
+    "UPDATE bookings SET status = 'expired', status_reason = 'hold_expired' WHERE status = 'pending_confirmation' AND hold_expires <= ? RETURNING id",
+    nowIso,
+  ).toArray().length;
+}
+
+// When the alarm should next run (ms): the earliest hold expiry, or the next UTC midnight for the
+// daily prune, whichever is sooner. An overdue hold means now.
+export function nextAlarmAt(sql, now) {
+  const midnight = Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`) + DAY;
+  const next = sql.exec("SELECT min(hold_expires) AS t FROM bookings WHERE status = 'pending_confirmation'").one().t;
+  if (!next) return midnight;
+  return Math.max(now.getTime(), Math.min(Date.parse(next), midnight));
 }
