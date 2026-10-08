@@ -58,7 +58,7 @@ test("changing the stat 40 to 4 fails (no substring match inside 1,400+)", () =>
 
 test("a skill moved into another section fails", () => {
   let html = mutate(page, '<li><span aria-hidden="true">06</span>Python</li>', "");
-  html = mutate(html, "<p>Teaching shaped how I build tooling", "<p>Python</p><p>Teaching shaped how I build tooling");
+  html = mutate(html, "<p>Two years in a classroom left me judging tooling", "<p>Python</p><p>Two years in a classroom left me judging tooling");
   fails(html, /Skills|Background/);
 });
 

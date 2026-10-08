@@ -16,7 +16,7 @@
   "card": {
     "inputs": {
       "designs/og/make-card.cjs": "c1401e65fd38e35887ba47abe9cf559f8b0b650664148b1c530dbd7b22e0ff34",
-      "content.json person.{name,headline,tagline}": "0c5145af5245b59d2d216e5fb6ebaaed3aea2cf2a1a997d37e7ebb4a1153ff8d",
+      "content.json person.{name,headline,tagline}": "a0da4e4186c85f40828cf23226984b7a344d0a3926989eafdf39abe7c9a78568",
       "public/photo.webp": "a342e4f91434ed199b73362fe1f01bfd835f69ca7f7324159954f408b01082d5",
       "public/icon-192.png": "fc6197f729f5a5d82940e0e2f1a3ece40d14f872880d9f4cabd523fb1d7968c7",
       "designs/og/fonts/IBMPlexMono-Medium.ttf": "4fc14a73ca53ba9d32fd759ae1ca1a3133326035d0dd337862b3ee1633cc156e",
@@ -27,12 +27,12 @@
       "sharp (package.json)": "a41a17a6dee7e6c171e9e9f080d6cf5dd8036787e685eee695102fa92516a860"
     },
     "outputs": {
-      "public/og-card.jpg": "4a9c4ce43c68d972f34021a2d4137ac11bd12825e67199a4f5c5d180b003c070"
+      "public/og-card.jpg": "9df7d5ae5496d95a5ec7f96ca3f7c29ec66a401e6b878900e8fb66785ebf7df3"
     }
   },
   "cv": {
     "inputs": {
-      "public/cv.html": "1e1ae1bef9fd37629b7c5f98347a3b259f540c9fca6148c8da840c7e99da6b2b",
+      "public/cv.html": "49dd7bc66f1d79127fc2b9dfa45c94aa613711dbdcd9bcd1924866eae4f2913c",
       "designs/make-cv-pdf.mjs": "1af4358b0a34cb9e8e60df9ed2c5678b74a38eb56eb1b3f2533fe6f0f127593d",
       "public/fonts/ibm-plex-mono-latin-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
       "public/fonts/ibm-plex-mono-latin-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
@@ -40,7 +40,7 @@
       "playwright-core (package.json)": "135f3e7fabc10c4d2ff2bb4f1b5dbc3d32eb0e4ff7dd6b4b8c8a6e96f4824f9d"
     },
     "outputs": {
-      "public/cv.pdf": "3f1a95e95cbcee84eef9059085988cd8db8445b20318d63b3064031d42009221"
+      "public/cv.pdf": "a32b9fb8b57e3ce55cc17f87811b9bc9bde119eaec9474f5d44ec1dd17dbc919"
     }
   }
 }

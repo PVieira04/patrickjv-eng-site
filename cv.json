@@ -1,6 +1,6 @@
 {
   "headline": "AI Platform Engineer",
-  "profile": "I build AI platforms: the developer platform a small London fintech ships with, and the infrastructure, identity and security underneath it. Implementation is agent-drafted inside a delivery system I designed and enforce, and I am accountable for everything that merges. I joined in 2023 to run IT and operations, replaced the managed IT provider with in-house systems, then built the engineering function; I report to the CEO and carry production.",
+  "profile": "I build AI platforms, including the developer platform a small London fintech ships with and the infrastructure, identity and security underneath it. Agents draft the implementation inside a delivery process I designed and enforce, and I answer for everything that merges. I joined in 2023 to run IT and operations, replaced the managed IT provider with in-house systems, then built the engineering function. I report to the CEO and am responsible for production.",
   "experience": [
     {
       "title": "AI Platform Engineer",
@@ -8,15 +8,15 @@
       "place": "London",
       "dates": "Aug 2023 – present",
       "bullets": [
-        "Joined to run IT and operations and brought IT in-house, replacing the managed IT provider (£5k+ a month): built the office network (hardware and configuration), set the security baseline, and automated joiner and leaver processes.",
+        "Joined to run IT and operations and brought IT in-house, replacing the managed IT provider (£5k+ a month). I built the office network (hardware and configuration), set the security baseline and automated joiner and leaver processes.",
         "With no platform or engineering function in place, built the developer platform for AI-assisted delivery that everyone at the company now uses daily. Since June 2026 it has been the golden path from spec to merge: a Claude Code plugin and a versioned standards baseline rolled out to about 26 repositories by automated pull request. Three colleagues extend it (40+ of their pull requests merged).",
-        "Agent-drafted, human-accountable delivery: a written spec and acceptance tests first, a gate that blocks an agent from finishing until typecheck, lint and tests pass, and adversarial review by a second vendor's model before I approve and merge. 1,400+ merged pull requests across 40 repositories in ten months.",
+        "Agent-drafted code merges only after a written spec and acceptance tests, a gate that blocks an agent from finishing until typecheck, lint and tests pass, and adversarial review by a second vendor's model. 1,400+ merged pull requests across 40 repositories in ten months.",
         "One of four engineers on the company's AI assistant product, now in pre-launch: scaffolded it (Next.js on Cloudflare Workers), built its security baseline, and wrote the rules that let its AI triage hand a case to a person, including fixing an instruction revision that talked the model out of escalating.",
         "Wrote the product's release pack: a timed database restore drill (recovered in 2 min 15 s with no data lost), a rehearsed production rollback and de-duplicated on-call alerting. Diagnosed a public-site outage caused by an origin certificate that could not renew, and removed the dependency on it by serving the domain from the edge.",
-        "Building the Software Factory, an agent execution and evaluation platform on the same golden path: sandboxed runs with per-run credentials, queue-based dispatch with a dead-letter queue and transactional outbox, review stations against written criteria and an automatic revert watcher. Running in staging; no production runs yet.",
+        "Building the Software Factory, an agent execution and evaluation platform that follows the same process: sandboxed runs with per-run credentials, queue-based dispatch with a dead-letter queue and transactional outbox, review stations against written criteria and an automatic revert watcher. Running in staging; no production runs yet.",
         "Built the first version of the company's identity provider (WebAuthn passkeys on did:web with W3C Verifiable Credentials), the sign-in for internal applications since May 2026, with client libraries published on npm. Handed it over to a colleague in August 2026.",
         "Run cloud and SaaS infrastructure as code through Terraform Cloud (plan on pull request, apply on merge, daily drift detection): authoritative GitHub access, provider credentials read ephemerally from 1Password, production and staging keys separated. The Microsoft 365 tenant is code too: phishing-resistant admin MFA, a geo-fenced sign-in policy piloted in report-only mode first, and leaver tooling that suspends access in every system and verifies it was removed. Consolidated hosting onto Cloudflare Workers and retired Vercel (Sep 2026).",
-        "Built an on-premises Python speech pipeline on an NVIDIA DGX Spark (NeMo transcription, diarisation, voiceprint speaker naming) for audio that cannot leave the building; it feeds searchable, human-verified records for decision and action tracking.",
+        "Built an on-premises Python speech pipeline on an NVIDIA DGX Spark (NeMo transcription, diarisation, voiceprint speaker naming) for audio that cannot leave the building; its output becomes searchable, human-checked records of decisions and actions.",
         "Set technical direction through 44 of the company's 61 architecture decision records, and wrote the handovers and onboarding guides colleagues work from."
       ]
     },
@@ -43,7 +43,7 @@
   "projects": [
     {
       "title": "patrickjv.com",
-      "text": "Personal site and test bed for the golden path: one content file generates its machine-readable copies (schema.org, llms.txt, Markdown, WebMCP tools) and checks the hand-written page against them; a remote MCP server listed on the MCP Registry; 110+ tests and a production smoke monitor. Source public on GitHub."
+      "text": "Personal site and test bed for the same delivery process: one content file generates its machine-readable copies (schema.org, llms.txt, Markdown, WebMCP tools) and checks the hand-written page against them; a remote MCP server listed on the MCP Registry; 110+ tests and a production smoke monitor. Source public on GitHub."
     },
     {
       "title": "Writing (patrickjv.com/writing)",
