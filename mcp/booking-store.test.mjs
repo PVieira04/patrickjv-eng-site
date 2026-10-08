@@ -411,3 +411,45 @@ test("race: 20 parallel requests from one email for different slots produce exac
   assert.ok(results.filter((r) => !r.status).every((r) => r.error === "hold_pending"));
   assert.equal(t.calls.emails.length, 1);
 });
+
+// A pending hold with a working confirm link, written directly: requests can't make two
+// overlapping holds, but a confirm must still be safe if they exist.
+async function seedHold(t, start) {
+  const id = seed(t, { start, status: "pending_confirmation", holdExpires: later(2 * HOUR).toISOString() });
+  const { token, hash } = await store.newToken();
+  t.sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'confirm', ?)", hash, id, later(2 * HOUR).toISOString());
+  return token;
+}
+
+test("race: a confirm link clicked 20 times at once confirms once and creates one event", async () => {
+  const t = setup();
+  const h = await hold(t);
+  const results = await Promise.all(Array.from({ length: 20 }, () => act(t, h.confirm)));
+  assert.equal(results.filter((r) => r.result === "confirmed").length, 1);
+  assert.ok(results.filter((r) => !r.result).every((r) => r.error === "used"));
+  assert.equal(t.calls.inserted.length, 1);
+  assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 1);
+});
+
+test("race: 20 overlapping holds confirmed at once produce exactly one meeting", async () => {
+  const t = setup();
+  const tokens = [];
+  for (let i = 0; i < 20; i++) tokens.push(await seedHold(t, later(48 * HOUR + (i % 3) * 15 * 60e3).toISOString()));
+  const results = await Promise.all(tokens.map((tk) => act(t, tk)));
+  assert.equal(results.filter((r) => r.result === "confirmed").length, 1);
+  assert.equal(t.calls.inserted.length, 1);
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM bookings WHERE status = 'confirmed'"), 1);
+  assert.ok(results.filter((r) => r.result !== "confirmed").every((r) => r.result === "declined" && r.reason === "slot_taken"));
+});
+
+test("race: confirms racing for a day's last place produce exactly one meeting; the rest are day_full", async () => {
+  const t = setup();
+  seed(t, { start: "2026-10-21T10:00:00.000Z" });
+  seed(t, { start: "2026-10-21T11:00:00.000Z" });
+  const tokens = [];
+  for (const hh of ["12", "13", "14", "15", "16"]) tokens.push(await seedHold(t, `2026-10-21T${hh}:00:00.000Z`));
+  const results = await Promise.all(tokens.map((tk) => act(t, tk)));
+  assert.equal(results.filter((r) => r.result === "confirmed").length, 1);
+  assert.equal(results.filter((r) => r.reason === "day_full").length, 4);
+  assert.equal(t.calls.inserted.length, 1);
+});
