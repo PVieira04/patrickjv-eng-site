@@ -32,9 +32,11 @@ const busy = (shared?.busy ?? []).map((b) => [b.start, b.end]);
 const london = (iso) => new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 busy.forEach(([s, e]) => console.log(`   busy ${london(s)}–${london(e)}`));
 const covers = (hhmm) => busy.some(([s, e]) => london(s) <= hhmm && hhmm < london(e));
-note("normal event at 10:00 blocks", covers("10:00"));
-note("'Free' event at 12:00 does NOT block", !covers("12:00"), "spec assumes free events are omitted");
-note("timed Busy task at 14:00", null, covers("14:00") ? "BLOCKS (spec says it will)" : "does not block (update spec)");
+if (shared && !shared.errors) {
+  note("normal event at 10:00 blocks", covers("10:00"));
+  note("'Free' event at 12:00 does NOT block", !covers("12:00"), "spec assumes free events are omitted");
+  note("timed Busy task at 14:00", null, covers("14:00") ? "BLOCKS (spec says it will)" : "does not block (update spec)");
+} else console.log("   SKIPPED the three blocking checks: no free/busy data (is the calendar shared with hello@?)");
 
 // 3. Insert event with hex ID, guest, Meet link
 const id = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");

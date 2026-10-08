@@ -19,11 +19,11 @@ Three kinds of evidence, in falling order of strength:
 | S4 | Can a service account create events with guests? | Docs | ❌ Not on a consumer account | OAuth only |
 | S5 | Can the booking ID double as the Google event ID? | Docs | ⚠️ Not as base64url | IDs are 32 hex characters |
 | S6 | Meet links for a consumer organiser | Docs | ✅ Yes, created asynchronously | Confirm step waits for `success` |
-| S7 | What blocks time in free/busy? | Docs | ⚠️ Timed Busy tasks **do** block; Free events probably don't | Spec corrected; live check in S11 |
+| S7 | What blocks time in free/busy? | Docs, then Run (S11) | ✅ Normal events block; Free events and timed tasks don't | Spec corrected after S11 |
 | S8 | Can `hello@` send guest emails through Gmail? | Docs (secondary) | ❌ Account has no Gmail | Use a mail service |
 | S9 | Which mail service, on free plans? | Docs + account | ✅ Existing Resend account, second domain | Resend setup section |
 | S10 | Resend domain `patrickjv.com` verified | Run (DNS) + account | ✅ Verified 2026-10-08 | — |
-| S11 | Live Google behaviour end to end | Pending | ⏳ Needs the `hello@` account | — |
+| S11 | Live Google behaviour end to end | Run | ✅ All pass | Exact calendar IDs; `/privacy` needed to publish |
 
 ---
 
@@ -111,7 +111,7 @@ Apex MX and SPF unchanged (Cloudflare Email Routing, `-all`). The zone has no DN
 
 **Status:** **verified** on 2026-10-08, the same afternoon, within a few hours of the records going live. A send-only API key, `patrickjv-booking / patrickjv-mcp / send-only`, was created for the booking Worker.
 
-## S11: Live Google spike (pending)
+## S11: Live Google spike
 
 **Why:** S3–S7 rest on documentation, and S7 is partly inferred. This run proves them against real accounts.
 
@@ -135,4 +135,33 @@ Both scripts read the OAuth client from the JSON downloaded from Google Cloud (`
 
 **Pass:** everything PASS; the INFO lines recorded here; the invite arrives from `hello@` with a Meet link and without showing Patrick's personal address.
 
-**Result:** not run yet.
+**Result (2026-10-08, third run; OAuth app in Testing, `hello@` as a test user):**
+
+```
+PASS token refresh: scopes: …/calendar.events.owned …/calendar.freebusy
+PASS freebusy on shared calendar: 2 busy blocks
+   busy 10:00–10:30
+   busy 18:00–00:00            (an unrelated evening item already on that calendar)
+PASS normal event at 10:00 blocks
+PASS 'Free' event at 12:00 does NOT block
+INFO timed Busy task at 14:00: does not block
+PASS events.insert with hex id + attendee
+PASS Meet link created: success
+PASS repeat insert returns 409
+PASS delete with sendUpdates=all: 204
+INFO re-insert of a deleted id: 409
+ALL PASS
+```
+
+Checked by hand in the guest inbox: the invite arrived, its organiser shows as "Patrick, hello@patrickjv.com" (the personal address isn't visible), and it has a working "Join with Google Meet" link. The cancellation arrived after the delete.
+
+**Findings beyond pass/fail:**
+
+- **Timed tasks don't block.** The 14:00 task was created with a time set and default settings. Google's help suggests a task can be set to show as Busy; that variant wasn't tested. The spec now says tasks don't block by default.
+- **Calendar IDs must be exact.** The first run used the `@gmail.com` spelling and got `notFound`; the calendar's real ID is `…@googlemail.com` (an older UK account). The second run, with the right ID, worked. The `CAL_PERSONAL_*` secrets must be copied from Settings → Integrate calendar.
+- **Sharing free/busy only is enough.** No other access, and `hello@` didn't have to accept or add the calendar.
+- **Publishing needs a privacy policy URL.** In Testing, sign-in is blocked (`Error 403: access_denied`) unless the account is on the test-user list, even for the project's owner. "Publish app" stays disabled until Branding has a home page **and a privacy policy URL**, and the site has no privacy page. The spec now requires `/privacy`, plus a publish order.
+- **Scope classification** (Console): `calendar.freebusy` non-sensitive, `calendar.events.owned` sensitive, none restricted.
+- **The spike's first version passed a check on missing data:** with free/busy failing, "Free event doesn't block" passed vacuously. `spike.mjs` now skips the blocking checks when free/busy returns an error.
+
+**The Testing refresh token** was shown in a chat transcript during the spike. It's revoked after the run, and the production token is created fresh once the app is published.

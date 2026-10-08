@@ -17,7 +17,7 @@
 | Created | 2026-10-08 |
 | Last updated | 2026-10-08 |
 | Target release | TBD |
-| Evidence | [Spikes S1–S11](F-001-spikes/README.md) (S11 pending) |
+| Evidence | [Spikes S1–S11](F-001-spikes/README.md) |
 | Depends on | A Google account for `hello@patrickjv.com` (setup below); the existing `patrickjv-mcp` Worker |
 
 ---
@@ -220,7 +220,7 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 }
 ```
 
-Calendar IDs for personal Gmail calendars are email addresses, so they go in Worker secrets, not in this public file. Events marked "Free" are expected not to block, and untimed tasks don't. But a task with a set time, marked Busy, shows as busy to others and **will** block. Both behaviours are inferred from Google's docs, not stated outright; the live spike checks them.
+Calendar IDs for personal Gmail calendars are email addresses, so they go in Worker secrets, not in this public file. Proven by the live spike (S11, 2026-10-08): normal events block, events marked "Free" don't, and a task with a time set (default settings) doesn't. Google's help suggests a task can be set to show as Busy; that variant wasn't tested. **Calendar IDs must be exact:** for an older UK account the main calendar's ID is `…@googlemail.com`, and the `@gmail.com` spelling returns `notFound`. Copy the ID from Settings → Integrate calendar.
 
 ### Booking record (BookingStore, SQLite)
 
