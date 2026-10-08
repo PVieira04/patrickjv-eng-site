@@ -127,7 +127,9 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
   return {
     async request(input, ipKey, emailKey) {
       const r = await requestBooking(sql, { cfg, now: now(), input, ipKey, emailKey, deps });
-      if (r.booking_id) await alarmBy(nextAlarmAt(sql, now()));
+      // Every request may have written quota counters, refused or not: an alarm must be set to
+      // prune them (alarmBy only ever moves it earlier).
+      await alarmBy(nextAlarmAt(sql, now()));
       return r;
     },
     act(token) {
