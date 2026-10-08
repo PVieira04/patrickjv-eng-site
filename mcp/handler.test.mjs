@@ -127,8 +127,12 @@ test("client JSON-RPC responses: exactly one of result/error, and a well-formed 
   }
 });
 
-test("tools/list: four read-only tools, request_intro, then the five booking tools", async () => {
-  const r = await (await harness().call(rpc("tools/list"))).json();
+test("tools/list: four read-only tools, request_intro, then (only with BOOKING_ENABLED=true) the five booking tools", async () => {
+  const dark = await (await harness().call(rpc("tools/list"))).json();
+  assert.deepEqual(dark.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+  const h = harness();
+  h.env.BOOKING_ENABLED = "true";
+  const r = await (await h.call(rpc("tools/list"))).json();
   assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
     "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
   for (const t of r.result.tools.slice(0, 4)) assert.equal(t.annotations.readOnlyHint, true);

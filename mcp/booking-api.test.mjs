@@ -396,9 +396,29 @@ test("BOOKING_ENABLED not \"true\": every write path is 503 booking_disabled; ty
     const cancel = await h.call("/api/booking/cancel", { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: { booking_id: "a".repeat(32) } });
     assert.equal(cancel.status, 503);
     assert.equal((await h.call("/api/booking/types")).status, 200);
-    assert.equal((await tool(h, "list_meeting_types")).isError, undefined);
     assert.equal(h.f.mails().length, 0);
   }
+});
+
+test("BOOKING_ENABLED not \"true\": MCP hides booking — tools/list omits the five tools, instructions don't mention it, calls say it isn't open", async () => {
+  for (const value of ["false", undefined, "TRUE", "1"]) {
+    const h = harness({ env: { BOOKING_ENABLED: value } });
+    const { result } = await mcp(h, rpc("tools/list"));
+    assert.deepEqual(result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"], String(value));
+    const init = await mcp(h, rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
+    assert.doesNotMatch(init.result.instructions, /book|meeting/i, String(value));
+    assert.match(init.result.instructions, /request_intro/);
+    for (const [name, args] of [["list_meeting_types", {}], ["get_availability", { type: "consultation" }], ["book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" }],
+      ["get_booking_status", { booking_id: "a".repeat(32) }], ["cancel_booking", { booking_id: "a".repeat(32) }]]) {
+      const r = await tool(h, name, args);
+      assert.equal(r.isError, true, name);
+      assert.equal(r.structuredContent.error, "booking_disabled", name);
+      assert.match(r.content[0].text, /^Booking isn't open yet\./, name);
+    }
+    assert.equal(h.storeCalls(), 0, "nothing reaches the BookingStore");
+  }
+  // Switched on, all ten are listed.
+  assert.equal((await mcp(harness(), rpc("tools/list"))).result.tools.length, 10);
 });
 
 test("kill switch: availability works while configured, and is 503 when not configured", async () => {
@@ -408,7 +428,8 @@ test("kill switch: availability works while configured, and is 503 when not conf
   const res = await unconfigured.call("/api/booking/availability?type=consultation");
   assert.equal(res.status, 503);
   assert.equal((await res.json()).error, "unavailable");
-  assert.equal((await tool(unconfigured, "get_availability", { type: "consultation" })).structuredContent.error, "unavailable");
+  const onButUnconfigured = harness({ env: { GOOGLE_REFRESH_TOKEN: undefined } });
+  assert.equal((await tool(onButUnconfigured, "get_availability", { type: "consultation" })).structuredContent.error, "unavailable");
 });
 
 test("kill switch: links for holds made before it was turned off still work", async () => {
