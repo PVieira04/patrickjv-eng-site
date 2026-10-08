@@ -144,7 +144,7 @@ test("free/busy only: the client has no method that lists events, or reads any b
 const ID = "0123456789abcdef0123456789abcdef";
 const EVENT = {
   id: ID, summary: "Consultation: Jane Smith", description: "Booked via patrickjv.com.",
-  start: "2026-10-26T10:00:00.000Z", end: "2026-10-26T10:30:00.000Z",
+  start: "2026-10-26T10:00:00.000Z", end: "2026-10-26T10:30:00.000Z", timeZone: "Europe/London",
   attendees: ["patrick@example.org", "jane@example.com"],
 };
 const MEET = "https://meet.google.com/abc-defg-hij";
@@ -168,8 +168,10 @@ test("insertEvent: on hello@'s primary calendar, Patrick and the guest invited, 
   assert.equal(b.id, ID, "the booking ID is the event ID, so a retry is a 409, not a second event");
   assert.equal(b.summary, "Consultation: Jane Smith", "the title is passed through as given");
   assert.equal(b.description, EVENT.description);
-  assert.deepEqual(b.start, { dateTime: EVENT.start });
-  assert.deepEqual(b.end, { dateTime: EVENT.end });
+  // With the zone named, Google shows invites in London time ("2pm (British Summer Time)"), not UTC
+  // (seen in the first live invite, 8 Oct 2026).
+  assert.deepEqual(b.start, { dateTime: EVENT.start, timeZone: "Europe/London" });
+  assert.deepEqual(b.end, { dateTime: EVENT.end, timeZone: "Europe/London" });
   assert.deepEqual(b.attendees, [{ email: "patrick@example.org" }, { email: "jane@example.com" }]);
   assert.equal(b.guestsCanSeeOtherGuests, false, "the guest isn't shown Patrick's personal address in the guest list");
   assert.deepEqual(b.conferenceData, { createRequest: { requestId: ID, conferenceSolutionKey: { type: "hangoutsMeet" } } });

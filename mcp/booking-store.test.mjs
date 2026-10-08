@@ -391,6 +391,11 @@ test("event: Google renders the description as HTML, so the note and type title 
   assert.equal(ev.summary, "Q&A <1:1>: Jane <b>", "the title is plain text in Google");
 });
 
+test("event: carries the booking time zone, so invites read in London time rather than UTC", () => {
+  const b = { id: "x", type: "consultation", start_utc: SLOT, end_utc: SLOT, guest_name: "Jane", guest_email: "jane@example.com" };
+  assert.equal(store.buildEvent(b, cfg, "patrick@example.org").timeZone, cfg.timezone);
+});
+
 test("confirm: a 409 from Google (event already exists) still counts as created", async () => {
   const t = setup();
   t.deps.insertEvent = async () => { await tick(); return { created: false, meetLink: null }; };
