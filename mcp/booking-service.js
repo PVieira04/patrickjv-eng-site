@@ -5,9 +5,9 @@
 // run this against node:sqlite with a fake fetch.
 import { checkSlot, availableSlots } from "./booking-config.js";
 import {
-  migrate, requestBooking, act, cancelByAgent, peekToken, getStatus, liveBookings, expireHolds, prune, nextAlarmAt, newToken,
+  migrate, requestBooking, act, cancelByAgent, peekToken, getStatus, liveBookings, expireHolds, prune, nextAlarmAt, recoverConfirm, emailFailures,
 } from "./booking-store.js";
-import { createGoogle, assertNoErrors } from "./booking-google.js";
+import { createGoogle, assertNoErrors, meetLinkOf } from "./booking-google.js";
 import { createMailer, holdEmail, bookedEmail, cancelRequestEmail } from "./booking-email.js";
 
 export const ACT_URL = "https://patrickjv.com/api/booking/act";
@@ -20,9 +20,10 @@ export const STUCK_AFTER_MS = 2 * MINUTE;
 // the Worker hammer Google. Booking and confirming always ask Google afresh.
 const AVAILABILITY_CACHE_MS = MINUTE;
 const PING_CACHE_MS = MINUTE;
+// Guest emails failed in a row before health says email is down (fewer could be a blip).
+const EMAIL_FAILURES_DOWN = 3;
 
 const logFailure = (subsystem) => console.error(JSON.stringify({ event: "booking_failure", subsystem }));
-const plus = (iso, ms) => new Date(Date.parse(iso) + ms).toISOString();
 
 // The calendar IDs free/busy is asked about: only blocks:true calendars, IDs from config or from
 // the Worker secret it names. A missing secret yields undefined, which bookingConfigured() catches.
@@ -43,7 +44,7 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
   // The one place guest email is sent (switching provider changes only createMailer).
   const sendEmail = async (kind, b, links) => {
     const base = { name: b.name, typeTitle: typeTitle(b.type), start: b.start, end: b.end };
-    const mail = kind === "hold" ? holdEmail({ ...base, note: b.note, holdExpires: b.holdExpires, viaAgent: b.source !== "page", ...links })
+    const mail = kind === "hold" ? holdEmail({ ...base, holdExpires: b.holdExpires, viaAgent: b.source !== "page", ...links })
       : kind === "booked" ? bookedEmail({ ...base, ...links })
       : kind === "cancel_request" ? cancelRequestEmail({ ...base, ...links })
       : null;
@@ -54,8 +55,9 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     checkSlot, freeBusy, sendEmail,
     actUrl: (token) => `${ACT_URL}?t=${token}`,
     day: (iso) => iso.slice(0, 10), // quota days are UTC days, like request_intro's
-    // The store passes {email, displayName}; the Google client takes plain addresses.
-    insertEvent: (e) => google.insertEvent({ ...e, attendees: e.attendees.map((a) => (typeof a === "string" ? a : a.email)) }),
+    insertEvent: (e) => google.insertEvent(e),
+    // Null if there is no such event; otherwise just its Meet link (all the store needs).
+    getEvent: async (id) => { const ev = await google.getEvent(id); return ev && { meetLink: meetLinkOf(ev) }; },
     deleteEvent: (id) => google.deleteEvent(id),
     ownerEmail: env.BOOKING_OWNER_EMAIL,
   };
@@ -80,24 +82,6 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
   let availabilityCache = null; // { at, busy, timeMin, timeMax }
   let pingCache = null; // { at, ok }
 
-  async function finishConfirm(b, t) {
-    const ev = await deps.insertEvent({
-      id: b.id, summary: `${typeTitle(b.type)}: ${b.guest_name}`,
-      description: [`${typeTitle(b.type)}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${b.note}` : ""].join(""),
-      start: b.start_utc, end: b.end_utc, attendees: [b.guest_email, deps.ownerEmail].filter(Boolean),
-    }); // 409 (made before the eviction) is created:false, still a success
-    const cancel = await newToken();
-    const nowIso = t.toISOString();
-    // Synchronous from here: settle only if nothing else moved it meanwhile.
-    if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return;
-    sql.exec("UPDATE bookings SET status = 'confirmed', status_reason = NULL, event_id = ?, hold_expires = NULL, delete_after = ? WHERE id = ?",
-      b.id, plus(b.end_utc, cfg.retentionDays * DAY), b.id);
-    sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND used_at IS NULL", nowIso, b.id);
-    sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel', ?)", cancel.hash, b.id, b.start_utc);
-    const forEmail = { id: b.id, type: b.type, start: b.start_utc, end: b.end_utc, name: b.guest_name, email: b.guest_email, note: b.note, source: b.source };
-    try { await sendEmail("booked", forEmail, { cancelUrl: deps.actUrl(cancel.token), meetLink: ev?.meetLink ?? null }); } catch { logFailure("email"); }
-  }
-
   async function finishCancel(b, t) {
     await deps.deleteEvent(b.event_id ?? b.id); // already gone is fine
     if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "cancelling") return;
@@ -114,7 +98,7 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     let left = false;
     for (const b of rows) {
       try {
-        if (b.status === "confirming") await finishConfirm(b, t);
+        if (b.status === "confirming") await recoverConfirm(sql, b, { now: t, cfg, deps });
         else await finishCancel(b, t);
       } catch {
         logFailure(b.status === "confirming" ? "recover_confirm" : "recover_cancel");
@@ -127,7 +111,9 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
   return {
     async request(input, ipKey, emailKey) {
       const r = await requestBooking(sql, { cfg, now: now(), input, ipKey, emailKey, deps });
-      if (r.booking_id) await alarmBy(nextAlarmAt(sql, now()));
+      // Every request may have written quota counters, refused or not: an alarm must be set to
+      // prune them (alarmBy only ever moves it earlier).
+      await alarmBy(nextAlarmAt(sql, now()));
       return r;
     },
     act(token) {
@@ -152,11 +138,12 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
       const slots = availableSlots({ cfg, typeId: type, now: t, from, to, busy: availabilityCache.busy, bookings: liveBookings(sql, t) });
       return { slots };
     },
-    // Health: a fresh token refresh (so a revoked token shows), at most once a minute.
+    // Health: a fresh token refresh (so a revoked token shows), at most once a minute; and whether
+    // guest email is failing (EMAIL_FAILURES_DOWN in a row).
     async health() {
       const t = now().getTime();
       if (!pingCache || t - pingCache.at >= PING_CACHE_MS) pingCache = { at: t, ok: await google.ping() };
-      return { google: pingCache.ok };
+      return { google: pingCache.ok, email: emailFailures(sql) < EMAIL_FAILURES_DOWN };
     },
     async alarm() {
       const t = now();

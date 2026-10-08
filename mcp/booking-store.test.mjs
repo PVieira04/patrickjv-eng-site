@@ -12,7 +12,7 @@ const cfg = {
   hours: { days: ["mon", "tue", "wed", "thu", "fri"], start: "10:00", end: "17:00" },
   slotStepMinutes: 15, minNoticeHours: 24, horizonDays: 28, bufferMinutes: 15, maxPerDay: 3,
   holdHours: 2, retentionDays: 30,
-  caps: { perIpPerDay: 4, perEmailPerDay: 2, globalPerDay: 10, liveHoldsPerKey: 1 },
+  caps: { perIpPerDay: 4, perEmailPerDay: 2, globalPerDay: 10, liveHoldsPerEmail: 1 },
   meetingTypes: [
     { id: "consultation", title: "Consultation", minutes: 30, description: "A consultation." },
     { id: "recruiter-intro", title: "Recruiter intro", minutes: 15, description: "An intro." },
@@ -65,13 +65,18 @@ function setup({ busy = [], emailFails = false, insertFails = false, deleteFails
     },
     actUrl: (t) => ACT + t,
     day: (iso) => iso.slice(0, 10),
+    // insertFails: true → Google refused (a 4xx: nothing made); "unknown" → a timeout or 5xx after
+    // Google made the event.
     insertEvent: async (ev) => {
       await tick();
-      if (insertFails) throw new Error("google down");
+      if (insertFails === "unknown") { calls.inserted.push(ev); throw new Error("timed out"); }
+      if (insertFails) throw Object.assign(new Error("google said no"), { status: 403 });
       calls.inserted.push(ev);
       return { created: true, meetLink: "https://meet.google.com/abc-defg-hij" };
     },
+    getEvent: async (id) => { await tick(); return calls.inserted.some((e) => e.id === id) ? { meetLink: "https://meet.google.com/abc-defg-hij" } : null; },
     deleteEvent: async (id) => { await tick(); if (deleteFails) throw new Error("google down"); calls.deleted.push(id); return { deleted: true }; },
+    ownerEmail: "owner@example.net",
   };
   return { sql, deps, calls };
 }
@@ -105,13 +110,18 @@ test("migrate is idempotent", () => {
   store.migrate(sql);
   store.migrate(sql);
   const tables = sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").toArray().map((r) => r.name);
-  assert.deepEqual(tables, ["bookings", "quota", "tokens"]);
+  assert.deepEqual(tables, ["bookings", "health", "quota", "tokens"]);
 });
 
 // ---- Caps -----------------------------------------------------------------------------------
 
 const DAY = "2026-10-19";
-const reserve = (sql, ipKey, emailKey, day = DAY) => store.reserveQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+// A request that got as far as sending its hold email: per-IP and per-email counts, then global.
+const reserve = (sql, ipKey, emailKey, day = DAY) => {
+  const r = store.reserveBookingQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+  return r.ok ? store.reserveGlobalQuota(sql, { day, caps: cfg.caps }) : r;
+};
+const quotaRows = (sql) => sql.exec("SELECT kind, key, n FROM quota ORDER BY kind, key").toArray();
 
 test("caps: 4 requests per IP a day, then refused as ip", () => {
   const { sql } = setup();
@@ -144,6 +154,16 @@ test("caps: a refused request reserves nothing; reservations are never refunded;
   assert.equal(sql.exec("SELECT n FROM quota WHERE day = ? AND kind = 'global'", DAY).one().n, 4);
   assert.equal(sql.exec("SELECT count(*) c FROM quota WHERE key = 'e9'").one().c, 0);
   assert.equal(reserve(sql, "ipA", "e0", "2026-10-20").ok, true);
+});
+
+test("caps: per-IP and per-email counts never touch the global count; a closed day refuses them without writing", () => {
+  const { sql } = setup();
+  assert.deepEqual(store.reserveBookingQuota(sql, { day: DAY, ipKey: "i", emailKey: "e", caps: cfg.caps }), { ok: true });
+  assert.deepEqual(quotaRows(sql).map((r) => r.kind), ["email", "ip"]);
+  for (let i = 0; i < 10; i++) store.reserveGlobalQuota(sql, { day: DAY, caps: cfg.caps });
+  assert.deepEqual(store.reserveGlobalQuota(sql, { day: DAY, caps: cfg.caps }), { ok: false, which: "global" });
+  assert.deepEqual(store.reserveBookingQuota(sql, { day: DAY, ipKey: "j", emailKey: "f", caps: cfg.caps }), { ok: false, which: "global" });
+  assert.equal(sql.exec("SELECT count(*) c FROM quota WHERE key IN ('j', 'f')").one().c, 0);
 });
 
 // ---- Requests make holds --------------------------------------------------------------------
@@ -190,6 +210,25 @@ test("status: by booking ID, with no name, email or note", async () => {
   assert.equal(store.getStatus(t.sql, store.newId()), null);
 });
 
+test("status: the internal in-between states read as what callers know (confirming → pending_confirmation, cancelling → confirmed)", async () => {
+  const t = setup();
+  const { booking_id: a } = await request(t);
+  t.sql.exec("UPDATE bookings SET status = 'confirming' WHERE id = ?", a);
+  assert.equal(store.getStatus(t.sql, a, later(3 * HOUR)).status, "pending_confirmation", "not expired: a confirm is being finished");
+  const b = seed(t, { start: "2026-10-22T10:00:00.000Z", status: "cancelling" });
+  assert.equal(store.getStatus(t.sql, b, NOW).status, "confirmed");
+});
+
+test("agent cancel: a booking being confirmed or cancelled is not cancellable, reported in the caller's terms, and left alone", async () => {
+  const t = setup();
+  const { booking_id: a } = await request(t);
+  t.sql.exec("UPDATE bookings SET status = 'confirming' WHERE id = ?", a);
+  assert.deepEqual(await store.cancelByAgent(t.sql, { bookingId: a, now: NOW, deps: t.deps }), { error: "not_cancellable", status: "pending_confirmation" });
+  assert.equal(row(t, a).status, "confirming", "not withdrawn under the confirm");
+  const b = seed(t, { start: "2026-10-22T10:00:00.000Z", status: "cancelling" });
+  assert.deepEqual(await store.cancelByAgent(t.sql, { bookingId: b, now: NOW, deps: t.deps }), { error: "not_cancellable", status: "confirmed" });
+});
+
 test("request: a refused cap returns 429-style error before any Google call or email", async () => {
   const t = setup();
   for (let i = 0; i < 4; i++) reserve(t.sql, "busyIp", `x${i}`, DAY);
@@ -224,6 +263,46 @@ test("request: free/busy failing returns unavailable and holds nothing", async (
   assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
 });
 
+test("request: 10 invalid-slot requests write no quota and don't close booking for the day", async () => {
+  const t = setup();
+  for (let i = 0; i < 10; i++) assert.equal((await request(t, { start: "2026-10-19T15:00:00.000Z" })).error, "invalid_slot");
+  assert.deepEqual(quotaRows(t.sql), []);
+  assert.equal((await request(t)).status, "pending_confirmation");
+});
+
+test("request: hold_pending is refused before any quota is written", async () => {
+  const t = setup();
+  await request(t, {}, { ipKey: "ipA", emailKey: "a" });
+  const before = quotaRows(t.sql);
+  assert.deepEqual(await request(t, { start: "2026-10-22T10:00:00.000Z" }, { ipKey: "ipB", emailKey: "a" }), { error: "hold_pending" });
+  assert.deepEqual(quotaRows(t.sql), before);
+});
+
+test("request: a hold withdrawn by the agent can be re-requested at once", async () => {
+  const t = setup();
+  const first = await request(t, {}, { ipKey: "ipA", emailKey: "a" });
+  assert.deepEqual(await store.cancelByAgent(t.sql, { bookingId: first.booking_id, now: NOW, deps: t.deps }), { status: "cancelled" });
+  assert.equal((await request(t, {}, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
+});
+
+test("request: a slot lost at the claim uses the person's IP and email counts but not the global one", async () => {
+  const t = setup({ busy: [{ start: SLOT, end: "2026-10-21T11:00:00.000Z" }] });
+  assert.equal((await request(t, {}, { ipKey: "ipA", emailKey: "a" })).error, "slot_taken");
+  assert.deepEqual(quotaRows(t.sql), [{ kind: "email", key: "a", n: 1 }, { kind: "ip", key: "ipA", n: 1 }]);
+});
+
+test("request: the global count is taken just before the hold email, and a day that closed meanwhile holds nothing", async () => {
+  const t = setup();
+  const fb = t.deps.freeBusy;
+  t.deps.freeBusy = async (...a) => {
+    for (let i = 0; i < 10; i++) store.reserveGlobalQuota(t.sql, { day: DAY, caps: cfg.caps }); // others used up the day
+    return fb(...a);
+  };
+  assert.deepEqual(await request(t), { error: "rate_limited", reason: "global" });
+  assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
+  assert.equal(t.calls.emails.length, 0);
+});
+
 // Captures console output, to check what is (and is not) logged.
 async function capturingLogs(fn) {
   const lines = [];
@@ -232,6 +311,7 @@ async function capturingLogs(fn) {
   try { await fn(); } finally { Object.assign(console, saved); }
   return lines;
 }
+const quietly = async (fn) => { let r; await capturingLogs(async () => { r = await fn(); }); return r; };
 
 test("request: if the hold email fails, the hold is released at once and nothing personal is logged", async () => {
   const t = setup({ emailFails: true });
@@ -249,6 +329,17 @@ test("request: if the hold email fails, the hold is released at once and nothing
   const again = setup();
   again.sql = t.sql;
   assert.equal((await request(again, {}, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
+});
+
+test("email health: consecutive failed guest emails are counted (any kind), and one success resets the count", async () => {
+  let down = true;
+  const t = setup({ emailFails: () => down });
+  assert.equal(store.emailFailures(t.sql), 0);
+  for (let i = 0; i < 3; i++) await quietly(() => request(t, { start: `2026-10-2${2 + i}T10:00:00.000Z` }));
+  assert.equal(store.emailFailures(t.sql), 3);
+  down = false;
+  assert.equal((await request(t, { start: "2026-10-26T10:00:00.000Z" })).status, "pending_confirmation");
+  assert.equal(store.emailFailures(t.sql), 0);
 });
 
 // ---- Confirm ---------------------------------------------------------------------------------
@@ -280,7 +371,7 @@ test("confirm: re-checks, creates the event (Meet, guest invited, type in the ti
   assert.equal(ev.summary, "Consultation: Jane Smith");
   assert.equal(ev.start, SLOT);
   assert.equal(ev.end, "2026-10-21T10:30:00.000Z");
-  assert.ok(ev.attendees.some((a) => a.email === "jane@example.com"));
+  assert.deepEqual(ev.attendees, ["jane@example.com", "owner@example.net"], "plain addresses, the guest and Patrick");
   assert.equal(t.calls.freeBusy, 2, "free/busy checked again at confirm");
   const b = row(t, h.id);
   assert.equal(b.status, "confirmed");
@@ -293,12 +384,33 @@ test("confirm: re-checks, creates the event (Meet, guest invited, type in the ti
   assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action IN ('confirm', 'decline') AND used_at IS NULL"), 0, "confirm and decline links are spent");
 });
 
+test("event: Google renders the description as HTML, so the note and type title are escaped there (not in the title)", () => {
+  const b = { id: "x", type: "t", start_utc: SLOT, end_utc: SLOT, guest_name: "Jane <b>", guest_email: "jane@example.com", note: `<a href="https://evil.example">click</a> & more` };
+  const ev = store.buildEvent(b, { ...cfg, meetingTypes: [{ id: "t", title: "Q&A <1:1>" }] });
+  assert.equal(ev.description, "Q&amp;A &lt;1:1&gt;, booked on patrickjv.com.\nNote from the guest:\n&lt;a href=\"https://evil.example\"&gt;click&lt;/a&gt; &amp; more");
+  assert.equal(ev.summary, "Q&A <1:1>: Jane <b>", "the title is plain text in Google");
+});
+
 test("confirm: a 409 from Google (event already exists) still counts as created", async () => {
   const t = setup();
   t.deps.insertEvent = async () => { await tick(); return { created: false, meetLink: null }; };
   const h = await hold(t);
   assert.deepEqual(await act(t, h.confirm), { result: "confirmed" });
   assert.equal(row(t, h.id).status, "confirmed");
+});
+
+test("confirm: if something else finished the booking meanwhile, the confirm writes nothing more and sends no 'Booked' email", async () => {
+  const t = setup();
+  const h = await hold(t);
+  const insert = t.deps.insertEvent;
+  t.deps.insertEvent = async (ev) => {
+    const r = await insert(ev);
+    t.sql.exec("UPDATE bookings SET status = 'confirmed', event_id = id WHERE id = ?", h.id); // e.g. the alarm's recovery
+    return r;
+  };
+  assert.deepEqual(await act(t, h.confirm), { result: "confirmed" });
+  assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 0);
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action = 'cancel'"), 0, "no second cancel link");
 });
 
 test("confirm: the slot became busy in a calendar → declined, slot_taken, no event", async () => {
@@ -338,6 +450,46 @@ test("confirm: if Google fails to create the event, the hold is rolled back and 
   assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action = 'confirm' AND used_at IS NULL"), 1);
   t.deps.insertEvent = async (ev) => { await tick(); t.calls.inserted.push(ev); return { created: true, meetLink: null }; };
   assert.deepEqual(await act(t, h.confirm), { result: "confirmed" }, "a retry of the same link succeeds");
+});
+
+test("confirm: an insert whose outcome is unknown (timeout, network, 5xx) is not rolled back: the row waits, confirming, for recovery", async () => {
+  const t = setup({ insertFails: "unknown" });
+  const h = await hold(t);
+  assert.deepEqual(await quietly(() => act(t, h.confirm)), { result: "confirming" });
+  assert.equal(row(t, h.id).status, "confirming", "still occupying its slot");
+  assert.deepEqual(await act(t, h.confirm), { error: "used", confirming: true }, "the link is spent (a retry can't race recovery), and says why");
+  assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 0);
+  // The alarm's recovery finds the event Google made and settles the booking, without a second insert.
+  assert.deepEqual(await store.recoverConfirm(t.sql, row(t, h.id), { now: later(HOUR + 5 * 60e3), cfg, deps: t.deps }), { result: "confirmed" });
+  assert.equal(t.calls.inserted.length, 1);
+  assert.equal(row(t, h.id).status, "confirmed");
+  assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 1);
+});
+
+// A hold whose confirm was cut off before Google made anything.
+async function cutOff(t) {
+  const h = await hold(t);
+  t.sql.exec("UPDATE bookings SET status = 'confirming' WHERE id = ?", h.id);
+  return { ...h, row: row(t, h.id) };
+}
+
+test("recovery: no event yet → the slot is checked again (free/busy and the rules) before inserting", async () => {
+  const t = setup();
+  const h = await cutOff(t);
+  const fb = t.calls.freeBusy;
+  assert.deepEqual(await store.recoverConfirm(t.sql, h.row, { now: later(HOUR), cfg, deps: t.deps }), { result: "confirmed" });
+  assert.equal(t.calls.freeBusy, fb + 1);
+  assert.equal(t.calls.inserted.length, 1);
+});
+
+test("recovery: no event and the slot has since gone busy → declined slot_taken, nothing made, no email", async () => {
+  const t = setup();
+  const h = await cutOff(t);
+  t.deps.freeBusy = async () => { await tick(); return { busy: [{ start: SLOT, end: "2026-10-21T11:00:00.000Z" }] }; };
+  assert.deepEqual(await store.recoverConfirm(t.sql, h.row, { now: later(HOUR), cfg, deps: t.deps }), { result: "declined", reason: "slot_taken" });
+  assert.equal(t.calls.inserted.length, 0);
+  assert.deepEqual([row(t, h.id).status, row(t, h.id).status_reason], ["declined", "slot_taken"]);
+  assert.equal(t.calls.emails.length, 1, "only the hold email: nothing new is sent");
 });
 
 test("confirm: if free/busy fails, the hold is rolled back", async () => {
@@ -583,7 +735,7 @@ test("retention: quota counters older than two days are deleted", () => {
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
-const OPEN = { ...cfg, caps: { perIpPerDay: 1000, perEmailPerDay: 1000, globalPerDay: 1000, liveHoldsPerKey: 1 } };
+const OPEN = { ...cfg, caps: { perIpPerDay: 1000, perEmailPerDay: 1000, globalPerDay: 1000, liveHoldsPerEmail: 1 } };
 const PARALLEL = 25;
 
 test("race: 25 parallel requests for one slot (and slots overlapping it) produce exactly one hold", async () => {
@@ -597,18 +749,14 @@ test("race: 25 parallel requests for one slot (and slots overlapping it) produce
   assert.equal(t.calls.emails.length, 1);
 });
 
-// ---- One live hold per IP and per email -----------------------------------------------------
+// ---- One live hold per email (not per IP: people share connections) ------------------------
 
 const hourly = (i) => later(48 * HOUR + i * HOUR).toISOString(); // separate, non-overlapping slots
 
-test("one live hold per IP: a second request from the same IP while one is pending is hold_pending", async () => {
+test("one live hold is keyed on email only: another email from the same IP can still hold a slot", async () => {
   const t = setup();
   assert.equal((await request(t, { start: hourly(1) }, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
-  const fb = t.calls.freeBusy;
-  assert.deepEqual(await request(t, { start: hourly(3) }, { ipKey: "ipA", emailKey: "b" }), { error: "hold_pending" });
-  assert.equal(t.calls.freeBusy, fb, "refused before any Google call");
-  assert.equal(t.calls.emails.length, 1);
-  assert.equal(sqlCount(t, "SELECT count(*) c FROM quota WHERE kind = 'email' AND key = 'b'"), 1, "the refused request still used its quota");
+  assert.equal((await request(t, { start: hourly(3) }, { ipKey: "ipA", emailKey: "b" })).status, "pending_confirmation");
 });
 
 test("one live hold per email: a second request for the same email while one is pending is hold_pending", async () => {

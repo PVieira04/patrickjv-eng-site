@@ -120,9 +120,26 @@ test("service: the alarm expires lapsed holds and schedules the next run", async
   assert.equal(storage.at(), Date.parse("2026-10-20T00:00:00.000Z"), "next UTC midnight");
 });
 
+test("service: health reports email down after 3 guest emails in a row fail, and up again after one succeeds", async () => {
+  const { svc, f } = service({ fetchOpts: { fail: { mail: true } } });
+  for (let i = 0; i < 2; i++) await quiet(() => svc.request(guest({ start: `2026-10-2${2 + i}T09:00:00.000Z` }), `ip${i}`, `em${i}`));
+  assert.equal((await svc.health()).email, true, "two failures could be a blip");
+  await quiet(() => svc.request(guest({ start: "2026-10-26T10:00:00.000Z" }), "ip9", "em9"));
+  assert.equal((await svc.health()).email, false);
+  delete f.opts.fail;
+  await svc.request(guest({ start: "2026-10-27T10:00:00.000Z" }), "ip8", "em8");
+  assert.equal((await svc.health()).email, true);
+});
+
+test("service: a request that writes quota but holds nothing still sets the alarm, so its counters get pruned", async () => {
+  const { svc, storage } = service({ fetchOpts: { busy: [{ start: SLOT, end: "2026-10-21T10:00:00.000Z" }] } });
+  assert.equal((await svc.request(guest(), "ip1", "em1")).error, "slot_taken");
+  assert.equal(storage.at(), Date.parse("2026-10-20T00:00:00.000Z"), "next UTC midnight");
+});
+
 test("service: health pings Google with a fresh token refresh", async () => {
-  assert.deepEqual(await service().svc.health(), { google: true });
-  assert.deepEqual(await service({ fetchOpts: { fail: { token: true } } }).svc.health(), { google: false });
+  assert.deepEqual(await service().svc.health(), { google: true, email: true });
+  assert.deepEqual(await service({ fetchOpts: { fail: { token: true } } }).svc.health(), { google: false, email: true });
 });
 
 // Recovery: a confirm (or cancel) whose Durable Object was evicted mid-call leaves the row in
@@ -156,7 +173,7 @@ test("recovery: a Google failure leaves the booking for the next alarm, which co
   const later = new Date(NOW.getTime() + 5 * 60e3);
   const fresh = service({ sql, now: later, fetchOpts: { fail: { insert: true } } });
   await quiet(() => fresh.svc.alarm());
-  assert.equal(fresh.svc.status(booking_id).status, "confirming");
+  assert.equal(sql.exec("SELECT status FROM bookings WHERE id = ?", booking_id).one().status, "confirming");
   assert.ok(fresh.storage.at() <= later.getTime() + 5 * 60e3, "retried soon, not at midnight");
 });
 
@@ -166,6 +183,38 @@ test("recovery: a booking stuck in cancelling is finished by retrying deleteEven
   await fresh.svc.alarm();
   assert.equal(fresh.svc.status(booking_id).status, "cancelled");
   assert.ok(fresh.f.calls.some((c) => c.method === "DELETE"));
+});
+
+test("recovery: Google made the event but the insert answered 503: the booking waits in confirming, then the alarm settles it without a second event", async () => {
+  const s = service({ fetchOpts: { fail: { afterCreate: true } } });
+  const { booking_id } = await s.svc.request(guest(), "ip1", "em1");
+  assert.deepEqual(await quiet(() => s.svc.act(tokenIn(s.f.mails()[0].text, "confirm"))), { result: "confirming" });
+  assert.equal(s.f.events.size, 1, "the meeting is in the calendar");
+  s.clock.now = new Date(NOW.getTime() + 5 * 60e3);
+  await s.svc.alarm();
+  assert.equal(s.sql.exec("SELECT status FROM bookings WHERE id = ?", booking_id).one().status, "confirmed");
+  assert.equal(s.f.calls.filter((c) => c.method === "POST" && c.url.includes("/events")).length, 1, "no second insert");
+  const booked = s.f.mails().filter((m) => /^Booked:/.test(m.subject));
+  assert.equal(booked.length, 1);
+  assert.match(booked[0].text, /meet\.google\.com/, "the Meet link from the event recovery found");
+});
+
+test("race: recovery finishing a slow live confirm, then the confirm returning: one 'Booked' email, one cancel link", async () => {
+  let release, inserted;
+  const gate = new Promise((r) => { release = r; });
+  const made = new Promise((r) => { inserted = r; });
+  const s = service();
+  const { booking_id } = await s.svc.request(guest(), "ip1", "em1");
+  s.f.opts.afterInsert = () => { inserted(); return gate; }; // Google made the event; its answer is slow
+  const live = s.svc.act(tokenIn(s.f.mails()[0].text, "confirm"));
+  await made;
+  s.clock.now = new Date(NOW.getTime() + 3 * 60e3); // past STUCK_AFTER_MS: the alarm takes over
+  await s.svc.alarm();
+  release();
+  assert.deepEqual(await live, { result: "confirmed" });
+  assert.equal(s.svc.status(booking_id).status, "confirmed");
+  assert.equal(s.f.mails().filter((m) => /^Booked:/.test(m.subject)).length, 1);
+  assert.equal(s.sql.exec("SELECT count(*) c FROM tokens WHERE action = 'cancel'").one().c, 1);
 });
 
 test("recovery: a confirm still in progress in this instance (under 2 minutes) is left alone", async () => {

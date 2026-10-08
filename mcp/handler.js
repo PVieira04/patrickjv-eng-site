@@ -650,12 +650,16 @@ const bookingOps = {
 
 // Health for booking: bookingEnabled is the kill switch; bookingReady says booking would work if
 // switched on: every secret set (QUOTA_SALT included), and, only then, the BookingStore answers
-// and a fresh Google token refresh succeeds (cached in the store for a minute). Independent of
-// the flag, so readiness can be checked before launch. Booleans only.
+// and a fresh Google token refresh succeeds (cached in the store for a minute), and guest email
+// hasn't failed 3 times in a row. Independent of the flag, so readiness can be checked before
+// launch. Booleans only.
 async function bookingReadiness(env, deps) {
   let ready = false;
   if (bookingConfigured(env)) {
-    try { ready = (await deps.booking().health()).google === true; } catch { logFailure("booking_store"); }
+    try {
+      const h = await deps.booking().health();
+      ready = h.google === true && h.email === true;
+    } catch { logFailure("booking_store"); }
   }
   return { bookingEnabled: bookingEnabled(env), bookingReady: ready };
 }
@@ -755,6 +759,11 @@ const LINK_ERRORS = {
   used: [404, "This link has already been used", "Nothing more will happen. If you need to change something, email hello@patrickjv.com."],
   expired: [410, "This link has expired", "Holds last two hours, and cancel links work until the meeting starts."],
 };
+// A confirm whose Google answer was lost: the alarm finishes it within minutes, by email.
+const finishing = () => actPage(202, "Your booking is being finished", [
+  para("Google Calendar took too long to answer, so I'm finishing your booking in the background. There's no need to use the link again."),
+  para("Check your email in a few minutes for the invite. If nothing arrives within the hour, email hello@patrickjv.com."),
+]);
 const linkError = (state) => { const [s, t, m] = LINK_ERRORS[state] ?? LINK_ERRORS.unknown; return actPage(s, t, [para(esc(m))]); };
 const ACTIONS = {
   confirm: ["Confirm your booking", "Confirm booking", "Nothing is booked unless you confirm. If you didn't ask for this, close this page."],
@@ -767,6 +776,7 @@ async function showLink(ctx, token) {
   if (!TOKEN.test(token ?? "")) return linkError("unknown");
   let peek;
   try { peek = await ctx.booking().peek(token); } catch { logFailure("booking_store"); return actPage(503, "Booking is unavailable right now", [para("Please try the link again in a few minutes.")]); }
+  if (peek.state === "used" && peek.action === "confirm" && peek.booking?.status === "confirming") return finishing();
   if (peek.state !== "valid" || !ACTIONS[peek.action]) return linkError(peek.state);
   const [title, button, note] = ACTIONS[peek.action];
   const type = BOOKING_CONFIG.meetingTypes.find((t) => t.id === peek.booking.type)?.title ?? peek.booking.type;
@@ -779,6 +789,7 @@ async function doLink(ctx, token) {
   let r;
   try { r = await ctx.booking().act(token); } catch { logFailure("booking_store"); r = { error: "unavailable" }; }
   if (r.result === "confirmed") return actPage(200, "Booked", [para("Google Calendar will send you an invite from hello@patrickjv.com with the Google Meet link. I've also emailed you a link to cancel if you need to.")]);
+  if (r.result === "confirming" || r.confirming) return finishing();
   if (r.result === "cancelled") return actPage(200, "Cancelled", [para("The meeting is cancelled. Google Calendar will let everyone invited know.")]);
   if (r.result === "declined" && !r.reason) return actPage(200, "Declined", [para("Nothing was booked, and the time is free again.")]);
   if (r.result === "declined") {

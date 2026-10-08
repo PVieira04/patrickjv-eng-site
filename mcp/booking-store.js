@@ -20,6 +20,8 @@ const SCHEMA = [
     hash TEXT PRIMARY KEY, booking_id TEXT NOT NULL, action TEXT NOT NULL,
     expires_at TEXT NOT NULL, used_at TEXT)`,
   "CREATE TABLE IF NOT EXISTS quota (day TEXT, kind TEXT, key TEXT, n INTEGER, PRIMARY KEY (day, kind, key))",
+  // Counters the health check reads (email_failures: guest emails failed in a row).
+  "CREATE TABLE IF NOT EXISTS health (key TEXT PRIMARY KEY, n INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS bookings_status ON bookings (status)",
   "CREATE INDEX IF NOT EXISTS tokens_booking ON tokens (booking_id)",
 ];
@@ -44,24 +46,49 @@ export async function newToken() {
   return { token, hash: await hashToken(token) };
 }
 
-// Daily caps, reserved before any Google call or email and never refunded (fail closed), like
-// request_intro's. Synchronous, so atomic inside the Durable Object. Global is checked first, and
-// a refused request writes nothing, so refusals never eat into anyone's allowance. The request
-// that uses up the global cap says so, once a day, so Patrick can be alerted.
-export function reserveQuota(sql, { day, ipKey, emailKey, caps }) {
-  const count = (kind, key) => sql.exec("SELECT n FROM quota WHERE day = ? AND kind = ? AND key = ?", day, kind, key).toArray()[0]?.n ?? 0;
-  const g = count("global", "");
+// Daily caps, never refunded (fail closed), like request_intro's. Synchronous, so atomic inside
+// the Durable Object. A request refused by a cap writes nothing, so refusals never eat into
+// anyone's allowance. Per-IP and per-email counts are taken before any Google call
+// (reserveBookingQuota); the global count only when a hold email is about to be sent
+// (reserveGlobalQuota), so invalid or refused requests can't close booking for everyone.
+const quotaCount = (sql, day, kind, key) => sql.exec("SELECT n FROM quota WHERE day = ? AND kind = ? AND key = ?", day, kind, key).toArray()[0]?.n ?? 0;
+const quotaAdd = (sql, day, kind, key) => sql.exec("INSERT INTO quota (day, kind, key, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, kind, key) DO UPDATE SET n = n + 1", day, kind, key);
+
+export function reserveBookingQuota(sql, { day, ipKey, emailKey, caps }) {
+  // A closed day (global cap used up) is checked first, without counting.
+  if (quotaCount(sql, day, "global", "") >= caps.globalPerDay) return { ok: false, which: "global" };
+  if (quotaCount(sql, day, "ip", ipKey) >= caps.perIpPerDay) return { ok: false, which: "ip" };
+  if (quotaCount(sql, day, "email", emailKey) >= caps.perEmailPerDay) return { ok: false, which: "email" };
+  quotaAdd(sql, day, "ip", ipKey);
+  quotaAdd(sql, day, "email", emailKey);
+  return { ok: true };
+}
+
+// The request that uses up the global cap says so, once a day, so Patrick can be alerted.
+export function reserveGlobalQuota(sql, { day, caps }) {
+  const g = quotaCount(sql, day, "global", "");
   if (g >= caps.globalPerDay) return { ok: false, which: "global" };
-  if (count("ip", ipKey) >= caps.perIpPerDay) return { ok: false, which: "ip" };
-  if (count("email", emailKey) >= caps.perEmailPerDay) return { ok: false, which: "email" };
-  for (const [kind, key] of [["global", ""], ["ip", ipKey], ["email", emailKey]]) {
-    sql.exec("INSERT INTO quota (day, kind, key, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, kind, key) DO UPDATE SET n = n + 1", day, kind, key);
-  }
+  quotaAdd(sql, day, "global", "");
   return g + 1 === caps.globalPerDay ? { ok: true, globalJustExhausted: true } : { ok: true };
 }
 
 // Redacted failure log, as handler.js's logFailure: an event name and the subsystem only.
 const logFailure = (subsystem) => console.error(JSON.stringify({ event: "booking_failure", subsystem }));
+
+// Every guest email goes through here, so health can see email failing: failures in a row are
+// counted, and one success resets the count. Throws as deps.sendEmail does.
+async function sendGuestEmail(sql, deps, ...args) {
+  try {
+    await deps.sendEmail(...args);
+  } catch (e) {
+    sql.exec("INSERT INTO health (key, n) VALUES ('email_failures', 1) ON CONFLICT (key) DO UPDATE SET n = n + 1");
+    throw e;
+  }
+  sql.exec("DELETE FROM health WHERE key = 'email_failures'");
+}
+
+// Guest emails failed in a row (0 after any success).
+export const emailFailures = (sql) => sql.exec("SELECT n FROM health WHERE key = 'email_failures'").toArray()[0]?.n ?? 0;
 
 const MINUTE = 60e3, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
 const plus = (iso, ms) => new Date(Date.parse(iso) + ms).toISOString();
@@ -93,27 +120,27 @@ function settle(sql, id, status, reason, nowIso) {
   sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND used_at IS NULL", nowIso, id);
 }
 
-// One live hold at a time per IP and per email, so fake holds cost an attacker many of both.
-function holdPending(sql, { now, ipKey, emailKey, cfg }) {
-  const limit = cfg.caps.liveHoldsPerKey ?? 1;
-  const live = (col, key) => sql.exec(
-    `SELECT count(*) AS c FROM bookings WHERE status = 'pending_confirmation' AND hold_expires > ? AND ${col} = ?`,
-    now.toISOString(), key,
-  ).one().c;
-  return live("ip_key", ipKey) >= limit || live("email_key", emailKey) >= limit;
+// One live hold at a time per email, so a guest's inbox can't be flooded with holds. Not per IP:
+// people share connections, and the per-IP daily cap already limits one source.
+function holdPending(sql, { now, emailKey, cfg }) {
+  return sql.exec(
+    "SELECT count(*) AS c FROM bookings WHERE status = 'pending_confirmation' AND hold_expires > ? AND email_key = ?",
+    now.toISOString(), emailKey,
+  ).one().c >= (cfg.caps.liveHoldsPerEmail ?? 1);
 }
 
 export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, deps }) {
   const nowIso = now.toISOString();
-  const quota = reserveQuota(sql, { day: deps.day(nowIso), ipKey, emailKey, caps: cfg.caps });
-  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
-  const flag = quota.globalJustExhausted ? { globalJustExhausted: true } : {};
-  if (holdPending(sql, { now, ipKey, emailKey, cfg })) return { error: "hold_pending", ...flag };
+  const day = deps.day(nowIso);
+  // Refusals that cost nothing come first, and write no quota.
+  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending" };
   const type = cfg.meetingTypes.find((t) => t.id === input.type);
   const slot = { cfg, typeId: input.type, start: input.start, now };
   // Cheap pre-check, so an invalid or already-taken slot never reaches Google.
   const pre = deps.checkSlot({ ...slot, busy: [], bookings: liveBookings(sql, now) });
-  if (!pre.ok) return { ...slotError(pre.reason), ...flag };
+  if (!pre.ok) return slotError(pre.reason);
+  const quota = reserveBookingQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
 
   const end = plus(input.start, type.minutes * MINUTE);
   const buffer = cfg.bufferMinutes * MINUTE;
@@ -122,7 +149,7 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
     ({ busy } = await deps.freeBusy(plus(input.start, -buffer), plus(end, buffer)));
   } catch {
     logFailure("google_freebusy");
-    return { error: "unavailable", ...flag };
+    return { error: "unavailable" };
   }
   const [confirm, decline] = await Promise.all([newToken(), newToken()]);
   const id = newId();
@@ -130,9 +157,13 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
 
   // ---- Claim: synchronous from here to the inserts. No await. ----
   // Both rules again: other requests ran while free/busy was awaited.
-  if (holdPending(sql, { now, ipKey, emailKey, cfg })) return { error: "hold_pending", ...flag };
+  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending" };
   const check = deps.checkSlot({ ...slot, busy, bookings: liveBookings(sql, now) });
-  if (!check.ok) return { ...slotError(check.reason), ...flag };
+  if (!check.ok) return slotError(check.reason);
+  // Counted here, just before the hold email, and never refunded even if the email fails.
+  const global = reserveGlobalQuota(sql, { day, caps: cfg.caps });
+  if (!global.ok) return { error: "rate_limited", reason: "global" };
+  const flag = global.globalJustExhausted ? { globalJustExhausted: true } : {};
   sql.exec(
     `INSERT INTO bookings (id, type, start_utc, end_utc, status, source, guest_name, guest_email, ip_key, email_key, note, hold_expires, created_at, delete_after)
      VALUES (?, ?, ?, ?, 'pending_confirmation', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -146,7 +177,7 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
 
   const booking = sql.exec("SELECT * FROM bookings WHERE id = ?", id).one();
   try {
-    await deps.sendEmail("hold", forEmail(booking), { confirmUrl: deps.actUrl(confirm.token), declineUrl: deps.actUrl(decline.token) });
+    await sendGuestEmail(sql, deps, "hold", forEmail(booking), { confirmUrl: deps.actUrl(confirm.token), declineUrl: deps.actUrl(decline.token) });
   } catch {
     // Nobody can confirm a hold they never heard about: release it now rather than in 2 hours.
     logFailure("email");
@@ -167,7 +198,9 @@ function lookupToken(sql, hash, now) {
   const tok = sql.exec("SELECT * FROM tokens WHERE hash = ?", hash).toArray()[0];
   const booking = tok && sql.exec("SELECT * FROM bookings WHERE id = ?", tok.booking_id).toArray()[0];
   if (!booking) return { error: "unknown" };
-  if (tok.used_at) return { error: "used" };
+  // A spent confirm link whose booking is still confirming: Google's answer was lost and the
+  // alarm is finishing it, which the page says rather than "already used".
+  if (tok.used_at) return booking.status === "confirming" ? { error: "used", confirming: true } : { error: "used" };
   if (tok.expires_at <= now.toISOString()) return { error: "expired" };
   return { tok, booking };
 }
@@ -216,12 +249,13 @@ export async function cancelByAgent(sql, { bookingId, now, deps }) {
   const link = await newToken();
   const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
   if (!b) return { error: "not_found" };
-  const status = getStatus(sql, b.id, now).status;
+  // Decided on the internal state: a hold being confirmed must not be withdrawn under the confirm.
+  const status = internalStatus(sql, b.id, now).status;
   if (status === "pending_confirmation") {
     settle(sql, b.id, "cancelled", "agent_withdrew", nowIso);
     return { status: "cancelled" };
   }
-  if (status !== "confirmed" || b.start_utc <= nowIso) return { error: "not_cancellable", status };
+  if (status !== "confirmed" || b.start_utc <= nowIso) return { error: "not_cancellable", status: callerStatus(status) };
   const requested = { status: "confirmed", cancellation: "requested" };
   // One outstanding request at a time, so a booking ID can't be used to flood the guest's inbox.
   const outstanding = sql.exec(
@@ -230,7 +264,7 @@ export async function cancelByAgent(sql, { bookingId, now, deps }) {
   if (outstanding) return requested;
   sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'confirm_cancel', ?)", link.hash, b.id, b.start_utc);
   try {
-    await deps.sendEmail("cancel_request", forEmail(b), { confirmCancelUrl: deps.actUrl(link.token) });
+    await sendGuestEmail(sql, deps, "cancel_request", forEmail(b), { confirmCancelUrl: deps.actUrl(link.token) });
   } catch {
     logFailure("email");
     sql.exec("UPDATE tokens SET used_at = ? WHERE hash = ?", nowIso, link.hash);
@@ -251,16 +285,25 @@ export async function peekToken(sql, token, now) {
   return { state, action: tok.action, booking: { type: b.type, start: b.start_utc, end: b.end_utc, status: b.status } };
 }
 
+// What a confirm checks the slot against: the rules without notice (it was given when held), and
+// live free/busy around the meeting with its buffer.
+const confirmSlot = (b, cfg, now) => ({ cfg, typeId: b.type, start: b.start_utc, now, ignoreNotice: true, excludeId: b.id });
+const slotFreeBusy = (b, cfg, deps) => {
+  const buffer = cfg.bufferMinutes * MINUTE;
+  return deps.freeBusy(plus(b.start_utc, -buffer), plus(b.end_utc, buffer));
+};
+function declineConfirm(sql, id, reason, nowIso) {
+  const why = reason === "day_full" ? "day_full" : "slot_taken";
+  settle(sql, id, "declined", why, nowIso);
+  return { result: "declined", reason: why };
+}
+
 async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
   const nowIso = now.toISOString();
   // A hold that already left pending has spent its links; this is a backstop.
   if (b.status !== "pending_confirmation" || b.hold_expires <= nowIso) return { error: "used" };
-  const slot = { cfg, typeId: b.type, start: b.start_utc, now, ignoreNotice: true, excludeId: b.id };
-  const decline = (reason) => {
-    const why = reason === "day_full" ? "day_full" : "slot_taken";
-    settle(sql, b.id, "declined", why, nowIso);
-    return { result: "declined", reason: why };
-  };
+  const slot = confirmSlot(b, cfg, now);
+  const decline = (reason) => declineConfirm(sql, b.id, reason, nowIso);
 
   // ---- Claim: synchronous, no await. A double click finds the token used. ----
   const claim = deps.checkSlot({ ...slot, busy: [], bookings: meetings(sql) });
@@ -276,46 +319,108 @@ async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
     sql.exec("UPDATE tokens SET used_at = NULL WHERE hash = ?", tok.hash);
     return { error: "unavailable" };
   };
-  const buffer = cfg.bufferMinutes * MINUTE;
   let busy;
   try {
-    ({ busy } = await deps.freeBusy(plus(b.start_utc, -buffer), plus(b.end_utc, buffer)));
+    ({ busy } = await slotFreeBusy(b, cfg, deps));
   } catch {
     return rollback("google_freebusy");
   }
   const check = deps.checkSlot({ ...slot, busy, bookings: meetings(sql) });
   if (!check.ok) return decline(check.reason);
 
-  const type = cfg.meetingTypes.find((t) => t.id === b.type);
-  const attendees = [{ email: b.guest_email, displayName: b.guest_name }];
-  if (deps.ownerEmail) attendees.push({ email: deps.ownerEmail });
-  const description = [`${type?.title ?? b.type}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${b.note}` : ""].join("");
   let event;
   try {
     // 409 (already created by an earlier attempt) comes back as created:false: still a success.
-    event = await deps.insertEvent({ id: b.id, summary: `${type?.title ?? b.type}: ${b.guest_name}`, description, start: b.start_utc, end: b.end_utc, attendees });
-  } catch {
-    return rollback("google_insert");
+    event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail));
+  } catch (e) {
+    // Google refused (a 4xx, the token refresh included): nothing was made.
+    if (e?.status >= 400 && e.status < 500) return rollback("google_insert");
+    // A timeout, network error or 5xx may have come after Google made the event. Rolling back
+    // could orphan a meeting, so the row stays confirming, its slot held and its link spent, and
+    // the alarm's recovery settles it once it can see whether the event exists.
+    logFailure("google_insert_unknown");
+    return { result: "confirming" };
   }
+  return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
+}
 
+// Google shows an event description as HTML (the summary is plain text).
+const escapeHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// The Google event for a booking, the same for a live confirm and the alarm's recovery. Attendees
+// are plain addresses: the guest's and Patrick's.
+export function buildEvent(b, cfg, ownerEmail) {
+  const title = cfg.meetingTypes.find((t) => t.id === b.type)?.title ?? b.type;
+  return {
+    id: b.id, summary: `${title}: ${b.guest_name}`,
+    description: [`${escapeHtml(title)}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${escapeHtml(b.note)}` : ""].join(""),
+    start: b.start_utc, end: b.end_utc, attendees: [b.guest_email, ownerEmail].filter(Boolean),
+  };
+}
+
+// A confirm that ended some other way meanwhile: what the caller is told.
+function outcome(sql, id) {
+  const r = sql.exec("SELECT status, status_reason FROM bookings WHERE id = ?", id).toArray()[0];
+  if (r?.status === "confirmed") return { result: "confirmed" };
+  if (r?.status === "declined") return { result: "declined", reason: r.status_reason };
+  return { error: "used" };
+}
+
+// The event exists: the booking is confirmed, its links are spent, and the guest gets a cancel
+// link. The live confirm and the alarm's recovery both end here, and the write only happens while
+// the row is still confirming, so whichever finishes first settles it and sends "Booked"; the
+// other does nothing.
+async function settleConfirmed(sql, b, { now, cfg, deps, meetLink }) {
+  const nowIso = now.toISOString();
   const cancel = await newToken();
-  sql.exec(
-    "UPDATE bookings SET status = 'confirmed', status_reason = NULL, event_id = ?, hold_expires = NULL, delete_after = ? WHERE id = ?",
+  // ---- Synchronous from here to the inserts. No await. ----
+  const won = sql.exec(
+    "UPDATE bookings SET status = 'confirmed', status_reason = NULL, event_id = ?, hold_expires = NULL, delete_after = ? WHERE id = ? AND status = 'confirming' RETURNING id",
     b.id, plus(b.end_utc, cfg.retentionDays * DAY), b.id,
-  );
+  ).toArray().length;
+  if (!won) return outcome(sql, b.id);
   sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND used_at IS NULL", nowIso, b.id);
   sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel', ?)", cancel.hash, b.id, b.start_utc);
+  // ---- End of the write. ----
   try {
-    await deps.sendEmail("booked", forEmail(b), { cancelUrl: deps.actUrl(cancel.token), meetLink: event?.meetLink ?? null });
+    await sendGuestEmail(sql, deps, "booked", forEmail(b), { cancelUrl: deps.actUrl(cancel.token), meetLink });
   } catch {
     logFailure("email"); // Google's invite still reaches the guest.
   }
   return { result: "confirmed" };
 }
 
+// Alarm work: finishes a confirm that was cut off, or whose insert had no clear answer (row left
+// in confirming). First asks Google whether the event exists: if it does, the booking is
+// confirmed. Throws if Google fails, leaving the row for the next alarm.
+export async function recoverConfirm(sql, b, { now, cfg, deps }) {
+  const existing = await deps.getEvent(b.id);
+  if (existing) return settleConfirmed(sql, b, { now, cfg, deps, meetLink: existing.meetLink ?? null });
+  // Nothing was made, and time has passed: check the slot again, as a live confirm does.
+  const { busy } = await slotFreeBusy(b, cfg, deps);
+  // ---- Synchronous from here to the decline. No await. ----
+  if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
+  const check = deps.checkSlot({ ...confirmSlot(b, cfg, now), busy, bookings: meetings(sql) });
+  // The guest may have been told their booking was being finished. Nothing new is sent to them:
+  // no meeting, no "Booked" email, and get_booking_status shows declined.
+  if (!check.ok) return declineConfirm(sql, b.id, check.reason, now.toISOString());
+  const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
+  return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
+}
+
 // A booking's state for whoever holds its ID (a bearer secret): never the guest's details. With
 // `now`, a hold that has lapsed but not yet been swept by the alarm reads as expired.
+// The in-between states are the store's own: callers see the state they know.
 export function getStatus(sql, bookingId, now) {
+  const view = internalStatus(sql, bookingId, now);
+  return view && { ...view, status: callerStatus(view.status) };
+}
+
+// confirming is still a hold to the guest until it settles; cancelling is still a meeting.
+const CALLER_STATUS = { confirming: "pending_confirmation", cancelling: "confirmed" };
+const callerStatus = (status) => CALLER_STATUS[status] ?? status;
+
+function internalStatus(sql, bookingId, now) {
   const b = sql.exec(
     `SELECT status, status_reason, start_utc AS start, end_utc AS "end", type, hold_expires FROM bookings WHERE id = ?`, bookingId,
   ).toArray()[0];

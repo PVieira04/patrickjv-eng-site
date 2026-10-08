@@ -1,7 +1,7 @@
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createGoogle, GoogleError, assertNoErrors } from "./booking-google.js";
+import { createGoogle, GoogleError, assertNoErrors, meetLinkOf } from "./booking-google.js";
 
 const API = "https://www.googleapis.com/calendar/v3";
 
@@ -12,7 +12,7 @@ function fakeFetch(routes) {
   const calls = [];
   const served = new Map();
   const f = async (url, init = {}) => {
-    const call = { url: String(url), method: init.method || "GET", headers: init.headers || {}, body: init.body };
+    const call = { url: String(url), method: init.method || "GET", headers: init.headers || {}, body: init.body, signal: init.signal };
     calls.push(call);
     const route = routes.find(([m, re]) => m === call.method && re.test(call.url));
     if (!route) throw new Error(`unexpected request: ${call.method} ${call.url}`);
@@ -134,9 +134,9 @@ test("freeBusy: an HTTP error throws GoogleError with Google's reason", async ()
   assert.deepEqual([e.status, e.reason], [403, "insufficientPermissions"]);
 });
 
-test("free/busy only: the client has no method that lists or reads events", () => {
+test("free/busy only: the client has no method that lists events, or reads any but its own by ID", () => {
   const { g } = client([]);
-  const allowed = ["accessToken", "freeBusy", "insertEvent", "deleteEvent", "ping"];
+  const allowed = ["accessToken", "freeBusy", "insertEvent", "getEvent", "deleteEvent", "ping"];
   assert.equal(typeof g.freeBusy, "function");
   for (const k of Object.keys(g)) assert.ok(allowed.includes(k), `unexpected method ${k}`);
 });
@@ -222,6 +222,65 @@ test("insertEvent: any other error throws GoogleError (the caller rolls the clai
   assert.deepEqual([e.status, e.reason], [500, "backendError"]);
 });
 
+// The event exists once events.insert has answered; a failed re-read must not turn that into a
+// failed insert, or the caller would roll back a booking whose meeting is in the calendar.
+test("insertEvent: the event was made but re-reading it for the Meet link fails: created, with no link", async () => {
+  const fail = { status: 500, body: { error: { errors: [{ reason: "backendError" }] } } };
+  const pending = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("pending")],
+    ["GET", EVENT_URL, fail],
+  ]);
+  assert.deepEqual(await pending.g.insertEvent(EVENT), { created: true, meetLink: null });
+  const dup = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, { status: 409, body: { error: { errors: [{ reason: "duplicate" }] } } }],
+    ["GET", EVENT_URL, fail],
+  ]);
+  assert.deepEqual(await dup.g.insertEvent(EVENT), { created: false, meetLink: null });
+});
+
+test("getEvent: reads one event on hello@'s primary calendar by ID; gone (404/410) is null; other errors throw", async () => {
+  const { g, fetch } = client([["POST", /oauth2/, tokenOk()], ["GET", EVENT_URL, eventBody("success", MEET)]]);
+  const ev = await g.getEvent(ID);
+  assert.equal(ev.id, ID);
+  assert.equal(meetLinkOf(ev), MEET);
+  assert.equal(fetch.calls[1].url, `${API}/calendars/primary/events/${ID}`);
+  for (const status of [404, 410]) {
+    const gone = client([["POST", /oauth2/, tokenOk()], ["GET", EVENT_URL, { status, body: { error: { errors: [{ reason: "notFound" }] } } }]]);
+    assert.equal(await gone.g.getEvent(ID), null, String(status));
+  }
+  const down = client([["POST", /oauth2/, tokenOk()], ["GET", EVENT_URL, { status: 503, body: { error: { errors: [{ reason: "backendError" }] } } }]]);
+  await assert.rejects(down.g.getEvent(ID), (e) => e instanceof GoogleError && e.status === 503);
+  assert.equal(meetLinkOf(eventBody("pending").body), null, "no link until Meet creation succeeds");
+});
+
+// Records the ms of every AbortSignal.timeout made while fn runs.
+async function timeouts(fn) {
+  const seen = [], orig = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => { seen.push(ms); return orig.call(AbortSignal, ms); };
+  try { await fn(); } finally { AbortSignal.timeout = orig; }
+  return seen;
+}
+
+test("every Google call (token, free/busy, events) times out after 20 s, so a hung call can't hold a booking open", async () => {
+  const { g, fetch } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /freeBusy$/, { body: { calendars: { primary: { busy: [] } } } }],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("pending")],
+    ["GET", EVENT_URL, eventBody("success", MEET)],
+    ["DELETE", /\/calendars\/primary\/events\//, { status: 204 }],
+  ]);
+  const seen = await timeouts(async () => {
+    await g.freeBusy(["primary"], "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z");
+    await g.insertEvent(EVENT);
+    await g.deleteEvent(ID);
+  });
+  assert.equal(fetch.calls.length, 5);
+  assert.ok(fetch.calls.every((c) => c.signal instanceof AbortSignal));
+  assert.deepEqual(seen, Array(5).fill(20_000));
+});
+
 test("deleteEvent: deletes from hello@'s primary calendar with attendees notified; 204 deleted, 404/410 not", async () => {
   for (const [status, deleted] of [[204, true], [404, false], [410, false]]) {
     const { g, fetch } = client([["POST", /oauth2/, tokenOk()], ["DELETE", /\/calendars\/primary\/events\//, { status }]]);
@@ -240,9 +299,10 @@ test("free/busy only: exactly these methods, and every Calendar call is freeBusy
     ["GET", EVENT_URL, eventBody("success", MEET)],
     ["DELETE", /\/calendars\/primary\/events\//, { status: 204 }],
   ]);
-  assert.deepEqual(Object.keys(g).sort(), ["accessToken", "deleteEvent", "freeBusy", "insertEvent", "ping"]);
+  assert.deepEqual(Object.keys(g).sort(), ["accessToken", "deleteEvent", "freeBusy", "getEvent", "insertEvent", "ping"]);
   await g.freeBusy(["primary"], "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z");
   await g.insertEvent(EVENT);
+  await g.getEvent(ID);
   await g.deleteEvent(ID);
   for (const c of fetch.calls.filter((x) => x.url.startsWith(API)))
     assert.match(c.url.slice(API.length), /^\/freeBusy$|^\/calendars\/primary\/events(\/|\?)/, c.url);

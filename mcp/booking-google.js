@@ -4,6 +4,8 @@
 // It never logs: callers log the failing subsystem only, as logFailure does.
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const API = "https://www.googleapis.com/calendar/v3";
+// Every call gives up after this, so a hung Google can't hold a booking open for long.
+const TIMEOUT_MS = 20_000;
 
 // `status` is the HTTP status (0 when there was no usable response); `reason` is Google's short
 // error code (e.g. invalid_grant, notFound). Messages never carry tokens, secrets or addresses.
@@ -38,11 +40,16 @@ function mergeBusy(intervals) {
   return out.map(([s, e]) => ({ start: new Date(s).toISOString(), end: new Date(e).toISOString() }));
 }
 
+const meetStatus = (ev) => ev?.conferenceData?.createRequest?.status?.statusCode;
+// An event's Google Meet link, once Meet creation has succeeded; otherwise null.
+export const meetLinkOf = (ev) => (meetStatus(ev) === "success" && ev.hangoutLink ? ev.hangoutLink : null);
+
 export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now = () => new Date(), sleep }) {
   let cached = null; // { token, expiresAt (ms) }
 
   async function refresh() {
     const res = await fetch(TOKEN_URL, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }).toString(),
@@ -68,9 +75,11 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
   }
 
   async function api(path, { method = "GET", body } = {}) {
+    const token = await accessToken(); // before the timeout starts: a refresh has its own
     const res = await fetch(API + path, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       method,
-      headers: { authorization: `Bearer ${await accessToken()}`, ...(body ? { "content-type": "application/json" } : {}) },
+      headers: { authorization: `Bearer ${token}`, ...(body ? { "content-type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, ok: res.ok, body: await readJson(res) };
@@ -95,7 +104,15 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
   // email addresses (Patrick's and the guest's). The booking ID is the event ID: a retried insert
   // gets 409 rather than making a second event.
   const eventPath = (id) => `/calendars/primary/events/${encodeURIComponent(id)}`;
-  const meetStatus = (ev) => ev?.conferenceData?.createRequest?.status?.statusCode;
+
+  // One event on hello@'s own primary calendar, by its ID (the booking ID); null if there is none.
+  // Recovery uses it to see whether an insert whose answer was lost made the event.
+  async function getEvent(id) {
+    const r = await api(eventPath(id));
+    if (r.status === 404 || r.status === 410) return null;
+    if (!r.ok) throw fail("events.get", r);
+    return r.body;
+  }
 
   async function insertEvent({ id, summary, description, start, end, attendees }) {
     const r = await api("/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all", {
@@ -111,19 +128,19 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
     });
     if (r.status !== 409 && !r.ok) throw fail("events.insert", r);
     const created = r.status !== 409;
-    const getEvent = async () => {
-      const got = await api(eventPath(id));
-      if (!got.ok) throw fail("events.get", got);
-      return got.body;
-    };
-    // A 409 has no event body, so the existing event is read for its link.
-    let ev = created ? r.body : await getEvent();
-    // Meet links are made asynchronously: re-read while pending, up to 5 times a second apart.
-    for (let i = 0; i < 5 && meetStatus(ev) === "pending"; i++) {
-      await sleep(1000);
-      ev = await getEvent();
-    }
-    return { created, meetLink: meetStatus(ev) === "success" && ev.hangoutLink ? ev.hangoutLink : null };
+    // From here the event exists, so nothing below may throw: a failed re-read only costs the link
+    // (the invite carries it), never the booking.
+    let ev = created ? r.body : null;
+    try {
+      // A 409 has no event body, so the existing event is read for its link.
+      if (!created) ev = await getEvent(id);
+      // Meet links are made asynchronously: re-read while pending, up to 5 times a second apart.
+      for (let i = 0; i < 5 && meetStatus(ev) === "pending"; i++) {
+        await sleep(1000);
+        ev = await getEvent(id);
+      }
+    } catch { /* keep what we have */ }
+    return { created, meetLink: meetLinkOf(ev) };
   }
 
   // Google emails the attendees the cancellation. Already gone (404/410) isn't an error.
@@ -134,5 +151,5 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
     return { deleted: true };
   }
 
-  return { accessToken, freeBusy, insertEvent, deleteEvent, ping };
+  return { accessToken, freeBusy, insertEvent, getEvent, deleteEvent, ping };
 }
