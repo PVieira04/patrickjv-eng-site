@@ -93,7 +93,7 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 
 - **Rescheduling.** Planned for v2, see below. In v1 a guest cancels and books again.
 - **Payments.** Consultations are free to book.
-- **Guest accounts.** Links in emails are the only credentials.
+- **Guest accounts.** Links in emails are the only credentials. Sign-in is a planned follow-up, see [below](#planned-follow-up-sign-in-for-guests-and-agents).
 - **Video other than Google Meet.**
 - **Delegation credentials for agents** (did:web or verifiable credentials proving an agent speaks for a person). Email confirmation does that job in v1; credentials are a phase 3 stretch.
 - **Syncing changes made in Google back to the site.** If a guest declines the invite in Google, the slot simply becomes free again in free/busy. The site's booking record isn't updated.
@@ -362,6 +362,44 @@ Add a work calendar as a blocking calendar through its published free/busy-only 
 - This public repo and site never name the employer; config and docs say "work calendar (ICS)".
 
 ---
+
+## Planned follow-up: sign-in for guests and agents
+
+Recorded 2026-10-08 from a research spike (provider docs and pricing checked that day). Not in v1.
+
+**The problem it solves.** An agent can call `book_meeting` with any email address. Email confirmation already stops a meeting being created without the address owner's click, but the owner of a made-up or misused address still receives a hold email they never asked for (bounded by the caps: 2 per address a day, 10 overall). Requiring the agent to act for a **signed-in** person means the address comes from that person's verified identity, not from the agent's input. An agent can then only book for the person who signed in, and strangers' inboxes are never involved.
+
+**Shape:**
+
+- **MCP:** put an OAuth 2.1 authorisation server in front of `/mcp` as the MCP authorisation spec describes: RFC 9728 protected-resource metadata, a 401 with `WWW-Authenticate`, PKCE, `resource`-bound tokens, and client registration by Client ID Metadata Documents or Dynamic Client Registration. On Workers, Cloudflare's `@cloudflare/workers-oauth-provider` does this (needs a KV namespace). Hosted clients such as the Claude connector support it. The person links the connector once, signing in with one of the providers below. `book_meeting` then uses the token's verified email and ignores any address in the input.
+- **WebMCP and `/book`:** they run in the visitor's browser, so a site session cookie from the same sign-in applies.
+- **Gate or fast lane?** This is the decision to make when the work starts:
+  - *Gate agents:* agent bookings require sign-in, which removes the "dodgy address" case entirely. Anonymous agents can still read meeting types and availability.
+  - *Fast lane:* signed-in bookings skip the confirmation email, and anonymous ones keep hold-then-confirm. This keeps the open demo but not the protection.
+  - Either way the `/book` page can keep the anonymous email-confirmation path for people without these accounts.
+- **Keep consent per booking.** A long-lived token is standing authority, not agreement to *this* meeting, so a signed-in booking still needs one explicit approval: the confirmation email, or a confirm step in the signed-in session.
+
+**Providers:**
+
+| Provider | Cost | Notes |
+|---|---|---|
+| Google | Free | `openid email profile` are non-sensitive scopes. Verified email. First choice. |
+| Microsoft (personal + work/school, `common` endpoint) | Free | Many organisations block user consent for unverified multi-tenant apps, so an admin must approve; publisher verification needs a Microsoft partner account. Work-account email isn't reliably verified: key users on `oid` + `tid`, not email. |
+| Altimist ID | Free | A public sign-in provider for this site's purposes. As of 2026-10-08 its OpenID Connect endpoint served one registered client and accounts were invite-only. Using it needs: public sign-up, this site registered as a client, a token without the internal `groups` claim, and (for agents) client registration by CIMD or DCR. Check its current state before planning. |
+| Apple | US$99 a year | Users can hide their address behind Apple's relay; booking emails from Resend must be registered with Apple and pass SPF/DKIM for that, or they bounce. Only if asked for. |
+| Facebook | Free | Getting the email needs Business Verification and an annual data-use review. Not worth it for a personal site. |
+
+A hosted platform (e.g. WorkOS AuthKit, free to 1M monthly users) can bundle the providers instead of integrating each one. It's another data processor, usually US-based.
+
+**What stays:** the booking store, claim-before-await, holds, tokens, caps, Resend, and the confirm/cancel links (cancel keeps working with no session).
+
+**What's new:** a session/identity table with its own retention rule, OAuth secrets, a KV namespace, and `/privacy` additions: each identity provider and any auth platform as processors, the session cookie (strictly necessary), and what's kept about a signed-in person and for how long.
+
+**Lighter alternatives** if the hold emails become a nuisance before sign-in is worth building:
+
+- Cloudflare Turnstile on `/book` (free; doesn't help MCP).
+- Lower per-address caps.
+- An allowlist of agent clients.
 
 ## Open Questions
 
