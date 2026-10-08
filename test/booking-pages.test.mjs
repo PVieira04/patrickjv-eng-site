@@ -85,19 +85,20 @@ test("/privacy makes no request to another origin and runs no script", () => {
 
 // ---- /book (ships dark) ----
 
-test("/book is generated, noindex, with its own title and one <h1>", () => {
+test("/book is generated, indexable at launch, with its own title and one <h1>", () => {
   assert.ok(existsSync(join(ROOT, "public/book.html")), "public/book.html is missing");
   const html = read("public/book.html");
   assert.match(html, /<title>Book a meeting — Patrick Vieira<\/title>/);
-  assert.match(html, /<meta name="robots" content="noindex">/);
+  assert.doesNotMatch(html, /noindex/);
   assert.equal(all(html).filter((e) => e.tag === "h1").length, 1);
 });
 
-test("/book ships dark: not in the sitemap, the homepage, index.md or llms.txt", () => {
-  assert.doesNotMatch(read("public/sitemap.xml"), /\/book/);
-  for (const f of ["public/index.html", "public/writing/index.html", "public/privacy.html"])
-    assert.ok(!all(read(f)).some((e) => e.tag === "a" && /^(https:\/\/patrickjv\.com)?\/book/.test(e.attrs.href ?? "")), `${f} links to /book`);
-  for (const f of ["public/index.md", "public/llms.txt"]) assert.doesNotMatch(read(f), /patrickjv\.com\/book/, f);
+test("/book is launched: in the sitemap, the homepage nav, index.md and llms.txt (which names the booking tools)", () => {
+  assert.match(read("public/sitemap.xml"), /<loc>https:\/\/patrickjv\.com\/book<\/loc>/);
+  const nav = read("public/index.html").match(/<nav aria-label="Sections">[\s\S]*?<\/nav>/)[0];
+  assert.ok(all(nav).some((e) => e.tag === "a" && e.attrs.href === "/book"), "homepage nav links to /book");
+  for (const f of ["public/index.md", "public/llms.txt"]) assert.match(read(f), /patrickjv\.com\/book/, f);
+  assert.match(read("public/llms.txt"), /book_meeting/);
 });
 
 test("/book has exactly one CSP rule per path and makes no request to another origin", () => {
