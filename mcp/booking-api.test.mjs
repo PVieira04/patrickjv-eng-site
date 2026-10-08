@@ -448,3 +448,42 @@ test("patrickjv/health: never reveals booking secrets, calendar IDs or the owner
   for (const k of ["GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RESEND_API_KEY", "BOOKING_OWNER_EMAIL", "CAL_PERSONAL_MAIN"]) assert.ok(!text.includes(h.env[k]), k);
   assert.equal(h.f.mails().length, 0);
 });
+
+// ---- Global cap alert ----
+
+const decodeWords = (h) => new TextDecoder().decode(new Uint8Array(
+  [...h.matchAll(/=\?UTF-8\?B\?([^?]*)\?=/g)].flatMap((m) => [...atob(m[1])].map((c) => c.charCodeAt(0)))));
+const mimeBody = (raw) => new TextDecoder().decode(Uint8Array.from(atob(raw.split("\r\n\r\n").slice(1).join("").replace(/\r\n/g, "")), (c) => c.charCodeAt(0)));
+async function exhaust(h) {
+  const out = [];
+  for (let i = 0; i < 12; i++) out.push(await h.post(booking({ email: `g${i}@example.com`, start: "2026-10-23T10:00:00+01:00" }), { ip: `192.0.2.${i}` }));
+  return out;
+}
+
+test("global cap: Patrick gets one alert email that day, to INTRO_TO_ADDRESS through the send_email binding", async () => {
+  const h = harness();
+  const responses = await exhaust(h);
+  assert.equal(responses.at(-1).status, 429);
+  assert.equal(h.alerts.length, 1, "exactly one alert, however many requests are refused");
+  const { from, to, raw } = h.alerts[0];
+  assert.equal(from, "intro@patrickjv.com");
+  assert.equal(to, "owner@example.com");
+  const head = raw.split("\r\n\r\n")[0].replace(/\r\n /g, " ");
+  assert.match(head, /^To: <owner@example\.com>$/m);
+  assert.equal(decodeWords(head.match(/^Subject: (.*)$/m)[1]), "patrickjv.com booking closed for today: daily cap reached");
+  assert.match(mimeBody(raw), /reached the daily cap on 2026-10-19/);
+  assert.ok(!/g\d+@example\.com/.test(raw + mimeBody(raw)), "no guest address in the alert");
+});
+
+test("global cap: a failed alert is logged by subsystem only and doesn't change the answer", async () => {
+  const h = harness();
+  h.alerts.push = () => { throw new Error("send failed"); };
+  const lines = [];
+  const e = console.error, l = console.log;
+  console.error = console.log = (...a) => lines.push(a.join(" "));
+  let responses;
+  try { responses = await exhaust(h); } finally { console.error = e; console.log = l; }
+  assert.ok(responses.slice(0, 10).every((r) => r.status !== 503), "the request that hit the cap still gets its own answer");
+  assert.ok(lines.some((x) => x.includes('"subsystem":"alert_email"')), lines.join("\n"));
+  for (const x of lines) assert.ok(!x.includes("@example.com"), x);
+});
