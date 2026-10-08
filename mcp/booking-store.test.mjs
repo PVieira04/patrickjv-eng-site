@@ -65,12 +65,16 @@ function setup({ busy = [], emailFails = false, insertFails = false, deleteFails
     },
     actUrl: (t) => ACT + t,
     day: (iso) => iso.slice(0, 10),
+    // insertFails: true → Google refused (a 4xx: nothing made); "unknown" → a timeout or 5xx after
+    // Google made the event.
     insertEvent: async (ev) => {
       await tick();
-      if (insertFails) throw new Error("google down");
+      if (insertFails === "unknown") { calls.inserted.push(ev); throw new Error("timed out"); }
+      if (insertFails) throw Object.assign(new Error("google said no"), { status: 403 });
       calls.inserted.push(ev);
       return { created: true, meetLink: "https://meet.google.com/abc-defg-hij" };
     },
+    getEvent: async (id) => { await tick(); return calls.inserted.some((e) => e.id === id) ? { meetLink: "https://meet.google.com/abc-defg-hij" } : null; },
     deleteEvent: async (id) => { await tick(); if (deleteFails) throw new Error("google down"); calls.deleted.push(id); return { deleted: true }; },
     ownerEmail: "owner@example.net",
   };
@@ -288,6 +292,7 @@ async function capturingLogs(fn) {
   try { await fn(); } finally { Object.assign(console, saved); }
   return lines;
 }
+const quietly = async (fn) => { let r; await capturingLogs(async () => { r = await fn(); }); return r; };
 
 test("request: if the hold email fails, the hold is released at once and nothing personal is logged", async () => {
   const t = setup({ emailFails: true });
@@ -415,6 +420,20 @@ test("confirm: if Google fails to create the event, the hold is rolled back and 
   assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action = 'confirm' AND used_at IS NULL"), 1);
   t.deps.insertEvent = async (ev) => { await tick(); t.calls.inserted.push(ev); return { created: true, meetLink: null }; };
   assert.deepEqual(await act(t, h.confirm), { result: "confirmed" }, "a retry of the same link succeeds");
+});
+
+test("confirm: an insert whose outcome is unknown (timeout, network, 5xx) is not rolled back: the row waits, confirming, for recovery", async () => {
+  const t = setup({ insertFails: "unknown" });
+  const h = await hold(t);
+  assert.deepEqual(await quietly(() => act(t, h.confirm)), { result: "confirming" });
+  assert.equal(row(t, h.id).status, "confirming", "still occupying its slot");
+  assert.deepEqual(await act(t, h.confirm), { error: "used" }, "the link is spent: a retry can't race recovery");
+  assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 0);
+  // The alarm's recovery finds the event Google made and settles the booking, without a second insert.
+  assert.deepEqual(await store.recoverConfirm(t.sql, row(t, h.id), { now: later(HOUR + 5 * 60e3), cfg, deps: t.deps }), { result: "confirmed" });
+  assert.equal(t.calls.inserted.length, 1);
+  assert.equal(row(t, h.id).status, "confirmed");
+  assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 1);
 });
 
 test("confirm: if free/busy fails, the hold is rolled back", async () => {

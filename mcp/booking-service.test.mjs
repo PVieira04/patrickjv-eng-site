@@ -174,6 +174,20 @@ test("recovery: a booking stuck in cancelling is finished by retrying deleteEven
   assert.ok(fresh.f.calls.some((c) => c.method === "DELETE"));
 });
 
+test("recovery: Google made the event but the insert answered 503: the booking waits in confirming, then the alarm settles it without a second event", async () => {
+  const s = service({ fetchOpts: { fail: { afterCreate: true } } });
+  const { booking_id } = await s.svc.request(guest(), "ip1", "em1");
+  assert.deepEqual(await quiet(() => s.svc.act(tokenIn(s.f.mails()[0].text, "confirm"))), { result: "confirming" });
+  assert.equal(s.f.events.size, 1, "the meeting is in the calendar");
+  s.clock.now = new Date(NOW.getTime() + 5 * 60e3);
+  await s.svc.alarm();
+  assert.equal(s.sql.exec("SELECT status FROM bookings WHERE id = ?", booking_id).one().status, "confirmed");
+  assert.equal(s.f.calls.filter((c) => c.method === "POST" && c.url.includes("/events")).length, 1, "no second insert");
+  const booked = s.f.mails().filter((m) => /^Booked:/.test(m.subject));
+  assert.equal(booked.length, 1);
+  assert.match(booked[0].text, /meet\.google\.com/, "the Meet link from the event recovery found");
+});
+
 test("race: recovery finishing a slow live confirm, then the confirm returning: one 'Booked' email, one cancel link", async () => {
   let release, inserted;
   const gate = new Promise((r) => { release = r; });
