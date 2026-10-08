@@ -91,5 +91,40 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
     return { busy: mergeBusy(busy), errors };
   }
 
-  return { accessToken, freeBusy, ping };
+  // Events live only on hello@'s own primary calendar, so hello@ is the organiser. `attendees` are
+  // email addresses (Patrick's and the guest's). The booking ID is the event ID: a retried insert
+  // gets 409 rather than making a second event.
+  const eventPath = (id) => `/calendars/primary/events/${encodeURIComponent(id)}`;
+  const meetStatus = (ev) => ev?.conferenceData?.createRequest?.status?.statusCode;
+
+  async function insertEvent({ id, summary, description, start, end, attendees }) {
+    const r = await api("/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all", {
+      method: "POST",
+      body: {
+        id, summary, description,
+        start: { dateTime: start }, end: { dateTime: end },
+        attendees: attendees.map((email) => ({ email })),
+        // Keeps Patrick's personal address out of the guest list the guest sees.
+        guestsCanSeeOtherGuests: false,
+        conferenceData: { createRequest: { requestId: id, conferenceSolutionKey: { type: "hangoutsMeet" } } },
+      },
+    });
+    if (r.status !== 409 && !r.ok) throw fail("events.insert", r);
+    const created = r.status !== 409;
+    const getEvent = async () => {
+      const got = await api(eventPath(id));
+      if (!got.ok) throw fail("events.get", got);
+      return got.body;
+    };
+    // A 409 has no event body, so the existing event is read for its link.
+    let ev = created ? r.body : await getEvent();
+    // Meet links are made asynchronously: re-read while pending, up to 5 times a second apart.
+    for (let i = 0; i < 5 && meetStatus(ev) === "pending"; i++) {
+      await sleep(1000);
+      ev = await getEvent();
+    }
+    return { created, meetLink: meetStatus(ev) === "success" && ev.hangoutLink ? ev.hangoutLink : null };
+  }
+
+  return { accessToken, freeBusy, insertEvent, ping };
 }
