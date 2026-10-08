@@ -21,7 +21,7 @@
   // BOOKING_ENABLED is the booking kill switch: anything but "true" refuses new bookings and agent
   // cancels (links already emailed keep working). It stays "false" until the launch checklist in
   // docs/06-operations.md is done. BOOKING_FROM is the From of guest emails (sent through Resend).
-  "vars": { "INTRO_FROM": "intro@patrickjv.com", "BOOKING_ENABLED": "false", "BOOKING_FROM": "Patrick Vieira <hello@patrickjv.com>" },
+  "vars": { "INTRO_FROM": "intro@patrickjv.com", "BOOKING_ENABLED": "true", "BOOKING_FROM": "Patrick Vieira <hello@patrickjv.com>" },
   // Secret, not a var: INTRO_TO_ADDRESS, the verified mailbox introductions are delivered to (kept
   // out of this public repo). Set with `wrangler secret put INTRO_TO_ADDRESS -c mcp/wrangler.jsonc`.
   // Secret, not a var: QUOTA_SALT keys the HMAC of the IP and sender keys held by IntroQuota.

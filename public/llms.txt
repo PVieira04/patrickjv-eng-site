@@ -48,6 +48,7 @@ Two years in a classroom left me judging tooling by whether people pick it up an
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)
 - [GitHub](https://github.com/PVieira04)
 - [CV](https://patrickjv.com/cv): two-page CV, also as [PDF](https://patrickjv.com/cv.pdf)
+- [Book a call](https://patrickjv.com/book): pick a free time; nothing is booked until you confirm from your inbox
 - [Privacy](https://patrickjv.com/privacy): what this site stores about you, for how long, and who processes it
 
 Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here.
@@ -56,4 +57,4 @@ Introductions sent through this site's MCP or browser-agent tools are forwarded 
 
 - [Markdown version of this page](https://patrickjv.com/index.md): the full profile as clean Markdown
 - [Sitemap](https://patrickjv.com/sitemap.xml)
-- [MCP server](https://patrickjv.com/mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day)
+- [MCP server](https://patrickjv.com/mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day); list_meeting_types, get_availability, book_meeting, get_booking_status and cancel_booking book a call, confirmed by the person from their own inbox

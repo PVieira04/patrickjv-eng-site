@@ -555,8 +555,8 @@ export function renderPrivacy(c) {
   });
 }
 
-// /book ships dark until launch (F-001): noindex, and nothing links to it — not the nav, sitemap,
-// index.md or llms.txt. The picker uses native radio inputs in fieldsets, so it works by keyboard.
+// /book (F-001), launched 8 Oct 2026: linked from the homepage nav, in the sitemap, index.md and
+// llms.txt. The picker uses native radio inputs in fieldsets, so it works by keyboard.
 export const BOOK_PATH = "/book";
 const BOOK_STYLE = WRITING_STYLE + `
 [hidden] { display: none; }
@@ -685,7 +685,7 @@ export function renderBook(c) {
   const b = c.pages.book, l = b.labels, email = c.person.links.email;
   const field = (id, label, control) => `<label class="field" for="${id}">${attr(label)}</label>\n${control}`;
   return sitePage({
-    title: `${b.title} — ${c.person.name}`, description: b.description, path: BOOK_PATH, noindex: true, style: BOOK_STYLE,
+    title: `${b.title} — ${c.person.name}`, description: b.description, path: BOOK_PATH, style: BOOK_STYLE,
     main: `<h1>${attr(b.title)}</h1>
 <p>${attr(b.intro)}</p>
 <noscript><p>${linkEmail(b.noscript, email)}</p></noscript>
@@ -792,7 +792,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
   html = splice(html, /var d = \{.*\};/, () => `var d = ${safeJson(webmcp)};`, "WebMCP data");
 
   // ---- index.md ----
-  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
+  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Book a call](${SITE}book): pick a free time; nothing is booked until you confirm from your inbox`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
   const md = [
     `# ${c.person.name}`, "",
     `Platform engineer in London (not the footballer of the same name). Canonical page: ${SITE}`, "",
@@ -824,7 +824,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
     "## Machine-readable", "",
     `- [Markdown version of this page](${SITE}index.md): the full profile as clean Markdown`,
     `- [Sitemap](${SITE}sitemap.xml)`,
-    `- [MCP server](${SITE}mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day)`, "",
+    `- [MCP server](${SITE}mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day); list_meeting_types, get_availability, book_meeting, get_booking_status and cancel_booking book a call, confirmed by the person from their own inbox`, "",
   ].join("\n");
 
   // ---- sitemap.xml ----
@@ -833,6 +833,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
   <url><loc>${SITE}</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}cv</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}writing/</loc><lastmod>${date}</lastmod></url>
+  <url><loc>${SITE}book</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}privacy</loc><lastmod>${date}</lastmod></url>
 ${writing.sorted.map((p) => `  <url><loc>${SITE}writing/${p.slug}</loc><lastmod>${p.date}</lastmod></url>`).join("\n")}
 </urlset>
@@ -930,7 +931,7 @@ ${PRIVACY_PATH}
 ${PRIVACY_PATH}.html
   Content-Security-Policy: ${privacyCsp}
 
-# Booking (F-001, ships dark: noindex and unlinked until launch).
+# Booking (F-001).
 ${BOOK_PATH}
   Content-Security-Policy: ${bookCsp}
 

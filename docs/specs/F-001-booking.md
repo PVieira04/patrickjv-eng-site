@@ -11,7 +11,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | F-001 |
-| Status | Approved |
+| Status | Shipped (8 Oct 2026; launch checklist steps 11 and 13 in docs/06) |
 | Phase | v1 |
 | Owner | @PVieira04 |
 | Created | 2026-10-08 |
