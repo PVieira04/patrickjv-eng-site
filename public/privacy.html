@@ -51,13 +51,13 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line);
 <p>To find free times, the site asks Google only whether my calendars are free or busy at a given time. It never reads the titles or details of anything in them.</p>
 <h2>Limits and logs</h2>
 <p>To stop abuse, the site counts introductions and booking requests per day for each IP address and each email address. It stores a keyed hash of each address, never the address itself. Introduction counts are deleted at midnight UTC and booking counts within two days.</p>
-<p>Cloudflare keeps 30 days of recovery history for this storage, so I could restore a deleted record for up to 30 days after it was deleted.</p>
+<p>Cloudflare keeps 30 days of recovery history for booking records and the daily counts, so I could restore a deleted record for up to 30 days after it was deleted.</p>
 <p>The site's logs record that something failed and in which part of the system. They never contain names, email addresses, IP addresses or message text.</p>
 <h2>Who processes your data</h2>
 <ul>
 <li>Cloudflare hosts the site and the booking service, stores booking records and the daily counts, and forwards email sent to <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a>.</li>
 <li>Google holds booked meetings in Google Calendar and sends the invitations. Introductions and email to <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a> arrive in my Gmail mailbox.</li>
-<li>Resend sends the booking emails: the confirmation link, the booked message and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules.</li>
+<li>Resend sends the booking emails: the confirmation link, the booking confirmation and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules.</li>
 </ul>
 <h2>Your data</h2>
 <p>To cancel a meeting, use the link in your booking email. To see what I hold about you, or to have it deleted, email me at <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a>.</p>
