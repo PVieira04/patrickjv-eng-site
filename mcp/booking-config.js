@@ -35,6 +35,28 @@ export function localDay(iso, tz) {
   return `${p.year}-${p.month}-${p.day}`;
 }
 
+const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const nextDay = (day) => new Date(Date.parse(`${day}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
+const minutesOf = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+const hhmmOf = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+// Every slot the hours allow for a meeting type, on London days fromDay..toDay inclusive. Each
+// day's times are converted separately, so a clock change between days can't shift them.
+export function candidateSlots(cfg, typeId, fromDay, toDay) {
+  const type = cfg.meetingTypes.find((t) => t.id === typeId);
+  if (!type) return [];
+  const open = minutesOf(cfg.hours.start), close = minutesOf(cfg.hours.end);
+  const out = [];
+  for (let day = fromDay; day <= toDay; day = nextDay(day)) {
+    if (!cfg.hours.days.includes(DAY_NAMES[new Date(`${day}T00:00:00Z`).getUTCDay()])) continue;
+    for (let m = open; m + type.minutes <= close; m += cfg.slotStepMinutes) {
+      const start = localToUtcMs(day, hhmmOf(m), cfg.timezone);
+      out.push({ start: new Date(start).toISOString(), end: new Date(start + type.minutes * 60000).toISOString() });
+    }
+  }
+  return out;
+}
+
 // Agent-facing form of a stored UTC time: local wall time in tz with its offset, to the second.
 export function withOffset(iso, tz) {
   const ms = Date.parse(iso);
