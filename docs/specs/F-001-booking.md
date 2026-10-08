@@ -15,7 +15,7 @@
 | Phase | v1 |
 | Owner | @PVieira04 |
 | Created | 2026-10-08 |
-| Last updated | 2026-10-08 |
+| Last updated | 2026-10-08 (build; see Deviations) |
 | Target release | TBD |
 | Evidence | [Spikes S1–S11](F-001-spikes/README.md) |
 | Depends on | A Google account for `hello@patrickjv.com` (setup below); the existing `patrickjv-mcp` Worker |
@@ -135,42 +135,53 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 
 ### Functional
 
-- [ ] **(US-1, US-2)** Two meeting types: Consultation (30 min) and Recruiter intro (15 min), read from `booking.json`.
-- [ ] **(US-1)** Slots fall within 10:00–17:00 Europe/London on weekdays, start on the quarter hour, and end by 17:00.
-- [ ] **(US-1)** No slot sooner than 24 hours from now or later than 4 weeks ahead.
-- [ ] **(US-1, US-6)** A slot is offered only if the meeting plus 15 minutes before and after is free in every calendar with `blocks: true`, and no other booking or live hold overlaps it.
-- [ ] **(US-1)** At most 3 confirmed meetings on any one Europe/London day. Holds don't count toward it, so fake holds can't fill a day; a confirm that would make a 4th is declined with reason `day_full`, and a full day offers no slots.
-- [ ] **(US-1)** Times are stored in UTC and shown in the visitor's timezone with the zone named; agents get ISO 8601 with an offset.
-- [ ] **(US-1)** Tests cover the clocks-back change on 25 Oct 2026: slots on 23, 26 and 27 Oct are at 10:00–17:00 London time (09:00–16:00 UTC before, 10:00–17:00 UTC after).
-- [ ] **(US-1, US-4)** A page booking follows the same hold-and-confirm path as an agent booking: no event and no Google invite until the guest confirms from their inbox.
-- [ ] **(US-6)** Events are organised by `hello@patrickjv.com`, invite Patrick and the guest, carry a Meet link, and have the meeting type in the title ("Consultation: <guest name>").
-- [ ] **(US-6)** The site only ever calls free/busy on Patrick's calendars; it never reads event titles or details.
-- [ ] **(US-3)** MCP and WebMCP both expose `list_meeting_types`, `get_availability`, `book_meeting`, `get_booking_status`, `cancel_booking` with the same names and schemas (the build fails if they drift, as it does today).
-- [ ] **(US-4)** `book_meeting` and `POST /api/booking` create no event; they hold the slot for 2 hours and email Confirm/Decline links to the given address.
-- [ ] **(US-4)** Confirm re-checks the slot against live free/busy and existing bookings before creating the event; if taken, the booking becomes `declined` with reason `slot_taken`.
-- [ ] **(US-4)** A hold not confirmed within 2 hours becomes `expired` and stops blocking the slot.
-- [ ] **(US-4, US-6)** If two bookings race for one slot, exactly one gets it (all writes go through one Durable Object).
-- [ ] **(US-5, US-9)** Confirm, decline and cancel links carry a random 128-bit token, are single-use, and expire: confirm/decline when the hold expires, cancel at the meeting start.
-- [ ] **(US-5)** Cancelling deletes the event with attendees notified and frees the slot.
-- [ ] **(US-9)** `cancel_booking` on a pending hold withdraws it; on a confirmed booking it only sends a confirm-cancellation email.
-- [ ] **(US-9)** `cancel_booking` and `get_booking_status` need the booking ID; booking IDs are random (128-bit), not sequential.
-- [ ] **(US-7)** Meeting types, hours, rules and calendars come only from `booking.json`; the build validates it and fails on a bad file.
-- [ ] **(US-8)** Daily caps: 4 booking requests per IP (same as `request_intro`, because hosted MCP clients share egress addresses), 2 per guest email, 10 in total, reserved atomically before any Google call or email, never refunded (fail closed).
-- [ ] **(US-8)** One live hold at a time per IP and per guest email; a second request while one is pending gets 429 `hold_pending`, and the first can be withdrawn with `cancel_booking`.
-- [ ] **(US-8)** When the global cap is reached, the page and tools say "Booking is closed for today" and Patrick gets one alert email (to `INTRO_TO_ADDRESS`, via the existing `send_email` binding) that day, so a cap exhausted by abuse doesn't go unnoticed.
+- [x] **(US-1, US-2)** Two meeting types: Consultation (30 min) and Recruiter intro (15 min), read from `booking.json`.
+- [x] **(US-1)** Slots fall within 10:00–17:00 Europe/London on weekdays, start on the quarter hour, and end by 17:00.
+- [x] **(US-1)** No slot sooner than 24 hours from now or later than 4 weeks ahead.
+- [x] **(US-1, US-6)** A slot is offered only if the meeting plus 15 minutes before and after is free in every calendar with `blocks: true`, and no other booking or live hold overlaps it.
+- [x] **(US-1)** At most 3 confirmed meetings on any one Europe/London day. Holds don't count toward it, so fake holds can't fill a day; a confirm that would make a 4th is declined with reason `day_full`, and a full day offers no slots.
+- [x] **(US-1)** Times are stored in UTC and shown in the visitor's timezone with the zone named; agents get ISO 8601 with an offset.
+- [x] **(US-1)** Tests cover the clocks-back change on 25 Oct 2026: slots on 23, 26 and 27 Oct are at 10:00–17:00 London time (09:00–16:00 UTC before, 10:00–17:00 UTC after).
+- [x] **(US-1, US-4)** A page booking follows the same hold-and-confirm path as an agent booking: no event and no Google invite until the guest confirms from their inbox.
+- [x] **(US-6)** Events are organised by `hello@patrickjv.com`, invite Patrick and the guest, carry a Meet link, and have the meeting type in the title ("Consultation: <guest name>").
+- [x] **(US-6)** The site only ever calls free/busy on Patrick's calendars; it never reads event titles or details.
+- [x] **(US-3)** MCP and WebMCP both expose `list_meeting_types`, `get_availability`, `book_meeting`, `get_booking_status`, `cancel_booking` with the same names and schemas (the build fails if they drift, as it does today).
+- [x] **(US-4)** `book_meeting` and `POST /api/booking` create no event; they hold the slot for 2 hours and email Confirm/Decline links to the given address.
+- [x] **(US-4)** Confirm re-checks the slot against live free/busy and existing bookings before creating the event; if taken, the booking becomes `declined` with reason `slot_taken`.
+- [x] **(US-4)** A hold not confirmed within 2 hours becomes `expired` and stops blocking the slot.
+- [x] **(US-4, US-6)** If two bookings race for one slot, exactly one gets it (all writes go through one Durable Object).
+- [x] **(US-5, US-9)** Confirm, decline and cancel links carry a random 128-bit token, are single-use, and expire: confirm/decline when the hold expires, cancel at the meeting start.
+- [x] **(US-5)** Cancelling deletes the event with attendees notified and frees the slot.
+- [x] **(US-9)** `cancel_booking` on a pending hold withdraws it; on a confirmed booking it only sends a confirm-cancellation email.
+- [x] **(US-9)** `cancel_booking` and `get_booking_status` need the booking ID; booking IDs are random (128-bit), not sequential.
+- [x] **(US-7)** Meeting types, hours, rules and calendars come only from `booking.json`; the build validates it and fails on a bad file.
+- [x] **(US-8)** Daily caps: 4 booking requests per IP (same as `request_intro`, because hosted MCP clients share egress addresses), 2 per guest email, 10 in total, reserved atomically before any Google call or email, never refunded (fail closed).
+- [x] **(US-8)** One live hold at a time per IP and per guest email; a second request while one is pending gets 429 `hold_pending`, and the first can be withdrawn with `cancel_booking`.
+- [x] **(US-8)** When the global cap is reached, the page and tools say "Booking is closed for today" and Patrick gets one alert email (to `INTRO_TO_ADDRESS`, via the existing `send_email` binding) that day, so a cap exhausted by abuse doesn't go unnoticed.
 - [ ] **(US-8)** The WAF flood rule covers the booking API path as well as `/mcp`.
-- [ ] **(US-8)** `BOOKING_ENABLED=false` makes every booking-write path refuse and the page say booking is closed; read tools still work.
-- [ ] **(US-8)** Ships dark: `BOOKING_ENABLED` is `"false"` in `mcp/wrangler.jsonc` until the launch steps are done. `/book` is not in the nav or sitemap until launch. Health reports `bookingEnabled` and `bookingReady` separately, and the smoke check passes when booking is disabled, failing only when it's enabled but not ready.
+- [x] **(US-8)** `BOOKING_ENABLED=false` makes every booking-write path refuse and the page say booking is closed; read tools still work.
+- [x] **(US-8)** Ships dark: `BOOKING_ENABLED` is `"false"` in `mcp/wrangler.jsonc` until the launch steps are done. `/book` is not in the nav or sitemap until launch. Health reports `bookingEnabled` and `bookingReady` separately, and the smoke check passes when booking is disabled, failing only when it's enabled but not ready.
 
 ### Non-functional
 
 - [ ] **Accessibility:** `/book` has 0 axe violations, Lighthouse accessibility 100, and the slot picker works by keyboard alone.
 - [ ] **Performance:** Lighthouse performance stays 100 on `/book`; the page ships no framework.
-- [ ] **Security:** no Google credential except the `hello@` refresh token (Worker secret); narrowest scopes that work (see Google setup). No state change on GET.
-- [ ] **Privacy:** no PII in logs (same rule as `logFailure`); booking records deleted 30 days after the meeting, holds 30 days after expiry; a new `/privacy` page says what booking and introductions store, for how long, and who processes it (Google, Resend, Cloudflare), and the homepage privacy line links to it. Google requires a privacy policy URL before the OAuth app can be published (checked 2026-10-08).
-- [ ] **Observability:** `patrickjv/health` reports `bookingReady` (secrets set, token refresh works, DO reachable, flag on), and `npm run smoke` checks it.
-- [ ] **Operations:** `docs/06-operations.md` has a runbook for re-authorising `hello@` (new refresh token, `wrangler secret put`, check `bookingReady`) and for switching mail provider. The existing 6-hourly monitor (`monitor.yml`) runs the smoke check, so a revoked token is noticed within 6 hours even when nobody books.
+- [x] **Security:** no Google credential except the `hello@` refresh token (Worker secret); narrowest scopes that work (see Google setup). No state change on GET.
+- [x] **Privacy:** no PII in logs (same rule as `logFailure`); booking records deleted 30 days after the meeting, holds 30 days after expiry; a new `/privacy` page says what booking and introductions store, for how long, and who processes it (Google, Resend, Cloudflare), and the homepage privacy line links to it. Google requires a privacy policy URL before the OAuth app can be published (checked 2026-10-08).
+- [x] **Observability:** `patrickjv/health` reports `bookingReady` (secrets set, token refresh works, DO reachable, flag on), and `npm run smoke` checks it.
+- [x] **Operations:** `docs/06-operations.md` has a runbook for re-authorising `hello@` (new refresh token, `wrangler secret put`, check `bookingReady`) and for switching mail provider. The existing 6-hourly monitor (`monitor.yml`) runs the smoke check, so a revoked token is noticed within 6 hours even when nobody books.
 - [ ] **Copy:** public copy passes the AI-tells check and names no employer.
+
+### Deviations recorded during the build (2026-10-08)
+
+- **WAF (US-8) not ticked:** the "MCP flood guard" expression still covers only `/mcp`. Extending it to `/api/booking` is a manual dashboard step in the [launch checklist](../06-operations.md#booking-launch).
+- **`bookingReady` doesn't include the flag.** Health reports `bookingEnabled` (the flag) and `bookingReady` (secrets set, Google token refresh works, store reachable) independently, so readiness can be checked before switching on; smoke combines them (`introReady && (!bookingEnabled || bookingReady)`).
+- **Extra HTTP endpoints:** `GET /api/booking/status` and `POST /api/booking/cancel`, so the page's WebMCP tools can use the HTTP API for all five tools. `POST /api/booking` takes an optional `source` of exactly `"page"` (default) or `"webmcp"`; it's self-reported and only words the hold email.
+- **Status codes:** a start that has slipped inside the 24-hour notice window or past the horizon is 409 (gone), not 400, so the page reloads slots; a start that was never a slot is 400.
+- **Kill switch:** all emailed links (confirm, decline, cancel) keep working while booking is off, not only confirms.
+- **Recovery** of a booking left in `confirming`/`cancelling` by an eviction: the store's alarm retries after 2 minutes with no call in progress (the schema has no status timestamp, so in-progress calls are tracked in memory, which is exactly what an eviction loses).
+- **Not yet verified live:** that the invite hides Patrick's address when he is an attendee (`guestsCanSeeOtherGuests: false`), and free/busy on `hello@`'s `primary` calendar alongside the shared ones. Both are in the launch checklist.
+- **Accessibility, performance and copy** criteria are left for the `/book` page's own check (package E).
 
 ---
 
