@@ -405,6 +405,36 @@ test("peek: says what a link would do and its state, without changing anything o
   assert.equal(used.booking.status, "confirmed");
 });
 
+// ---- Holds expire after 2 hours --------------------------------------------------------------
+
+test("expiry: a hold blocks its slot for 2 hours, then expires (hold_expired) and someone else can take it", async () => {
+  const t = setup();
+  const h = await hold(t);
+  assert.equal(store.liveBookings(t.sql, later(2 * HOUR - 1)).length, 1);
+  assert.equal(store.expireHolds(t.sql, later(2 * HOUR - 1)), 0);
+  assert.equal(store.liveBookings(t.sql, later(2 * HOUR)).length, 0, "free by the clock even before the alarm runs");
+  assert.equal(store.getStatus(t.sql, h.id, later(2 * HOUR)).status, "expired", "status says so before the alarm too");
+  assert.equal(store.expireHolds(t.sql, later(2 * HOUR)), 1);
+  const b = row(t, h.id);
+  assert.deepEqual([b.status, b.status_reason], ["expired", "hold_expired"]);
+  assert.deepEqual(store.getStatus(t.sql, h.id), { status: "expired", status_reason: "hold_expired", start: SLOT, end: "2026-10-21T10:30:00.000Z", type: "consultation" });
+  assert.equal((await request(t, {}, { now: later(2 * HOUR) })).status, "pending_confirmation");
+});
+
+test("alarm: next at the earliest hold expiry, or the next UTC midnight (for pruning) if sooner or no holds", async () => {
+  const t = setup();
+  const midnight = Date.parse("2026-10-20T00:00:00.000Z");
+  assert.equal(store.nextAlarmAt(t.sql, NOW), midnight);
+  await hold(t);
+  assert.equal(store.nextAlarmAt(t.sql, NOW), Date.parse(HOLD_EXPIRES));
+  const lateNight = new Date("2026-10-19T23:00:00.000Z");
+  await request(t, { start: "2026-10-22T10:00:00.000Z" }, { now: lateNight }); // expires 01:00 next day
+  assert.equal(store.nextAlarmAt(t.sql, later(3 * HOUR)), later(3 * HOUR).getTime(), "an overdue hold: run now");
+  store.expireHolds(t.sql, later(3 * HOUR));
+  assert.equal(store.nextAlarmAt(t.sql, later(3 * HOUR)), midnight, "midnight comes before the 01:00 expiry");
+  assert.equal(store.nextAlarmAt(t.sql, new Date("2026-10-20T00:00:00.000Z")), Date.parse("2026-10-20T01:00:00.000Z"));
+});
+
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
