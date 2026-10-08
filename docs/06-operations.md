@@ -56,7 +56,7 @@ Production does not depend on any of these: deleting them changes nothing live.
 **`smoke`** — every **6 hours** at 00:17, 06:17, 12:17 and 18:17 UTC, and on demand:
 
 1. **Find the last deployed commit**: the newest of `main`'s last 30 commits whose `Workers Builds: patrickjv-eng-site` check run (app `cloudflare-workers-and-pages`) concluded `success`. Commits that only touch files outside the site's watch paths have no site build and are skipped. Errors if none is found.
-2. **Smoke** that commit — checked out at that SHA, so "deployed = repo" compares like with like (review Codex-6): `node smoke.mjs https://patrickjv.com --aliases --mcp --registry --strict-https --dns` — **30 checks**, each **PASS**, **WARN** or **FAIL**, written to the run's step summary.
+2. **Smoke** that commit — checked out at that SHA, so "deployed = repo" compares like with like (review Codex-6): `node smoke.mjs https://patrickjv.com --aliases --mcp --registry --strict-https --dns` — **about 30 checks** (one per writing post, so the count grows), each **PASS**, **WARN** or **FAIL**, written to the run's step summary.
 3. **main is deployed**: if `main`'s head differs from the deployed commit in any file outside the site's watch-path excludes (`docs/*`, `README.md`, `designs/*` — keep equal to the dashboard), it reads the head's `Workers Builds: patrickjv-eng-site` check run: queued or in progress → notice; concluded `failure`, `cancelled` or anything but success → **error "Workers Builds failed"**; no check run at all → **error** "main is not deployed".
 
 **`build-result`** — on every completed check run whose app is `cloudflare-workers-and-pages` and whose name starts with `Workers Builds: ` (other check runs start the workflow but skip the job):
@@ -67,14 +67,14 @@ Production does not depend on any of these: deleting them changes nothing live.
 The run fails on any FAIL. Every check requires its exact success status, and media types are compared exactly (`type/subtype`, parameters ignored). No redirects are followed, each request has a 10 s deadline, and one failing check never stops the rest. `test/smoke.test.mjs` runs the script against a local mock of the site, correct by default and broken one way at a time, and unit-tests the verdict helpers.
 
 - `did.json`: 200, `application/json`, no redirect; live bytes and the repo copy both match the frozen sha256
-- `/`, `/index.md`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt`, `/photo.webp`, `/og-card.jpg`, `/favicon.ico`: 200, the expected media type, and **deployed = repo** (sha256 of the live body equals the repo file)
+- `/`, `/index.md`, `/llms.txt`, `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt`, `/photo.webp`, `/og-card.jpg`, `/favicon.ico`, `/cv`, `/cv.pdf`, `/privacy`, `/writing/…`: 200, the expected media type, and **deployed = repo** (sha256 of the live body equals the repo file)
 - `/` returns 200 with HSTS, `nosniff`, and exactly the CSP that `public/_headers` sets for `/`
 - `Accept: text/markdown` on `/` returns 200 `text/markdown` whose body equals `public/index.md`
 - `security.txt`: 200 `text/plain` and `Expires` more than 30 days ahead
 - A missing font path (`/fonts/does-not-exist.woff2`) returns 404 with at most one CSP header and without the fonts' 30-day cache
 - `http://patrickjv.com/` redirects to HTTPS — FAIL with `--strict-https` (used by CI since Always Use HTTPS was enabled on 7 Oct); WARN without it
 - `--aliases`: `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` GET → 301 to `https://patrickjv.com/a/b?x=1`; POST → 308 (a 301 is a FAIL); **no `NEL`/`Report-To`** on `patrickjv.com` or `pvieira.co.uk` (FAIL on either). The NEL checks reuse responses already fetched, adding no requests
-- `--mcp`: `initialize` (version `2025-11-25`, `serverInfo.name` = `patrickjv.com`, `serverInfo.version` = `server.json`), `notifications/initialized` → 202, `tools/list` = exactly the five tools, each with icons, `tools/call list_faq` items deep-equal to `content.json`'s `faq`, and **`patrickjv/health` → `introReady: true`** (FAIL otherwise — [readiness](04-mcp-and-webmcp.md#readiness)). Read-only; never calls `request_intro`. Five requests in all, inside the edge limit of 6 per 10 s per IP
+- `--mcp`: `initialize` (version `2025-11-25`, `serverInfo.name` = `patrickjv.com`, `serverInfo.version` = `server.json`), `notifications/initialized` → 202, `tools/list` = exactly the five profile and intro tools, plus the five booking tools when `patrickjv/health` reports `bookingEnabled`, each with icons, `tools/call list_faq` items deep-equal to `content.json`'s `faq`, and **`patrickjv/health` → `introReady: true`, plus `bookingReady: true` whenever `bookingEnabled` is true** (FAIL otherwise — [readiness](04-mcp-and-webmcp.md#readiness)); booking switched off passes. Read-only; never calls `request_intro` or a booking write. Five requests in all, inside the edge limit of 6 per 10 s per IP
 - `--registry`: `com.patrickjv/profile` is active on the MCP Registry with the same version and remote
 - `--dns` (DNS-over-HTTPS to `cloudflare-dns.com`, three queries): `patrickjv.com` **CAA** present (FAIL if not); **DNSSEC** — a DS record at the parent and an authenticated (AD) in-zone answer — **WARN** while the DS is missing (registrar publication pending, review C3-F7); exactly one **DMARC** record at `_dmarc.patrickjv.com` (FAIL if none or several)
 
@@ -127,12 +127,64 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 | MCP Registry signing key | `~/.config/mcp-registry/key.pem` (600) | Back it up (password manager). Public half: `public/.well-known/mcp-registry-auth` (keep deployed). **If lost:** generate a new ed25519 key, replace the public key in `mcp-registry-auth`, deploy, then `mcp-publisher login http` with the new key — ownership is proven by the domain, not the old key. |
 | Google Search Console proof | DNS TXT on `patrickjv.com` | Keep it |
 | GitHub Pages domain verification | DNS TXT `_github-pages-challenge-pvieira04.patrickjv.com` (added 7 Oct 2026; `patrickjv.com` verified under GitHub → Settings → Pages → Verified domains, review C3-F6) | **Keep it** — GitHub re-checks it, and removing it un-verifies the domain, re-opening the takeover risk for `tenlines` (a CNAME to `pvieira04.github.io`). If the `tenlines` Pages site is retired, delete its CNAME first |
+| Booking secrets (F-001) | Worker secrets on `patrickjv-mcp`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (`hello@`'s production token), `RESEND_API_KEY` (`patrickjv-booking / patrickjv-mcp / send-only`), `BOOKING_OWNER_EMAIL`, `CAL_PERSONAL_MAIN` (one per blocking calendar named in `booking.json`) | Not set until [launch](#booking-launch); `bookingReady` is false until every one is. The OAuth client JSON lives only on Patrick's machine. Re-authorising: [runbook](#booking-runbooks) |
 | `QUOTA_SALT` | Worker secret on `patrickjv-mcp` (set 6 Oct 2026 with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc`) | Keys the HMAC of the quota counters' IP and sender keys. **Required**: if it is missing or shorter than 32 characters, `request_intro` is refused (tool error, logged as subsystem `config`); the read tools carry on. Not stored anywhere else and not needed elsewhere; if it is changed, the day's per-IP and per-sender counts restart (the global count does not). |
 | Workers Builds build token | Managed by Cloudflare (Workers Builds, since 7 Oct 2026) | Not in GitHub. The old GitHub Actions token `CLOUDFLARE_API_TOKEN` is unused — delete it ([owner clean-up](#token-rotation)) |
 | GitHub Actions `GITHUB_TOKEN` | Per run, automatic | `contents: read` (test); `contents: read` + `checks: read` (monitor, to read Workers Builds check runs) |
 | GitHub | `gh` CLI (has `user` scope, used to set the profile website/bio) | Remove with `gh auth refresh -h github.com -r user` if unwanted |
 
 Not stored anywhere: the Immich API key used to fetch the portrait (deleted locally and revoked in Immich).
+
+<a id="booking-launch"></a>
+## Booking: launch checklist (F-001)
+
+Booking ships dark: the code is deployed with `BOOKING_ENABLED` `"false"`, `/book` is `noindex` and unlinked, and the WAF rule covers only `/mcp`. Do these in order. Steps marked **manual** can't be done from Claude Code (auto mode blocks DNS and rulesets writes, and Google needs a browser).
+
+1. ✅ **Google account** `hello@patrickjv.com`, its Cloud project, the Calendar API and an OAuth web client exist; free/busy sharing from the personal calendars works (spike S11, 8 Oct 2026).
+2. ✅ **Resend:** domain `patrickjv.com` verified (8 Oct 2026); send-only key `patrickjv-booking / patrickjv-mcp / send-only` created.
+3. **Deploy `/privacy`** (merge to `main`; check `https://patrickjv.com/privacy` returns 200, which `npm run smoke` now checks).
+4. **Manual — Google Branding, then Publish:** Google Auth Platform → Branding: app name, support email, home page `https://patrickjv.com`, authorised domain `patrickjv.com`, privacy policy `https://patrickjv.com/privacy`, no logo (a logo forces verification). Then Audience → **Publish app** (In production).
+5. **Manual — production refresh token:** run `docs/specs/F-001-spikes/google/get-token.mjs` as `hello@` in a private terminal, with the scopes `calendar.freebusy` and `calendar.events.owned`. Never use a token made while the app was in Testing (they expire in 7 days). Revoke the Testing token from the spike (`POST https://oauth2.googleapis.com/revoke`).
+6. **Secrets** (each prompts for the value; nothing goes in the repo):
+   ```bash
+   for s in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN RESEND_API_KEY BOOKING_OWNER_EMAIL CAL_PERSONAL_MAIN; do
+     npx wrangler secret put "$s" -c mcp/wrangler.jsonc
+   done
+   ```
+   **Dashboard gotchas** (8 Oct 2026): in Workers → patrickjv-mcp → Settings → Variables and Secrets, every booking value must be type **Secret**. A **Text** variable is visible in the dashboard and is deleted by the next deploy from the repo, which replaces Text variables with `vars` in `wrangler.jsonc`. Saving in the dashboard can leave a new version **undeployed**. While a newer version is undeployed, `wrangler secret put` refuses ("the latest version of your Worker isn't currently deployed"); use `npx wrangler versions secret put NAME -c mcp/wrangler.jsonc`, or deploy first. After the next deploy, check every name with `npx wrangler secret list -c mcp/wrangler.jsonc`.
+   `CAL_*` values are the exact calendar IDs from Google Calendar → Settings → Integrate calendar (an older UK account's main calendar is `…@googlemail.com`; the `@gmail.com` spelling returns `notFound`). `QUOTA_SALT` and `INTRO_TO_ADDRESS` are already set.
+7. **Check readiness:** `npm run smoke -- --mcp` and look for `bookingReady` in the health line, or call `patrickjv/health` directly: `bookingReady` must be `true` (still with `bookingEnabled: false`).
+8. **Manual — WAF:** extend the "MCP flood guard" expression to `starts_with(http.request.uri.path, "/mcp") or starts_with(http.request.uri.path, "/api/booking")`. Do it in the dashboard (Security → Security rules), or with a token that can write rulesets: the entrypoint `PUT` takes only `{rules}`. Then `npm run cf:export` and commit.
+9. **Manual — live check of the guest list:** re-run the live spike (`docs/specs/F-001-spikes/google/spike.mjs`) with Patrick added as an attendee, and check in the guest's inbox that the invite does **not** show Patrick's personal address (the event sets `guestsCanSeeOtherGuests: false`). Not yet verified live. Also check once that `hello@`'s calendar allows `hangoutsMeet` (`conferenceProperties.allowedConferenceSolutionTypes`).
+10. **Switch on:** set `"BOOKING_ENABLED": "true"` in `mcp/wrangler.jsonc`, commit, merge, and let Workers Builds deploy. Only then do MCP `tools/list` and the initialize instructions include booking, and the homepage's WebMCP script register the booking tools.
+11. **Registry:** bump `mcp/server.json` to 1.2.0, mention booking in its description (100 characters at most), and publish to the Registry ([MCP Registry updates](#mcp-registry-updates)) right after the deploy that sets `BOOKING_ENABLED=true`. Until the Registry lists the same version as the deployed `serverInfo.version`, `smoke --registry` (in the 6-hourly monitor) FAILs, so keep the gap short. The bump stays out of the code until launch for the same reason.
+12. **Add `/book`** to the nav and the sitemap, and drop its `noindex` (in `build.mjs`/`content.json`), then build, commit and deploy.
+13. **Smoke:** `npm run smoke -- --mcp` passes (now requiring `bookingReady`). Make one real booking end to end from `/book` with an outside address: the hold email arrives (SPF, DKIM and DMARC pass in its headers), Confirm books it, Google's invite arrives with a Meet link, the "Booked" email's cancel link cancels it.
+
+<a id="booking-runbooks"></a>
+## Booking runbooks
+
+### Re-authorise `hello@` (refresh token revoked or expired)
+
+Signs: `bookingReady: false` in health, the 6-hourly monitor failing on `patrickjv/health` (only while booking is on), `/book` saying booking is unavailable, `booking_failure` events with `google_freebusy` or `availability` in Workers Logs. Causes: access removed from `hello@`'s Google account, a Google security event, six months unused (the monitor's health check prevents this), or more than 100 tokens issued for the client (Google drops the oldest silently).
+
+1. Check the OAuth app is still **In production** (Google Auth Platform → Audience).
+2. Run `docs/specs/F-001-spikes/google/get-token.mjs` as `hello@` in a private terminal; it prints the granted scopes and a new refresh token.
+3. `npx wrangler secret put GOOGLE_REFRESH_TOKEN -c mcp/wrangler.jsonc` and paste it. Secrets take effect without a code deploy.
+4. Check `bookingReady` is `true` (`npm run smoke -- --mcp`). Holds whose confirm failed meanwhile still work if their 2 hours haven't passed; confirms left `confirming` are finished by the store's alarm.
+
+### Switch mail provider
+
+All guest email goes through `createMailer` in `mcp/booking-email.js` (one `send({to, subject, text})`), built in `mcp/booking-service.js` from `RESEND_API_KEY` and `BOOKING_FROM`.
+
+1. Verify `patrickjv.com` with the new provider (its DKIM and return-path records in Cloudflare DNS, DNS-only; check that the apex MX and SPF are unchanged with `npm run cf:export`).
+2. Rewrite `createMailer` for the new API (keep: plain text, no tracking, throw on any non-2xx without echoing the address), rename the secret if needed (and in `BOOKING_SECRETS` in `mcp/handler.js` and the comments in `mcp/wrangler.jsonc`), update `mcp/booking-email.test.mjs`.
+3. `wrangler secret put <NEW_KEY> -c mcp/wrangler.jsonc`, deploy, check `bookingReady`, then send one test booking and check SPF, DKIM and DMARC in the headers.
+4. Delete the old key at the old provider, and `wrangler secret delete RESEND_API_KEY -c mcp/wrangler.jsonc` if renamed.
+
+### Turn booking off
+
+Set `"BOOKING_ENABLED": "false"` in `mcp/wrangler.jsonc` and deploy (or, faster, change the variable in the dashboard: Workers → `patrickjv-mcp` → Settings → Variables, then put it back in the repo so the next deploy doesn't undo it). New bookings and agent cancellations are refused with 503 `booking_disabled` and `/book` says booking isn't open; links already emailed keep working (confirm, decline, cancel), as the spec requires. Smoke passes while it's off. To stop everything, including confirms of existing holds, roll the Worker back ([Rollback](#rollback)) or remove the `/api/booking*` route, and say so in the decision log. Meetings already booked stay in Google Calendar; cancel them there if needed.
 
 <a id="dashboard-config-export"></a>
 ## Dashboard configuration export (D2)

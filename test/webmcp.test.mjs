@@ -11,13 +11,18 @@ import { validateIntro } from "../mcp/handler.js";
 const page = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 const script = inlineCode(page, { styles: 1, scripts: 1 }).scripts[0];
 
-function runPage({ confirm = true, respond }) {
+// The page asks GET /api/booking/types whether booking is open before registering its booking
+// tools; `bookingOpen` is that answer. Other requests go to `respond` and are recorded.
+function runPage({ confirm = true, respond, bookingOpen = false }) {
   const tools = [], prompts = [], requests = [];
   const ctx = {
     document: { modelContext: { registerTool: (t) => { tools.push(t); return Promise.resolve(); } } },
     navigator: {},
     window: { confirm: (text) => { prompts.push(text); return confirm; } },
-    fetch: async (url, init) => { requests.push({ url, init, body: JSON.parse(init.body) }); return respond(); },
+    fetch: async (url, init) => {
+      if (url === "/api/booking/types") return { status: 200, json: async () => ({ enabled: bookingOpen, types: [] }) };
+      requests.push({ url, init, body: JSON.parse(init.body) }); return respond();
+    },
     JSON, Promise, Object,
   };
   vm.runInNewContext(script, ctx);
@@ -35,8 +40,18 @@ const hostile = {
   message: "Hello Patrick,\r\nline two\rline three\u0001 and a long enough message.  ",
 };
 
-test("WebMCP registers all five tools", () => {
+const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+
+test("WebMCP registers all ten tools, in the MCP server's order, once booking is open", async () => {
+  const { tools } = runPage({ respond: ok, bookingOpen: true });
+  await settle();
+  assert.deepEqual(tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
+    "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
+});
+
+test("WebMCP registers only the read tools and request_intro while booking is closed", async () => {
   const { tools } = runPage({ respond: ok });
+  await settle();
   assert.deepEqual(tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
 });
 

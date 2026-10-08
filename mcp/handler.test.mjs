@@ -127,9 +127,14 @@ test("client JSON-RPC responses: exactly one of result/error, and a well-formed 
   }
 });
 
-test("tools/list: four read-only tools and request_intro", async () => {
-  const r = await (await harness().call(rpc("tools/list"))).json();
-  assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+test("tools/list: four read-only tools, request_intro, then (only with BOOKING_ENABLED=true) the five booking tools", async () => {
+  const dark = await (await harness().call(rpc("tools/list"))).json();
+  assert.deepEqual(dark.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+  const h = harness();
+  h.env.BOOKING_ENABLED = "true";
+  const r = await (await h.call(rpc("tools/list"))).json();
+  assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
+    "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
   for (const t of r.result.tools.slice(0, 4)) assert.equal(t.annotations.readOnlyHint, true);
   for (const t of r.result.tools) assert.equal(t.icons[0].src, "https://patrickjv.com/icon-192.png");
   assert.match(r.result.tools[4].description, /not stored by this site/);
@@ -456,7 +461,7 @@ test("MCP-Protocol-Version: unsupported (or empty) is 400; absent is accepted", 
   for (const v of ["2025-11-25", "2025-06-18"]) assert.equal((await call(rpc("tools/list"), { headers: { "mcp-protocol-version": v } })).status, 200, v);
   const absent = await call(rpc("tools/list"));
   assert.equal(absent.status, 200);
-  assert.equal((await absent.json()).result.tools.length, 5);
+  assert.equal((await absent.json()).result.tools.length, 5); // booking off: no booking tools
 });
 
 test("security headers on every response branch", async () => {
@@ -569,11 +574,12 @@ test("failures and quota refusals are logged as redacted events naming the subsy
 
 // patrickjv/health: a read-only readiness signal for request_intro (smoke --mcp requires introReady).
 const health = async (h, opts) => (await (await h.call(rpc("patrickjv/health"), opts)).json());
-const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits"];
+const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits", "bookingEnabled", "bookingReady"];
 
 test("patrickjv/health: only booleans; introReady when salt, email, quota and rate limits are all configured", async () => {
   const r = await health(harness());
-  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true });
+  // No booking configuration in this harness: booking is off and not ready (mcp/booking-api.test.mjs covers it).
+  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false });
   const broken = [
     ["salt", (h) => { delete h.env.QUOTA_SALT; }], ["salt", (h) => { h.env.QUOTA_SALT = "x".repeat(31); }],
     ["email", (h) => { delete h.env.EMAIL; }], ["email", (h) => { delete h.env.INTRO_TO_ADDRESS; }], ["email", (h) => { h.env.INTRO_FROM = ""; }],

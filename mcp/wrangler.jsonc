@@ -1,36 +1,58 @@
 {
   // Deployed by Cloudflare Workers Builds on push to main (build: npm ci && npm test).
-  // Remote MCP server. Runs ONLY on patrickjv.com/mcp*; the rest of the site stays on the
-  // assets-only patrickjv-eng-site Worker, so ordinary page views never invoke code.
+  // Remote MCP server and the booking API. Runs ONLY on patrickjv.com/mcp* and
+  // patrickjv.com/api/booking*; the rest of the site stays on the assets-only patrickjv-eng-site
+  // Worker, so ordinary page views never invoke code.
   "name": "patrickjv-mcp",
   "main": "index.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "patrickjv.com/mcp*", "zone_name": "patrickjv.com" }],
+  "routes": [
+    { "pattern": "patrickjv.com/mcp*", "zone_name": "patrickjv.com" },
+    { "pattern": "patrickjv.com/api/booking*", "zone_name": "patrickjv.com" }
+  ],
   // Workers Logs: ONLY the handler's own console events (redacted failure and quota-refusal events:
   // subsystem or cap name, no personal data). Invocation logs are off: they would record every
   // request's metadata (client IP, location, user agent) for the log retention period.
-  // redact_query_string stays as a second line of defence for any request URL that is logged.
+  // redact_query_string stays as a second line of defence for any request URL that is logged
+  // (booking link URLs carry a token in ?t=).
   "observability": { "enabled": true, "redact_query_string": true, "logs": { "enabled": true, "invocation_logs": false } },
-  "vars": { "INTRO_FROM": "intro@patrickjv.com" },
+  // BOOKING_ENABLED is the booking kill switch: anything but "true" refuses new bookings and agent
+  // cancels (links already emailed keep working). It stays "false" until the launch checklist in
+  // docs/06-operations.md is done. BOOKING_FROM is the From of guest emails (sent through Resend).
+  "vars": { "INTRO_FROM": "intro@patrickjv.com", "BOOKING_ENABLED": "false", "BOOKING_FROM": "Patrick Vieira <hello@patrickjv.com>" },
   // Secret, not a var: INTRO_TO_ADDRESS, the verified mailbox introductions are delivered to (kept
   // out of this public repo). Set with `wrangler secret put INTRO_TO_ADDRESS -c mcp/wrangler.jsonc`.
   // Secret, not a var: QUOTA_SALT keys the HMAC of the IP and sender keys held by IntroQuota.
   // Set with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc` (a random value of at least 32
   // characters); without it request_intro is refused (fail closed) and read tools carry on.
+  // Booking secrets (F-001; health's bookingReady is false until every one is set):
+  //   wrangler secret put GOOGLE_CLIENT_ID -c mcp/wrangler.jsonc       OAuth client of hello@'s Google Cloud project
+  //   wrangler secret put GOOGLE_CLIENT_SECRET -c mcp/wrangler.jsonc
+  //   wrangler secret put GOOGLE_REFRESH_TOKEN -c mcp/wrangler.jsonc   hello@'s production refresh token (never a Testing one)
+  //   wrangler secret put RESEND_API_KEY -c mcp/wrangler.jsonc         key "patrickjv-booking / patrickjv-mcp / send-only"
+  //   wrangler secret put BOOKING_OWNER_EMAIL -c mcp/wrangler.jsonc    Patrick's address, invited to every meeting
+  //   wrangler secret put CAL_PERSONAL_MAIN -c mcp/wrangler.jsonc      a calendar ID named by idSecret in booking.json,
+  //                                                                    copied exactly from Settings → Integrate calendar
+  // Booking quota keys are HMACs with QUOTA_SALT too.
   // Email Routing send_email can only deliver to the account's verified destination addresses
   // (free plan), so strangers can never use it to email anyone else. No destination_address here:
-  // the address stays out of the repo, and the handler sends to INTRO_TO_ADDRESS only.
+  // the address stays out of the repo, and the handler sends to INTRO_TO_ADDRESS only (introductions
+  // and the booking daily-cap alert).
   "send_email": [{ "name": "EMAIL" }],
-  // Atomic daily quota for request_intro (SQLite-backed Durable Objects are on the Free plan).
-  "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "IntroQuota" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IntroQuota"] }],
+  // IntroQuota: atomic daily quota for request_intro. BookingStore: one instance holding bookings,
+  // link tokens and booking quotas, running every booking operation (SQLite-backed Durable
+  // Objects are on the Free plan).
+  "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "IntroQuota" }, { "name": "BOOKING", "class_name": "BookingStore" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IntroQuota"] }, { "tag": "v2", "new_sqlite_classes": ["BookingStore"] }],
   // Per-client limits (IPv4 address or IPv6 /64), counted per Cloudflare location.
   // An MCP session is ~4 requests: initialize, initialized, tools/list, tools/call. RL_MCP counts
   // every request; RL_BURST counts only tools/call and other real work, so a handshake never uses
   // up the burst allowance of a shared egress address (e.g. a hosted MCP client). The edge WAF
-  // rule (6 / 10 s per IP) still bounds everything before the Worker runs.
+  // rule (6 / 10 s per IP) still bounds everything before the Worker runs. The booking API shares
+  // them: RL_MCP counts every /api/booking request, RL_BURST every POST; the BookingStore's daily
+  // caps are the real bound on bookings.
   "ratelimits": [
     { "name": "RL_BURST", "namespace_id": "4103", "simple": { "limit": 10, "period": 10 } },
     { "name": "RL_MCP", "namespace_id": "4101", "simple": { "limit": 30, "period": 60 } },

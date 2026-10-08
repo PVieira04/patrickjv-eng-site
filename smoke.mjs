@@ -14,6 +14,8 @@ import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, health
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
 const ALIASES = ["www.patrickjv.com", "pvieira.co.uk", "www.pvieira.co.uk"];
 const TOOLS = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"];
+// Listed only while booking is switched on (BOOKING_ENABLED, as patrickjv/health reports it).
+const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 
 // ---- arguments ----
 const FLAGS = new Set(["--aliases", "--mcp", "--registry", "--strict-https", "--dns"]);
@@ -82,6 +84,7 @@ const PAGES = [
   ["/favicon.ico", ["image/x-icon", "image/vnd.microsoft.icon"], "public/favicon.ico"],
   ["/cv", ["text/html"], "public/cv.html"],
   ["/cv.pdf", ["application/pdf"], "public/cv.pdf"],
+  ["/privacy", ["text/html"], "public/privacy.html"],
   ["/writing/", ["text/html"], "public/writing/index.html"],
   // Every post, as HTML and as Markdown.
   ...readdirSync(new URL("writing/", import.meta.url)).filter((f) => f.endsWith(".md")).sort().flatMap((f) => {
@@ -231,12 +234,26 @@ if (flags.has("--mcp")) {
     const res = await mcp({ jsonrpc: "2.0", method: "notifications/initialized" });
     return expect(res.status === 202, `status ${res.status}`);
   });
-  await check(`mcp tools/list = {${TOOLS.join(", ")}}, each with icons`, async () => {
+  // Readiness, not delivery: request_intro's secret, email binding, quota Durable Object and rate
+  // limits are configured; and if booking is switched on, bookingReady (its secrets set, a Google
+  // token refresh works, the BookingStore answers). Booking switched off passes. Read-only and
+  // sends nothing; delivery itself is never exercised here. Runs before tools/list, which expects
+  // the booking tools only when this reports bookingEnabled.
+  let bookingOn = false;
+  await check("mcp patrickjv/health -> introReady, and bookingReady if booking is enabled", async () => {
+    const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
+    if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
+    bookingOn = res.json.result?.bookingEnabled === true;
+    const v = healthVerdict(res.json.result);
+    return expect(v.ok, v.detail);
+  });
+  await check(`mcp tools/list = {${TOOLS.join(", ")}}, plus the booking tools if booking is enabled, each with icons`, async () => {
+    const want = bookingOn ? [...TOOLS, ...BOOKING_TOOLS] : TOOLS;
     const res = await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     if (!envelope(res, 2)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     const tools = res.json.result?.tools ?? [];
     const names = tools.map((t) => t.name);
-    const exact = names.length === TOOLS.length && new Set(names).size === names.length && TOOLS.every((n) => names.includes(n));
+    const exact = names.length === want.length && new Set(names).size === names.length && want.every((n) => names.includes(n));
     const icons = tools.every((t) => Array.isArray(t.icons) && t.icons.length > 0);
     return expect(exact && icons, `${names.join(", ")}${icons ? "" : " (missing icons)"}`);
   });
@@ -247,14 +264,6 @@ if (flags.has("--mcp")) {
     const items = result?.structuredContent?.items;
     const same = isDeepStrictEqual(items, faq);
     return expect(result?.isError !== true && same, `${items?.length ?? 0} items${same ? "" : ", differ from content.json"}${result?.isError ? ", isError" : ""}`);
-  });
-  // Readiness, not delivery: request_intro's secret, email binding, quota Durable Object and rate
-  // limits are configured. Read-only and sends nothing; delivery itself is never exercised here.
-  await check("mcp patrickjv/health -> introReady (salt, email, quota, rate limits configured)", async () => {
-    const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
-    if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
-    const v = healthVerdict(res.json.result);
-    return expect(v.ok, v.detail);
   });
 }
 

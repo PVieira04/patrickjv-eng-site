@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book a meeting — Patrick Vieira</title>
+<meta name="description" content="Book a consultation or a recruiter intro with Patrick Vieira at a time he is free.">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://patrickjv.com/book">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+:root { --bg: #f4f3ee; --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --code: #e9e7e0; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0c0e11; --ink: #e7e9ec; --muted: #9aa3ae; --line: #262b33; --signal: #ffb547; --code: #1a1e24; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.0625rem; line-height: 1.65; }
+.wrap { box-sizing: border-box; max-width: 44rem; margin: 0 auto; padding: 24px 16px 64px; }
+.bar { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 0.875rem; margin-bottom: 40px; }
+a { color: var(--signal); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 2em 0 0.5em; font-weight: 600; }
+.meta { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); margin: 0 0 32px; }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--code); padding: 0.1em 0.3em; border-radius: 3px; }
+pre { background: var(--code); padding: 12px 16px; overflow-x: auto; border-radius: 4px; }
+pre code { padding: 0; background: none; }
+li { margin: 0.35em 0; }
+.posts { list-style: none; padding: 0; }
+.posts li { margin: 0 0 28px; }
+.posts a { font-size: 1.2rem; font-weight: 600; }
+.posts p { margin: 4px 0 0; color: var(--muted); }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 0.875rem; color: var(--muted); }
+
+[hidden] { display: none; }
+fieldset { margin: 0 0 20px; padding: 12px 16px 16px; border: 1px solid var(--line); border-radius: 4px; }
+legend { padding: 0 6px; font-family: var(--mono); font-size: 0.875rem; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.choice { display: flex; align-items: flex-start; gap: 6px; }
+.choice input { margin: 0.4em 0 0; accent-color: var(--signal); }
+.desc { display: block; color: var(--muted); font-size: 0.9375rem; }
+label.field { display: block; margin: 16px 0 4px; font-weight: 600; }
+input[type="text"], input[type="email"], textarea { box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid var(--muted); border-radius: 4px; background: var(--bg); color: var(--ink); font: inherit; }
+button { margin-top: 20px; padding: 10px 18px; border: 0; border-radius: 4px; background: var(--signal); color: var(--bg); font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: progress; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+#status { min-height: 1.65em; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a></nav>
+<main>
+<h1>Book a meeting</h1>
+<p>Choose a meeting type and a time. I'll email you a link to confirm, and nothing is booked until you click it.</p>
+<noscript><p>This page needs JavaScript. You can also email me at <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a>.</p></noscript>
+<form id="book" hidden>
+<fieldset><legend>Meeting type</legend><div id="types" class="choices"></div></fieldset>
+<p id="zone" class="meta"></p>
+<fieldset id="day-set" hidden><legend>Day</legend><div id="days" class="choices"></div></fieldset>
+<fieldset id="time-set" hidden><legend>Time</legend><div id="times" class="choices"></div></fieldset>
+<div id="details" hidden>
+<label class="field" for="name">Name</label>
+<input id="name" name="name" type="text" autocomplete="name" required maxlength="100">
+<label class="field" for="email">Email</label>
+<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">
+<label class="field" for="note">Note (optional)</label>
+<textarea id="note" name="note" rows="4" maxlength="500" aria-describedby="note-count"></textarea>
+<p id="note-count" class="meta">0 of 500 characters</p>
+<button id="send" type="submit">Hold this time</button>
+</div>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<p id="closed" hidden><a href="/#contact">Contact me another way</a></p>
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="/privacy">Privacy</a></footer>
+</div>
+<script>
+(function () {
+  "use strict";
+  var t = {"zone":"Times shown in {zone}.","zoneFallback":"Times shown in Europe/London, because your browser didn't say which time zone you're in.","labels":{"minutes":"{n} min","noteCount":"{n} of 500 characters"},"messages":{"loadingTypes":"Loading meeting types…","loadingSlots":"Loading free times…","sending":"Holding this time…","noSlots":"There are no free times in the next four weeks. Email me at hello@patrickjv.com instead.","held":"Check your inbox to confirm. I'm holding this slot for 2 hours.","closed":"Booking isn't open yet.","closedLink":"Contact me another way","slotGone":"Someone has just taken that time. Here are the times still free.","rateLimited":"Too many booking requests. Please try again tomorrow.","invalid":"Please check your name and email address.","unavailable":"Booking is unavailable right now. Please try again later.","error":"Something went wrong. Please try again, or email me at hello@patrickjv.com."}};
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("book"), n = 0, type = null, byDay = {}, start = null;
+  var zone = null;
+  try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { zone = null; }
+  $("zone").textContent = zone ? t.zone.replace("{zone}", zone) : t.zoneFallback;
+  zone = zone || "Europe/London";
+  var dayKey = new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
+  var dayName = new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: "long", day: "numeric", month: "long" });
+  var hhmm = new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: "2-digit", minute: "2-digit" });
+  var keyOf = function (iso) {
+    var p = {};
+    dayKey.formatToParts(new Date(iso)).forEach(function (x) { p[x.type] = x.value; });
+    return p.year + "-" + p.month + "-" + p.day;
+  };
+
+  function say(text) { $("status").textContent = text; }
+  function show(id, on) { $(id).hidden = !on; }
+  function choice(box, name, value, text, desc) {
+    var id = name + "-" + (++n);
+    var row = document.createElement("div"), input = document.createElement("input"), label = document.createElement("label");
+    row.className = "choice";
+    input.type = "radio"; input.name = name; input.id = id; input.value = value; input.required = true;
+    label.htmlFor = id; label.textContent = text;
+    if (desc) { var d = document.createElement("span"); d.className = "desc"; d.textContent = desc; label.appendChild(d); }
+    row.appendChild(input); row.appendChild(label); $(box).appendChild(row);
+  }
+
+  // Resolves to {status, ok, data}; rejects only if the request itself failed.
+  function call(path, body) {
+    var init = { headers: { accept: "application/json" } };
+    if (body) { init.method = "POST"; init.headers["content-type"] = "application/json"; init.body = JSON.stringify(body); }
+    return fetch(path, init).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (data) { return { status: res.status, ok: res.ok, data: data || {} }; });
+    });
+  }
+  function closed() { form.hidden = true; show("closed", true); say(t.messages.closed); }
+  function failed(r) {
+    var m = t.messages, server = typeof r.data.message === "string" ? r.data.message : "";
+    if (r.status === 503 && r.data.error === "booking_disabled") return closed();
+    say(r.status === 429 ? server || m.rateLimited : r.status === 400 ? server || m.invalid : r.status === 503 ? m.unavailable : m.error);
+  }
+  function broken() { say(t.messages.error); }
+
+  function loadSlots(done) {
+    start = null; byDay = {};
+    show("day-set", false); show("time-set", false); show("details", false);
+    $("days").textContent = ""; $("times").textContent = "";
+    say(t.messages.loadingSlots);
+    var want = type;
+    return call("/api/booking/availability?type=" + encodeURIComponent(type)).then(function (r) {
+      if (want !== type) return; // a later choice of type has taken over
+      if (!r.ok) return failed(r);
+      (r.data.slots || []).forEach(function (s) { var k = keyOf(s.start); (byDay[k] = byDay[k] || []).push(s); });
+      var days = Object.keys(byDay).sort();
+      if (!days.length) return say(t.messages.noSlots);
+      days.forEach(function (k) {
+        byDay[k].sort(function (a, b) { return Date.parse(a.start) - Date.parse(b.start); });
+        choice("days", "day", k, dayName.format(new Date(byDay[k][0].start)));
+      });
+      show("day-set", true);
+      say(done || "");
+    }, broken);
+  }
+
+  $("types").addEventListener("change", function (e) { type = e.target.value; loadSlots(); });
+  $("days").addEventListener("change", function (e) {
+    start = null; show("details", false); $("times").textContent = "";
+    byDay[e.target.value].forEach(function (s) { choice("times", "time", s.start, hhmm.format(new Date(s.start)) + "–" + hhmm.format(new Date(s.end))); });
+    show("time-set", true);
+  });
+  $("times").addEventListener("change", function (e) { start = e.target.value; show("details", true); });
+  $("note").addEventListener("input", function () { $("note-count").textContent = t.labels.noteCount.replace("{n}", $("note").value.length); });
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!start) return;
+    var body = { type: type, start: start, name: $("name").value, email: $("email").value };
+    if ($("note").value) body.note = $("note").value;
+    $("send").disabled = true;
+    say(t.messages.sending);
+    call("/api/booking", body).then(function (r) {
+      $("send").disabled = false;
+      if (r.ok) { form.hidden = true; return say(t.messages.held); }
+      if (r.status === 409) return loadSlots(t.messages.slotGone);
+      failed(r);
+    }, function () { $("send").disabled = false; broken(); });
+  });
+
+  say(t.messages.loadingTypes);
+  call("/api/booking/types").then(function (r) {
+    if (!r.ok) return failed(r);
+    // Closed until launch: say so straight away rather than after the visitor fills in the form.
+    if (r.data.enabled !== true) return closed();
+    (r.data.types || []).forEach(function (m) { choice("types", "type", m.id, m.title + " · " + t.labels.minutes.replace("{n}", m.minutes), m.description); });
+    form.hidden = false;
+    say("");
+  }, broken);
+})();
+</script>
+</body>
+</html>

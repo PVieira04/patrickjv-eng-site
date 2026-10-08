@@ -1,0 +1,21 @@
+{
+  "timezone": "Europe/London",
+  "hours": { "days": ["mon", "tue", "wed", "thu", "fri"], "start": "10:00", "end": "17:00" },
+  "slotStepMinutes": 15,
+  "minNoticeHours": 24,
+  "horizonDays": 28,
+  "bufferMinutes": 15,
+  "maxPerDay": 3,
+  "holdHours": 2,
+  "retentionDays": 30,
+  "caps": { "perIpPerDay": 4, "perEmailPerDay": 2, "globalPerDay": 10, "liveHoldsPerEmail": 1 },
+  "meetingTypes": [
+    { "id": "consultation", "title": "Consultation", "minutes": 30, "description": "A 30-minute call about a platform, infrastructure or AI agent problem you're working on." },
+    { "id": "recruiter-intro", "title": "Recruiter intro", "minutes": 15, "description": "A 15-minute call for recruiters to introduce a role." }
+  ],
+  "calendars": [
+    { "account": "personal", "label": "Main", "idSecret": "CAL_PERSONAL_MAIN", "blocks": true },
+    { "account": "personal", "label": "Birthdays", "blocks": false },
+    { "account": "hello", "label": "Bookings", "id": "primary", "blocks": true }
+  ]
+}

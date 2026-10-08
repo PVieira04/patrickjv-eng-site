@@ -131,5 +131,97 @@
       "a": "By email at hello@patrickjv.com, or through LinkedIn or GitHub."
     }
   ],
-  "privacy": "Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here."
+  "privacy": "Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here.",
+  "privacy_link": "Privacy notice",
+  "pages": {
+    "privacy": {
+      "title": "Privacy",
+      "description": "What patrickjv.com stores about you, for how long, and who processes it on my behalf.",
+      "updated": "8 October 2026",
+      "intro": [
+        "This is my personal website, and I am responsible for any personal data it handles. Two parts of it collect personal data: introductions, and booking a meeting with me. This page explains what each one keeps and for how long.",
+        "If anything here is unclear, email me at hello@patrickjv.com."
+      ],
+      "sections": [
+        {
+          "heading": "Reading the site",
+          "paragraphs": [
+            "The site sets no cookies and has no analytics or tracking scripts. Everything a page loads comes from patrickjv.com itself.",
+            "Cloudflare hosts the site, so it handles your IP address and browser details in order to serve the pages. If Cloudflare's security checks ever challenge your browser, Cloudflare may set its own cookie to remember that you passed."
+          ]
+        },
+        {
+          "heading": "Introductions",
+          "paragraphs": [
+            "You, or an AI agent acting for you, can send me an introduction through the site's MCP server or its in-browser agent tools. The message contains your name and email address, your reason for writing and the message itself, and optionally your organisation and the name of the agent.",
+            "The site emails it to my personal mailbox, which is Gmail, and keeps no copy. The email stays in my mailbox like any other."
+          ]
+        },
+        {
+          "heading": "Booking a meeting",
+          "paragraphs": [
+            "When you book a meeting, on the booking page or through an AI agent, the site stores your name, your email address, the meeting type and time, and your note if you add one.",
+            "Nothing is booked until you click the confirmation link I email you. The site deletes its record 30 days after the meeting. If the booking is never confirmed, it deletes the record 30 days after the two-hour hold ends.",
+            "Once you confirm, the meeting goes into my Google Calendar with you as a guest, and Google sends you the invitation and any cancellation. A meeting that takes place stays in my calendar as a past event.",
+            "To find free times, the site asks Google only whether my calendars are free or busy at a given time. It never reads the titles or details of anything in them."
+          ]
+        },
+        {
+          "heading": "Limits and logs",
+          "paragraphs": [
+            "To stop abuse, the site counts introductions and booking requests per day for each IP address and each email address. It stores a keyed hash of each address, never the address itself. Introduction counts are deleted at midnight UTC and booking counts within two days.",
+            "Cloudflare keeps 30 days of recovery history for booking records and the daily counts, so I could restore a deleted record for up to 30 days after it was deleted.",
+            "The site's logs record that something failed and in which part of the system. They never contain names, email addresses, IP addresses or message text."
+          ]
+        },
+        {
+          "heading": "Who processes your data",
+          "items": [
+            "Cloudflare hosts the site and the booking service, stores booking records and the daily counts, and forwards email sent to hello@patrickjv.com.",
+            "Google holds booked meetings in Google Calendar and sends the invitations. Introductions and email to hello@patrickjv.com arrive in my Gmail mailbox.",
+            "Resend sends the booking emails: the confirmation link, the booking confirmation and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules."
+          ]
+        },
+        {
+          "heading": "Your data",
+          "paragraphs": [
+            "To cancel a meeting, use the link in your booking email. To see what I hold about you, or to have it deleted, email me at hello@patrickjv.com."
+          ]
+        }
+      ]
+    },
+    "book": {
+      "title": "Book a meeting",
+      "description": "Book a consultation or a recruiter intro with Patrick Vieira at a time he is free.",
+      "intro": "Choose a meeting type and a time. I'll email you a link to confirm, and nothing is booked until you click it.",
+      "noscript": "This page needs JavaScript. You can also email me at hello@patrickjv.com.",
+      "labels": {
+        "type": "Meeting type",
+        "day": "Day",
+        "time": "Time",
+        "name": "Name",
+        "email": "Email",
+        "note": "Note (optional)",
+        "noteCount": "{n} of 500 characters",
+        "submit": "Hold this time",
+        "minutes": "{n} min"
+      },
+      "zone": "Times shown in {zone}.",
+      "zoneFallback": "Times shown in Europe/London, because your browser didn't say which time zone you're in.",
+      "messages": {
+        "loadingTypes": "Loading meeting types…",
+        "loadingSlots": "Loading free times…",
+        "sending": "Holding this time…",
+        "noSlots": "There are no free times in the next four weeks. Email me at hello@patrickjv.com instead.",
+        "held": "Check your inbox to confirm. I'm holding this slot for 2 hours.",
+        "closed": "Booking isn't open yet.",
+        "closedLink": "Contact me another way",
+        "slotGone": "Someone has just taken that time. Here are the times still free.",
+        "rateLimited": "Too many booking requests. Please try again tomorrow.",
+        "invalid": "Please check your name and email address.",
+        "unavailable": "Booking is unavailable right now. Please try again later.",
+        "error": "Something went wrong. Please try again, or email me at hello@patrickjv.com."
+      }
+    }
+  }
 }

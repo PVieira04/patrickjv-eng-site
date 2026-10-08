@@ -12,11 +12,11 @@
 
 # The page: "/" is negotiated (HTML, or Markdown for Accept: text/markdown), hence Vary.
 /
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-6QPD+dcLimGlT76JHAOeNUUL5UuuJxwPrdRa8jbq+tM='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-LCr85w63fwnA9uuuOV4jtrRzcPqv3n38GQT3wEstlR4='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
   Vary: Accept
 
 /index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-6QPD+dcLimGlT76JHAOeNUUL5UuuJxwPrdRa8jbq+tM='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-LCr85w63fwnA9uuuOV4jtrRzcPqv3n38GQT3wEstlR4='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 # The CV: served at /cv (and /cv.html, which the asset server redirects to /cv). It names employers;
 # the page and agent surfaces do not.
@@ -25,6 +25,20 @@
 
 /cv.html
   Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-gj10nDrdWlmeY0qimLSJSb2sO3ge4h/zTrmYrXxo6FA='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+# Privacy: served at /privacy (and /privacy.html, which the asset server redirects to /privacy).
+/privacy
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-e+27bssYecnBnhkvnsftQ1VPFDMqVdDPfQ7tIF6s/TE='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/privacy.html
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-e+27bssYecnBnhkvnsftQ1VPFDMqVdDPfQ7tIF6s/TE='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+# Booking (F-001, ships dark: noindex and unlinked until launch).
+/book
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UsgWugZVeUdyYPRgdKPM06QQRxMBO6FUCTlbyCS2OQs='; script-src 'sha256-EJYRrTCHeTJOJEP6Nbdo+j2aTpK2D1wdSNTDH/jQF9w='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/book.html
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UsgWugZVeUdyYPRgdKPM06QQRxMBO6FUCTlbyCS2OQs='; script-src 'sha256-EJYRrTCHeTJOJEP6Nbdo+j2aTpK2D1wdSNTDH/jQF9w='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 # Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
 /writing/gating-agent-written-code

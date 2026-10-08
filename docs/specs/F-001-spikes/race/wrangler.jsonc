@@ -1,0 +1,4 @@
+// Race spike for F-001 (local wrangler dev only, never deployed).
+{ "name": "race-spike", "main": "index.js", "compatibility_date": "2026-10-01",
+  "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "Store" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }] }

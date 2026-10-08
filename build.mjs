@@ -27,6 +27,10 @@ const BANNED = /altimist|the company|fintech|\bceo\b|wimbledon/i;
 // The page's WebMCP read tools serve these agentData() keys; the MCP server's tools() supplies
 // their names, descriptions and schemas, so the two surfaces cannot drift.
 const TOOL_DATA = { get_profile: "profile", list_work: "work", list_skills: "skills", list_faq: "faq" };
+// Booking tools (F-001): the page script implements each by calling the same-origin booking API.
+// Parity is checked here for every tool; the page registers the booking ones at runtime only once
+// GET /api/booking/types reports enabled (tested in test/webmcp-booking.test.mjs).
+const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 const DAY = 864e5;
 
 const sha256 = (s) => createHash("sha256").update(s).digest();
@@ -224,8 +228,10 @@ export function checkPage(html, c) {
   list("Quick answers answers", faq.map((q) => texts(within(q, byTag("p")))[0]), c.faq.map((f) => f.a), (k) => `faq.${k}.a`);
 
   const footer = visible.find(byTag("footer"));
-  list("footer links", hrefs(footer), [L.linkedin, L.github], LINK_PATHS);
-  one("footer privacy note", texts(within(footer, byClass("privacy")))[0], c.privacy, "privacy");
+  list("footer links", hrefs(footer), [L.linkedin, L.github, PRIVACY_PATH], (k) => (k < 2 ? LINK_PATHS(k) : "privacy_link"));
+  const privacyLine = within(footer, byClass("privacy"))[0];
+  one("footer privacy note", privacyLine && textOf(privacyLine), `${c.privacy} ${c.privacy_link}`, "privacy");
+  list("footer privacy link", texts(within(privacyLine, (el) => el.tag === "a" && el.attrs.href === PRIVACY_PATH)), [c.privacy_link], () => "privacy_link");
 
   // Every link to a contact channel anywhere on the page must use the exact approved target.
   for (const a of elements(doc, { visible: false }).filter(byTag("a"))) {
@@ -238,6 +244,7 @@ export function checkPage(html, c) {
   const unchecked = [];
   (function walk(o, path) {
     if (path.split(".").at(-1) === "_status") return;
+    if (path === "pages") return; // copy for pages the build generates (/privacy, /book), not the hand-written page
     if (typeof o === "string") { if (!used.has(path)) unchecked.push(`${path}: ${o.slice(0, 80)}`); }
     else if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) walk(v, path ? `${path}.${k}` : k);
   })(c, "");
@@ -472,7 +479,7 @@ ${safeJson(jsonld, 2)}
 <main>
 ${main}
 </main>
-<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a></footer>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="${PRIVACY_PATH}">Privacy</a></footer>
 </div>
 </body>
 </html>
@@ -500,6 +507,213 @@ export function renderWriting(posts) {
   });
   return { files, sorted };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Standalone pages (/privacy, /book): copy from content.json "pages", same look as /writing/.
+// ---------------------------------------------------------------------------------------------
+export const PRIVACY_PATH = "/privacy";
+
+function sitePage({ title, description, path, noindex = false, style = WRITING_STYLE, main, script }) {
+  return `<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${attr(title)}</title>
+<meta name="description" content="${attr(description)}">
+${noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="canonical" href="${SITE}${path.slice(1)}">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>${style}</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a></nav>
+<main>
+${main}
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="${PRIVACY_PATH}">Privacy</a></footer>
+</div>
+${script ? `<script>${script}</script>\n` : ""}</body>
+</html>
+`;
+}
+
+// Plain text with the contact address made a mailto link.
+const linkEmail = (text, email) => attr(text).split(attr(email)).join(`<a href="mailto:${attr(email)}">${attr(email)}</a>`);
+
+export function renderPrivacy(c) {
+  const p = c.pages.privacy, email = c.person.links.email;
+  const para = (t) => `<p>${linkEmail(t, email)}</p>`;
+  const sections = p.sections.map((s) => [
+    `<h2>${attr(s.heading)}</h2>`,
+    ...(s.paragraphs ?? []).map(para),
+    ...(s.items ? [`<ul>\n${s.items.map((i) => `<li>${linkEmail(i, email)}</li>`).join("\n")}\n</ul>`] : []),
+  ].join("\n")).join("\n");
+  return sitePage({
+    title: `${p.title} — ${c.person.name}`, description: p.description, path: PRIVACY_PATH,
+    main: `<h1>${attr(p.title)}</h1>\n<p class="meta">Last updated ${attr(p.updated)}</p>\n${p.intro.map(para).join("\n")}\n${sections}`,
+  });
+}
+
+// /book ships dark until launch (F-001): noindex, and nothing links to it — not the nav, sitemap,
+// index.md or llms.txt. The picker uses native radio inputs in fieldsets, so it works by keyboard.
+export const BOOK_PATH = "/book";
+const BOOK_STYLE = WRITING_STYLE + `
+[hidden] { display: none; }
+fieldset { margin: 0 0 20px; padding: 12px 16px 16px; border: 1px solid var(--line); border-radius: 4px; }
+legend { padding: 0 6px; font-family: var(--mono); font-size: 0.875rem; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.choice { display: flex; align-items: flex-start; gap: 6px; }
+.choice input { margin: 0.4em 0 0; accent-color: var(--signal); }
+.desc { display: block; color: var(--muted); font-size: 0.9375rem; }
+label.field { display: block; margin: 16px 0 4px; font-weight: 600; }
+input[type="text"], input[type="email"], textarea { box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid var(--muted); border-radius: 4px; background: var(--bg); color: var(--ink); font: inherit; }
+button { margin-top: 20px; padding: 10px 18px; border: 0; border-radius: 4px; background: var(--signal); color: var(--bg); font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: progress; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+#status { min-height: 1.65em; font-weight: 600; }
+`;
+
+// The picker script. Copy is spliced in from content.json; it talks only to /api/booking on this
+// origin (HTTP API in docs/specs/F-001-booking.md). Times are shown, and grouped into days, in the
+// visitor's own time zone, which the page names; Europe/London if the browser does not say.
+const bookScript = (copy) => `
+(function () {
+  "use strict";
+  var t = ${safeJson(copy)};
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("book"), n = 0, type = null, byDay = {}, start = null;
+  var zone = null;
+  try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { zone = null; }
+  $("zone").textContent = zone ? t.zone.replace("{zone}", zone) : t.zoneFallback;
+  zone = zone || "Europe/London";
+  var dayKey = new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
+  var dayName = new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: "long", day: "numeric", month: "long" });
+  var hhmm = new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: "2-digit", minute: "2-digit" });
+  var keyOf = function (iso) {
+    var p = {};
+    dayKey.formatToParts(new Date(iso)).forEach(function (x) { p[x.type] = x.value; });
+    return p.year + "-" + p.month + "-" + p.day;
+  };
+
+  function say(text) { $("status").textContent = text; }
+  function show(id, on) { $(id).hidden = !on; }
+  function choice(box, name, value, text, desc) {
+    var id = name + "-" + (++n);
+    var row = document.createElement("div"), input = document.createElement("input"), label = document.createElement("label");
+    row.className = "choice";
+    input.type = "radio"; input.name = name; input.id = id; input.value = value; input.required = true;
+    label.htmlFor = id; label.textContent = text;
+    if (desc) { var d = document.createElement("span"); d.className = "desc"; d.textContent = desc; label.appendChild(d); }
+    row.appendChild(input); row.appendChild(label); $(box).appendChild(row);
+  }
+
+  // Resolves to {status, ok, data}; rejects only if the request itself failed.
+  function call(path, body) {
+    var init = { headers: { accept: "application/json" } };
+    if (body) { init.method = "POST"; init.headers["content-type"] = "application/json"; init.body = JSON.stringify(body); }
+    return fetch(path, init).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (data) { return { status: res.status, ok: res.ok, data: data || {} }; });
+    });
+  }
+  function closed() { form.hidden = true; show("closed", true); say(t.messages.closed); }
+  function failed(r) {
+    var m = t.messages, server = typeof r.data.message === "string" ? r.data.message : "";
+    if (r.status === 503 && r.data.error === "booking_disabled") return closed();
+    say(r.status === 429 ? server || m.rateLimited : r.status === 400 ? server || m.invalid : r.status === 503 ? m.unavailable : m.error);
+  }
+  function broken() { say(t.messages.error); }
+
+  function loadSlots(done) {
+    start = null; byDay = {};
+    show("day-set", false); show("time-set", false); show("details", false);
+    $("days").textContent = ""; $("times").textContent = "";
+    say(t.messages.loadingSlots);
+    var want = type;
+    return call("/api/booking/availability?type=" + encodeURIComponent(type)).then(function (r) {
+      if (want !== type) return; // a later choice of type has taken over
+      if (!r.ok) return failed(r);
+      (r.data.slots || []).forEach(function (s) { var k = keyOf(s.start); (byDay[k] = byDay[k] || []).push(s); });
+      var days = Object.keys(byDay).sort();
+      if (!days.length) return say(t.messages.noSlots);
+      days.forEach(function (k) {
+        byDay[k].sort(function (a, b) { return Date.parse(a.start) - Date.parse(b.start); });
+        choice("days", "day", k, dayName.format(new Date(byDay[k][0].start)));
+      });
+      show("day-set", true);
+      say(done || "");
+    }, broken);
+  }
+
+  $("types").addEventListener("change", function (e) { type = e.target.value; loadSlots(); });
+  $("days").addEventListener("change", function (e) {
+    start = null; show("details", false); $("times").textContent = "";
+    byDay[e.target.value].forEach(function (s) { choice("times", "time", s.start, hhmm.format(new Date(s.start)) + "–" + hhmm.format(new Date(s.end))); });
+    show("time-set", true);
+  });
+  $("times").addEventListener("change", function (e) { start = e.target.value; show("details", true); });
+  $("note").addEventListener("input", function () { $("note-count").textContent = t.labels.noteCount.replace("{n}", $("note").value.length); });
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!start) return;
+    var body = { type: type, start: start, name: $("name").value, email: $("email").value };
+    if ($("note").value) body.note = $("note").value;
+    $("send").disabled = true;
+    say(t.messages.sending);
+    call("/api/booking", body).then(function (r) {
+      $("send").disabled = false;
+      if (r.ok) { form.hidden = true; return say(t.messages.held); }
+      if (r.status === 409) return loadSlots(t.messages.slotGone);
+      failed(r);
+    }, function () { $("send").disabled = false; broken(); });
+  });
+
+  say(t.messages.loadingTypes);
+  call("/api/booking/types").then(function (r) {
+    if (!r.ok) return failed(r);
+    // Closed until launch: say so straight away rather than after the visitor fills in the form.
+    if (r.data.enabled !== true) return closed();
+    (r.data.types || []).forEach(function (m) { choice("types", "type", m.id, m.title + " · " + t.labels.minutes.replace("{n}", m.minutes), m.description); });
+    form.hidden = false;
+    say("");
+  }, broken);
+})();
+`;
+
+export function renderBook(c) {
+  const b = c.pages.book, l = b.labels, email = c.person.links.email;
+  const field = (id, label, control) => `<label class="field" for="${id}">${attr(label)}</label>\n${control}`;
+  return sitePage({
+    title: `${b.title} — ${c.person.name}`, description: b.description, path: BOOK_PATH, noindex: true, style: BOOK_STYLE,
+    main: `<h1>${attr(b.title)}</h1>
+<p>${attr(b.intro)}</p>
+<noscript><p>${linkEmail(b.noscript, email)}</p></noscript>
+<form id="book" hidden>
+<fieldset><legend>${attr(l.type)}</legend><div id="types" class="choices"></div></fieldset>
+<p id="zone" class="meta"></p>
+<fieldset id="day-set" hidden><legend>${attr(l.day)}</legend><div id="days" class="choices"></div></fieldset>
+<fieldset id="time-set" hidden><legend>${attr(l.time)}</legend><div id="times" class="choices"></div></fieldset>
+<div id="details" hidden>
+${field("name", l.name, '<input id="name" name="name" type="text" autocomplete="name" required maxlength="100">')}
+${field("email", l.email, '<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">')}
+${field("note", l.note, '<textarea id="note" name="note" rows="4" maxlength="500" aria-describedby="note-count"></textarea>')}
+<p id="note-count" class="meta">${attr(l.noteCount.replace("{n}", "0"))}</p>
+<button id="send" type="submit">${attr(l.submit)}</button>
+</div>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>`,
+    script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, labels: { minutes: l.minutes, noteCount: l.noteCount }, messages: b.messages }),
+  });
+}
+
+// The CSP for a generated page: its inline <style> (and <script>, which may fetch same-origin) by hash.
+const pageCsp = (ic) => [
+  "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${ic.styles.map(cspHash).join(" ")}`,
+  ...(ic.scripts.length ? [`script-src ${ic.scripts.map(cspHash).join(" ")}`, "connect-src 'self'"] : []),
+  "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
+].join("; ");
 
 // ---------------------------------------------------------------------------------------------
 // Rendering: every generated file, as a function of the content and the dateModified value.
@@ -551,6 +765,9 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
     const out = { name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: !!t.annotations?.readOnlyHint } };
     if (TOOL_DATA[t.name]) out.data = TOOL_DATA[t.name];
     else if (t.name === "request_intro") out.description += " In this browser, the person is also asked to confirm the exact message before anything is sent.";
+    else if (BOOKING_TOOLS.includes(t.name)) {
+      if (!new RegExp(`\\b${t.name}: async function`).test(html0)) throw new Error(`MCP tool ${t.name} has no implementation in the page's WebMCP script`);
+    }
     else throw new Error(`MCP tool ${t.name} has no WebMCP counterpart: add it to TOOL_DATA or the page script`);
     if (out.data && !out.annotations.readOnlyHint) throw new Error(`MCP tool ${t.name} serves page data but is not readOnlyHint`);
     return out;
@@ -575,7 +792,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
   html = splice(html, /var d = \{.*\};/, () => `var d = ${safeJson(webmcp)};`, "WebMCP data");
 
   // ---- index.md ----
-  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, "", c.privacy, ""];
+  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
   const md = [
     `# ${c.person.name}`, "",
     `Platform engineer in London (not the footballer of the same name). Canonical page: ${SITE}`, "",
@@ -616,6 +833,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
   <url><loc>${SITE}</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}cv</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}writing/</loc><lastmod>${date}</lastmod></url>
+  <url><loc>${SITE}privacy</loc><lastmod>${date}</lastmod></url>
 ${writing.sorted.map((p) => `  <url><loc>${SITE}writing/${p.slug}</loc><lastmod>${p.date}</lastmod></url>`).join("\n")}
 </urlset>
 `;
@@ -650,6 +868,12 @@ Sitemap: ${SITE}sitemap.xml
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${cvPage.styles.map(cspHash).join(" ")}`,
     "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
   ].join("; ");
+  const privacyHtml = renderPrivacy(c);
+  const privacyPage = inlineCode(privacyHtml, { styles: 1, scripts: 0 });
+  const privacyCsp = pageCsp(privacyPage);
+  const bookHtml = renderBook(c);
+  const bookPage = inlineCode(bookHtml, { styles: 1, scripts: 1 });
+  const bookCsp = pageCsp(bookPage);
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${page.styles.map(cspHash).join(" ")}`,
@@ -699,6 +923,20 @@ Sitemap: ${SITE}sitemap.xml
 /cv.html
   Content-Security-Policy: ${cvCsp}
 
+# Privacy: served at /privacy (and /privacy.html, which the asset server redirects to /privacy).
+${PRIVACY_PATH}
+  Content-Security-Policy: ${privacyCsp}
+
+${PRIVACY_PATH}.html
+  Content-Security-Policy: ${privacyCsp}
+
+# Booking (F-001, ships dark: noindex and unlinked until launch).
+${BOOK_PATH}
+  Content-Security-Policy: ${bookCsp}
+
+${BOOK_PATH}.html
+  Content-Security-Policy: ${bookCsp}
+
 # Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
 ${writingRules}
 
@@ -729,8 +967,8 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
     : html404.replace(/<meta charset="utf-8">/, `<meta charset="utf-8">\n${cspMeta}`);
 
   return {
-    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, ...writing.files },
-    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
+    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, "public/book.html": bookHtml, ...writing.files },
+    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...privacyPage.errors.map((e) => "privacy.html: " + e), ...bookPage.errors.map((e) => "book.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
     md, llms,
   };
 }
@@ -743,7 +981,7 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html"];
+const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
 // Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
 // over the original. This is NOT transactional: a failure part-way through the renames leaves some
@@ -799,7 +1037,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   errors.push(...inlineErrors);
   errors.push(...checkPage(files["public/index.html"], c).map((e) => "index.html: " + e));
   const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
-  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
+  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
   const nf = parseHtml(html404);
   if (elements(nf, { visible: false }).filter((e) => e.tag === "h1").length !== 1) errors.push("404.html must have exactly one <h1>");
   if (!elements(nf, { visible: false }).some((e) => e.tag === "meta" && e.attrs.name === "robots" && /noindex/.test(e.attrs.content ?? ""))) errors.push("404.html must carry <meta name=\"robots\" content=\"noindex\">");

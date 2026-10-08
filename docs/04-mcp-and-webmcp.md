@@ -3,8 +3,8 @@
 ## The MCP server
 
 - **Endpoint:** `https://patrickjv.com/mcp` — MCP **Streamable HTTP**, stateless, JSON responses only (no SSE), no auth. Protocol versions `2025-11-25` and `2025-06-18`.
-- **Worker:** `patrickjv-mcp` (`mcp/`), on the route `patrickjv.com/mcp*` only.
-- **Server info:** name `patrickjv.com`, version imported from `mcp/server.json` (currently `1.1.0` — one source, so the server and the Registry entry cannot disagree), `websiteUrl`, and **icons** (the pjv favicon) on the server and every tool.
+- **Worker:** `patrickjv-mcp` (`mcp/`), on the routes `patrickjv.com/mcp*` and `patrickjv.com/api/booking*` ([booking](#booking)) only.
+- **Server info:** name `patrickjv.com`, version imported from `mcp/server.json` (currently `1.1.0`; bumped to `1.2.0` at booking launch — one source, so the server and the Registry entry cannot disagree), `websiteUrl`, and **icons** (the pjv favicon) on the server and every tool.
 
 | Tool | Kind | Returns / does |
 |---|---|---|
@@ -13,6 +13,7 @@
 | `list_skills` | read-only | Skills |
 | `list_faq` | read-only | The five Quick answers |
 | `request_intro` | write | Emails Patrick an introduction on someone's behalf |
+| `list_meeting_types`, `get_availability`, `book_meeting`, `get_booking_status`, `cancel_booking` | read / write | Booking, see [below](#booking); listed only while booking is enabled |
 
 Read tools carry `readOnlyHint: true` (and `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`); `request_intro` carries `readOnlyHint: false`, `openWorldHint: true`. Read tools return `structuredContent` and its JSON serialisation as text, and take no arguments. Data comes from `lib/agent-data.mjs`, shared with the page.
 
@@ -90,24 +91,84 @@ A read-only JSON-RPC method that says whether `request_intro` is **configured**,
 
 ```json
 {"jsonrpc":"2.0","id":4,"method":"patrickjv/health"}
-→ {"jsonrpc":"2.0","id":4,"result":{"introReady":true,"salt":true,"email":true,"quota":true,"rateLimits":true}}
+→ {"jsonrpc":"2.0","id":4,"result":{"introReady":true,"salt":true,"email":true,"quota":true,"rateLimits":true,"bookingEnabled":false,"bookingReady":false}}
 ```
 
 - **Booleans only**: `salt` (the `QUOTA_SALT` secret is present and at least 32 characters), `email` (the `EMAIL` send binding plus non-empty `INTRO_FROM`/`INTRO_TO_ADDRESS`), `quota` (the `IntroQuota` Durable Object binding), `rateLimits` (`RL_INTRO`, `RL_MCP`, `RL_BURST`), and `introReady` = all four. Never a secret, its length or an address.
+- **Booking:** `bookingEnabled` is the kill switch (`BOOKING_ENABLED` is exactly `"true"`). `bookingReady` says booking would work if switched on: every booking secret set (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `RESEND_API_KEY`, `BOOKING_OWNER_EMAIL`, the `CAL_*` calendar secrets, the `BOOKING_FROM` var, `QUOTA_SALT`) and the `BOOKING` binding present, and only then the `BookingStore` answering and a **fresh Google token refresh** succeeding (cached for a minute in the store). It's reported independently of the flag so it can be checked before launch. Because the 6-hourly monitor calls it, the refresh token is never unused for six months, and a revoked one shows within 6 hours.
 - It goes through the **same rejection chain** as every request (WAF, Origin, method, media type, size, `RL_MCP`, protocol header) and counts against `RL_BURST` (it is not handshake-exempt).
 - **Why a custom method:** MCP requires a `ping` result to be empty, so extending `ping` would break the spec; a tool would be listed to users in every client. A vendor-prefixed method (`patrickjv/…`, the slash style MCP uses for its own methods) cannot collide with a future spec method, and any other server answers it with `-32601`.
 - It shows configuration, not delivery: an Email Routing outage would not show here. Routine monitoring never sends an email; delivery is confirmed by occasional manual tests and by redacted `mcp_failure` events (`email`, `quota`, `config`) in Workers Logs.
-- `smoke --mcp` FAILs unless `introReady` is `true` (exactly five boolean keys).
+- `smoke --mcp` FAILs unless `introReady` is `true`, and, when `bookingEnabled` is `true`, `bookingReady` is too (exactly seven boolean keys). Booking switched off passes whatever its readiness.
 
 <a id="sender-verification"></a>
 ### Why no sender verification
 
 Double opt-in (email the sender a confirmation link) needs sending to arbitrary addresses, which Cloudflare only allows on Workers Paid (or an external service such as Resend). The chosen design is limits-only: exact daily caps, plus an "unverified sender" note in every email.
 
+<a id="booking"></a>
+## Booking (F-001)
+
+Spec: [F-001](specs/F-001-booking.md). **Ships dark:** `BOOKING_ENABLED` is `"false"` in `mcp/wrangler.jsonc` until the [launch checklist](06-operations.md#booking-launch) is done. The booking tools appear (in MCP `tools/list`, the initialize instructions and the homepage's WebMCP tools) only when booking is enabled.
+
+Every booking starts as a **hold** and becomes a meeting only when the guest clicks **Confirm** in an email sent to the address given. Page bookings and agent bookings take the same path. All booking state lives in one SQLite Durable Object, `BookingStore`, and every operation (holding, confirming, cancelling, availability) runs inside it, so its claim-before-await blocks serialise (spike S2).
+
+### Tools
+
+| Tool | Kind | Input | Output |
+|---|---|---|---|
+| `list_meeting_types` | read-only | none | `{items: [{id, title, minutes, description}]}` from `booking.json` |
+| `get_availability` | read-only | `type`; optional `from`, `to` (`YYYY-MM-DD`, London days, clamped to today … +28 days) | `{timezone: "Europe/London", slots: [{start, end}]}`, ISO 8601 with the London offset (`2026-10-21T10:00:00+01:00`) |
+| `book_meeting` | write, not idempotent | `type`, `start` (as given by `get_availability`), `name` (1–100), `email` (ASCII, ≤ 254), optional `note` (≤ 500) | `{booking_id, status: "pending_confirmation", hold_expires}` |
+| `get_booking_status` | read-only | `booking_id` (32 lowercase hex) | `{status, status_reason?, start, end, type}`; never the guest's name or address |
+| `cancel_booking` | destructive | `booking_id` | `{status: "cancelled"}` for a hold; `{status: "confirmed", cancellation: "requested"}` for a meeting (the guest is emailed a confirm-cancellation link) |
+
+- Descriptions tell agents to book or cancel only when the person asked, not to retry on error, and (for `book_meeting`) what is kept and for how long, with a link to `/privacy`. `initialize`'s `instructions` say the same.
+- Failures are tool errors (`isError: true`) whose text is the message plus the error code and "Do not retry automatically."; `structuredContent` is `{error, message, reason?}`.
+- Statuses: `pending_confirmation`, `confirmed`, `declined` (`guest_declined`, `slot_taken`, `day_full`), `expired` (`hold_expired`), `cancelled` (`guest_cancelled`, `agent_withdrew`, `email_failed`).
+
+### HTTP API (`/api/booking*`)
+
+Served by the same Worker on a second route, for the `/book` page and the page's WebMCP tools. JSON responses carry the same security headers as `/mcp`; errors are `{error, message}` (the page shows `message` as plain text).
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/api/booking/types` | `{enabled, types: [...]}`; `enabled` is the kill switch (`BOOKING_ENABLED`) |
+| GET | `/api/booking/availability?type=&from=&to=` | as `get_availability` |
+| POST | `/api/booking` | JSON `{type, start, name, email, note?, source?}` → **202** `{booking_id, status, hold_expires}` |
+| GET | `/api/booking/status?booking_id=` | as `get_booking_status` (for WebMCP) |
+| POST | `/api/booking/cancel` | JSON `{booking_id}`, as `cancel_booking` (for WebMCP) |
+| GET | `/api/booking/act?t=<token>` | HTML page saying what the link will do, with a button; **never changes anything** (mail scanners prefetch links) |
+| POST | `/api/booking/act` | form or JSON `{t}` → performs confirm, decline, cancel or confirm-cancel → HTML result page |
+
+**`source`** is the channel a request arrived on: `mcp` for the MCP tools (always; an agent can't set it), and on `POST /api/booking` an optional `"page"` (the default, sent by `/book`) or `"webmcp"` (sent by the page's WebMCP `book_meeting`); anything else is 400. "page" versus "webmcp" is self-reported by the browser and is not proof of a human: it only chooses the hold email's wording ("Someone used this email address…" or "An AI agent asked…"). Consent comes from the email confirmation, not the channel.
+
+**Status codes:** 400 invalid input or a start that was never a slot · 403 foreign `Origin` · 404 unknown path, unknown or used link · 405 · 409 slot taken, or a start now inside the 24-hour notice window or past the horizon (so the page reloads slots) · 410 expired link · 413 · 415 · 429 rate limit, daily cap (`reason` `ip`, `email` or `global`; global says "Booking is closed for today") or `hold_pending` · 503 `booking_disabled`, `unavailable` (Google or the store unreachable, or not configured) or `email_failed`.
+
+**Act pages** work without JavaScript: plain HTML in the site's colours and font, inline CSS allowed by its hash. Their CSP is `default-src 'none'; style-src 'sha256-…'; font-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`, with `Cache-Control: no-store` (the URL holds a token) and `Referrer-Policy: same-origin` rather than `no-referrer`, because a form POST under `no-referrer` sends `Origin: null`, which the Origin check refuses. They show the meeting type and time (London and UTC), never the guest's details, and say "This link has already been used" (404), "This link has expired" (410) or "That slot was taken" (409, with a link to `/book`).
+
+### Limits, in order
+
+The HTTP API uses `/mcp`'s rejection order: path → `Origin` (any present Origin must be `https://patrickjv.com`) → method → media type (`application/json`; the act POST also takes a form) → declared size (16 KiB) → **`RL_MCP`** (every request) → **`RL_BURST`** (every POST) → capped body read. No new rate-limit namespace: the store's daily caps are the real bound. Then, in the store, reserved atomically before any Google call or email and never refunded: **10 requests a day in total, 4 per IP (IPv6 /64), 2 per guest email**, and **one live hold per IP and per email**. Quota keys are HMACs with `QUOTA_SALT` (`booking-ip`, `booking-email`, the email folded as for introductions). The request that reaches the global cap triggers **one alert email** to `INTRO_TO_ADDRESS` through the `send_email` binding, once a day.
+
+**Kill switch:** `BOOKING_ENABLED` other than exactly `"true"` hides booking from MCP: `tools/list` omits the five booking tools, the initialize instructions don't mention booking, and calling any of them returns a tool error `booking_disabled` ("Booking isn't open yet.") without reaching the store. Over HTTP, `POST /api/booking` and `POST /api/booking/cancel` answer 503 `booking_disabled`; `GET /api/booking/types` reports `enabled: false`, which `/book` shows as "Booking isn't open yet" on load and the homepage's WebMCP script reads before registering any booking tool. Links already emailed keep working (confirm, decline, cancel), as the spec's edge case requires. The HTTP types and status endpoints always work; HTTP availability works whenever booking is configured.
+
+**Availability** reuses one free/busy answer for 60 s, so listing slots can't make the Worker hammer Google; holding and confirming always ask Google afresh.
+
+### Inside the BookingStore
+
+- `mcp/booking-service.js` builds the deps from `env` inside the Durable Object: the Google client (`hello@`'s refresh token), the Resend mailer (`BOOKING_FROM`), free/busy over the `blocks: true` calendars (IDs from `booking.json` or the Worker secret each `idSecret` names), the act-link URL and Patrick's address (`BOOKING_OWNER_EMAIL`, invited to every meeting; `guestsCanSeeOtherGuests: false`).
+- The **alarm** expires lapsed holds, deletes records past retention, and finishes confirms or cancels cut off by an eviction: a booking left in `confirming` or `cancelling` with no call in this instance working on it for over 2 minutes is retried (`insertEvent` with the same ID, where 409 means it exists, then "Booked" email; or `deleteEvent`). On a Google failure it's left for the next alarm, a few minutes later. Before every confirm or cancel the alarm is pulled to within 3 minutes, so recovery happens even if the instance dies mid-call.
+- Health asks the store for a fresh Google token refresh, cached for a minute.
+
+### Code layout (booking)
+
+`booking-config.js` (rules, London time, slots), `booking-store.js` (schema, state machine), `booking-google.js` (Calendar client), `booking-email.js` (Resend client and texts), `booking-service.js` (the Durable Object's body), `handler.js` (validation, kill switch, MCP tools, HTTP API, act pages, health), `index.js` (`BookingStore` class). Tests: `booking-*.test.mjs` against `node:sqlite` with a fake Google and Resend (`booking-fakes.mjs`, `booking-harness.mjs`), and `test/webmcp-booking.test.mjs`, which runs the page's WebMCP script against the real handler.
+
 <a id="mcp-registry"></a>
 ## MCP Registry
 
-Listed on the official registry (`registry.modelcontextprotocol.io`) as **`com.patrickjv/profile`** v1.1.0, status **active**, remote `streamable-http` → `https://patrickjv.com/mcp`. `npm run smoke -- --registry` checks the listing (active, same version as `mcp/server.json`, same remote).
+Listed on the official registry (`registry.modelcontextprotocol.io`) as **`com.patrickjv/profile`** v1.1.0 (1.2.0, with booking, is published at launch), status **active**, remote `streamable-http` → `https://patrickjv.com/mcp`. `npm run smoke -- --registry` checks the listing (active, same version as `mcp/server.json`, same remote).
 
 - Entry: `mcp/server.json` (schema `2025-12-11`; description ≤ 100 characters — validated with `mcp-publisher validate`). Its `version` is also the server's `serverInfo.version`.
 - Namespace proof: **HTTP domain verification** — `public/.well-known/mcp-registry-auth` holds the ed25519 public key (`v=MCPv1; k=ed25519; p=…`), served as `text/plain; charset=utf-8`.
@@ -117,12 +178,13 @@ Listed on the official registry (`registry.modelcontextprotocol.io`) as **`com.p
 
 - **Claude:** Settings → Connectors → Add custom connector → `https://patrickjv.com/mcp`. Suggested permissions: read tools "Always allow", Request an introduction "Ask".
 - **Any MCP client:** add the URL as a remote (Streamable HTTP) server.
-- `npm run smoke -- https://patrickjv.com --mcp` runs the read-only lifecycle — `initialize` (checks the negotiated version, `serverInfo.name` = `patrickjv.com` and `serverInfo.version`), `notifications/initialized` (202), `tools/list` (exactly the five tools, each with icons), `tools/call list_faq` (`structuredContent.items` deep-equal to `content.json`'s `faq`), `patrickjv/health` (`introReady` must be `true`) — five requests, sending `MCP-Protocol-Version` after initialisation and never calling `request_intro`.
+- `npm run smoke -- https://patrickjv.com --mcp` runs the read-only lifecycle — `initialize` (checks the negotiated version, `serverInfo.name` = `patrickjv.com` and `serverInfo.version`), `notifications/initialized` (202), `patrickjv/health` (`introReady` must be `true`, and `bookingReady` too if booking is on), `tools/list` (exactly the five profile and intro tools, plus the five booking tools when health reports `bookingEnabled`, each with icons), `tools/call list_faq` (`structuredContent.items` deep-equal to `content.json`'s `faq`) — five requests, sending `MCP-Protocol-Version` after initialisation and never calling `request_intro` or a booking write.
 
 <a id="webmcp"></a>
 ## WebMCP
 
-The page registers five tools with **`document.modelContext`** (the current draft), falling back to `navigator.modelContext` (earlier drafts), when either is present (Chromium experiment; WebKit opposes the spec, so no Safari/iOS): `get_profile`, `list_work`, `list_skills`, `list_faq` and **`request_intro`**.
+The page registers its tools with **`document.modelContext`** (the current draft), falling back to `navigator.modelContext` (earlier drafts), when either is present (Chromium experiment; WebKit opposes the spec, so no Safari/iOS): `get_profile`, `list_work`, `list_skills`, `list_faq` and **`request_intro`** at once, and the five booking tools only after a same-origin `GET /api/booking/types` reports `enabled: true` (any failure leaves them unregistered; with `provideContext` the whole set is provided again).
+- **Booking tools** call the same-origin booking API (`/api/booking*`), which runs the same operations as the MCP tools, so results are the same; `connect-src 'self'` already allows it. `book_meeting` sends only the five known fields plus `source: "webmcp"`. A server error is passed on as the server's message; once a booking request has been sent, no readable answer is reported as "may or may not have been held", never "not booked". The build fails if a booking tool has no implementation in the page script, and `test/webmcp-booking.test.mjs` runs the script against the real handler.
 
 - Tool names, titles, descriptions, input schemas and `readOnlyHint` annotations come from the MCP server's `tools()`, spliced in by the build, so the two surfaces describe the same tools in the same words (including "not the footballer").
 - The script feature-detects, uses `registerTool` (each returned promise's rejection is caught) or falls back to `provideContext`, and is wrapped in `try/catch`; the page works identically without JavaScript.
