@@ -189,6 +189,39 @@
           ]
         }
       ]
+    },
+    "book": {
+      "title": "Book a meeting",
+      "description": "Book a consultation or a recruiter intro with Patrick Vieira at a time he is free.",
+      "intro": "Choose a meeting type and a time. I'll email you a link to confirm, and nothing is booked until you click it.",
+      "noscript": "This page needs JavaScript. You can also email me at hello@patrickjv.com.",
+      "labels": {
+        "type": "Meeting type",
+        "day": "Day",
+        "time": "Time",
+        "name": "Name",
+        "email": "Email",
+        "note": "Note (optional)",
+        "noteCount": "{n} of 500 characters",
+        "submit": "Hold this time",
+        "minutes": "{n} min"
+      },
+      "zone": "Times shown in {zone}.",
+      "zoneFallback": "Times shown in Europe/London, because your browser didn't say which time zone you're in.",
+      "messages": {
+        "loadingTypes": "Loading meeting types…",
+        "loadingSlots": "Loading free times…",
+        "sending": "Holding this time…",
+        "noSlots": "There are no free times in the next four weeks. Email me at hello@patrickjv.com instead.",
+        "held": "Check your inbox to confirm. I'm holding this slot for 2 hours.",
+        "closed": "Booking isn't open yet.",
+        "closedLink": "Contact me another way",
+        "slotGone": "Someone has just taken that time. Here are the times still free.",
+        "rateLimited": "Too many booking requests. Please try again tomorrow.",
+        "invalid": "Please check your name and email address.",
+        "unavailable": "Booking is unavailable right now. Please try again later.",
+        "error": "Something went wrong. Please try again, or email me at hello@patrickjv.com."
+      }
     }
   }
 }

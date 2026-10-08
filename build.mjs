@@ -551,6 +551,58 @@ export function renderPrivacy(c) {
   });
 }
 
+// /book ships dark until launch (F-001): noindex, and nothing links to it — not the nav, sitemap,
+// index.md or llms.txt. The picker uses native radio inputs in fieldsets, so it works by keyboard.
+export const BOOK_PATH = "/book";
+const BOOK_STYLE = WRITING_STYLE + `
+[hidden] { display: none; }
+fieldset { margin: 0 0 20px; padding: 12px 16px 16px; border: 1px solid var(--line); border-radius: 4px; }
+legend { padding: 0 6px; font-family: var(--mono); font-size: 0.875rem; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.choice { display: flex; align-items: flex-start; gap: 6px; }
+.choice input { margin: 0.4em 0 0; accent-color: var(--signal); }
+.desc { display: block; color: var(--muted); font-size: 0.9375rem; }
+label.field { display: block; margin: 16px 0 4px; font-weight: 600; }
+input[type="text"], input[type="email"], textarea { box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid var(--muted); border-radius: 4px; background: var(--bg); color: var(--ink); font: inherit; }
+button { margin-top: 20px; padding: 10px 18px; border: 0; border-radius: 4px; background: var(--signal); color: var(--bg); font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: progress; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+#status { min-height: 1.65em; font-weight: 600; }
+`;
+
+export function renderBook(c) {
+  const b = c.pages.book, l = b.labels, email = c.person.links.email;
+  const field = (id, label, control) => `<label class="field" for="${id}">${attr(label)}</label>\n${control}`;
+  return sitePage({
+    title: `${b.title} — ${c.person.name}`, description: b.description, path: BOOK_PATH, noindex: true, style: BOOK_STYLE,
+    main: `<h1>${attr(b.title)}</h1>
+<p>${attr(b.intro)}</p>
+<noscript><p>${linkEmail(b.noscript, email)}</p></noscript>
+<form id="book" hidden>
+<fieldset><legend>${attr(l.type)}</legend><div id="types" class="choices"></div></fieldset>
+<p id="zone" class="meta"></p>
+<fieldset id="day-set" hidden><legend>${attr(l.day)}</legend><div id="days" class="choices"></div></fieldset>
+<fieldset id="time-set" hidden><legend>${attr(l.time)}</legend><div id="times" class="choices"></div></fieldset>
+<div id="details" hidden>
+${field("name", l.name, '<input id="name" name="name" type="text" autocomplete="name" required maxlength="100">')}
+${field("email", l.email, '<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">')}
+${field("note", l.note, '<textarea id="note" name="note" rows="4" maxlength="500" aria-describedby="note-count"></textarea>')}
+<p id="note-count" class="meta">${attr(l.noteCount.replace("{n}", "0"))}</p>
+<button type="submit">${attr(l.submit)}</button>
+</div>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>`,
+  });
+}
+
+// The CSP for a generated page: its inline <style> (and <script>, which may fetch same-origin) by hash.
+const pageCsp = (ic) => [
+  "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${ic.styles.map(cspHash).join(" ")}`,
+  ...(ic.scripts.length ? [`script-src ${ic.scripts.map(cspHash).join(" ")}`, "connect-src 'self'"] : []),
+  "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
+].join("; ");
+
 // ---------------------------------------------------------------------------------------------
 // Rendering: every generated file, as a function of the content and the dateModified value.
 // ---------------------------------------------------------------------------------------------
@@ -703,10 +755,10 @@ Sitemap: ${SITE}sitemap.xml
   ].join("; ");
   const privacyHtml = renderPrivacy(c);
   const privacyPage = inlineCode(privacyHtml, { styles: 1, scripts: 0 });
-  const privacyCsp = [
-    "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${privacyPage.styles.map(cspHash).join(" ")}`,
-    "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
-  ].join("; ");
+  const privacyCsp = pageCsp(privacyPage);
+  const bookHtml = renderBook(c);
+  const bookPage = inlineCode(bookHtml, { styles: 1, scripts: 0 });
+  const bookCsp = pageCsp(bookPage);
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${page.styles.map(cspHash).join(" ")}`,
@@ -763,6 +815,13 @@ ${PRIVACY_PATH}
 ${PRIVACY_PATH}.html
   Content-Security-Policy: ${privacyCsp}
 
+# Booking (F-001, ships dark: noindex and unlinked until launch).
+${BOOK_PATH}
+  Content-Security-Policy: ${bookCsp}
+
+${BOOK_PATH}.html
+  Content-Security-Policy: ${bookCsp}
+
 # Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
 ${writingRules}
 
@@ -793,8 +852,8 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
     : html404.replace(/<meta charset="utf-8">/, `<meta charset="utf-8">\n${cspMeta}`);
 
   return {
-    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, ...writing.files },
-    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...privacyPage.errors.map((e) => "privacy.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
+    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, "public/book.html": bookHtml, ...writing.files },
+    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...privacyPage.errors.map((e) => "privacy.html: " + e), ...bookPage.errors.map((e) => "book.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
     md, llms,
   };
 }
@@ -807,7 +866,7 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html"];
+const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
 // Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
 // over the original. This is NOT transactional: a failure part-way through the renames leaves some
@@ -863,7 +922,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   errors.push(...inlineErrors);
   errors.push(...checkPage(files["public/index.html"], c).map((e) => "index.html: " + e));
   const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
-  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
+  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
   const nf = parseHtml(html404);
   if (elements(nf, { visible: false }).filter((e) => e.tag === "h1").length !== 1) errors.push("404.html must have exactly one <h1>");
   if (!elements(nf, { visible: false }).some((e) => e.tag === "meta" && e.attrs.name === "robots" && /noindex/.test(e.attrs.content ?? ""))) errors.push("404.html must carry <meta name=\"robots\" content=\"noindex\">");
