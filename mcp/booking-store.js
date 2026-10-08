@@ -178,8 +178,26 @@ export async function act(sql, { token, now, cfg, deps }) {
   const hash = await hashToken(token);
   const found = lookupToken(sql, hash, now);
   if (found.error) return found;
-  if (found.tok.action === "confirm") return confirmHold(sql, found, { now, cfg, deps });
+  const { tok, booking: b } = found;
+  if (tok.action === "confirm") return confirmHold(sql, found, { now, cfg, deps });
+  if (tok.action === "decline") {
+    if (b.status !== "pending_confirmation" || b.hold_expires <= now.toISOString()) return { error: "used" };
+    settle(sql, b.id, "declined", "guest_declined", now.toISOString());
+    return { result: "declined" };
+  }
   return { error: "unknown" };
+}
+
+// What a link would do, for the GET page (which must never change state). Async only because
+// hashing is. No guest details.
+export async function peekToken(sql, token, now) {
+  if (typeof token !== "string" || token === "") return { state: "unknown" };
+  const hash = await hashToken(token);
+  const tok = sql.exec("SELECT * FROM tokens WHERE hash = ?", hash).toArray()[0];
+  const b = tok && sql.exec("SELECT type, start_utc, end_utc, status FROM bookings WHERE id = ?", tok.booking_id).toArray()[0];
+  if (!b) return { state: "unknown" };
+  const state = tok.used_at ? "used" : tok.expires_at <= now.toISOString() ? "expired" : "valid";
+  return { state, action: tok.action, booking: { type: b.type, start: b.start_utc, end: b.end_utc, status: b.status } };
 }
 
 async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
