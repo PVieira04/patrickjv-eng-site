@@ -49,9 +49,17 @@ test("redirectVerdict: GET/HEAD 301, everything else 308, exact location", () =>
   assert.equal(redirectVerdict("GET", 301, t + "&y", t).ok, false);
 });
 
-test("healthVerdict: exactly five booleans and introReady true; anything else fails", () => {
-  const ready = { introReady: true, salt: true, email: true, quota: true, rateLimits: true };
-  assert.equal(healthVerdict(ready).ok, true);
+test("healthVerdict: exactly seven booleans; introReady, and bookingReady when booking is enabled; anything else fails", () => {
+  const ready = { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false };
+  assert.equal(healthVerdict(ready).ok, true, "booking off: its readiness doesn't matter");
+  assert.equal(healthVerdict({ ...ready, bookingReady: true }).ok, true);
+  assert.equal(healthVerdict({ ...ready, bookingEnabled: true, bookingReady: true }).ok, true);
+  const notReady = healthVerdict({ ...ready, bookingEnabled: true });
+  assert.equal(notReady.ok, false, "booking on but not ready");
+  assert.match(notReady.detail, /bookingReady false/);
+  assert.equal(healthVerdict({ ...ready, introReady: false, salt: false, bookingEnabled: true, bookingReady: true }).ok, false);
+  const { bookingEnabled, bookingReady, ...five } = ready;
+  assert.equal(healthVerdict(five).ok, false, "the old five-key shape");
   assert.equal(healthVerdict({ ...ready, introReady: false, salt: false }).ok, false);
   assert.match(healthVerdict({ ...ready, introReady: false, salt: false }).detail, /not configured: salt/);
   for (const bad of [undefined, null, {}, [], { ...ready, saltLength: 40 }, { ...ready, email: "yes" }, { introReady: true }])
@@ -94,6 +102,8 @@ function mockSite(faults = {}) {
     RL_MCP: allow, RL_BURST: allow, RL_INTRO: allow, INTRO_FROM: "intro@patrickjv.com", INTRO_TO_ADDRESS: "owner@example.com",
     EMAIL: { send: async () => { throw new Error("never"); } }, QUOTA: { idFromName: () => ({}), get: () => ({}) },
     ...(faults.noSalt ? {} : { QUOTA_SALT: "mock-salt-0123456789abcdef0123456789" }),
+    // Booking switched on with none of its secrets set: enabled but not ready.
+    ...(faults.bookingNotReady ? { BOOKING_ENABLED: "true" } : {}),
   };
   const faq = faults.faq ? content.faq.map((f, k) => (k ? f : { ...f, a: f.a + " (changed)" })) : content.faq;
   const deps = { content: { ...content, faq }, now: () => new Date(), reserve: async () => { throw new Error("never"); }, sendEmail: async () => { throw new Error("never"); } };
@@ -118,7 +128,8 @@ function mockSite(faults = {}) {
       return send(404, { "content-type": "text/html", ...(faults.fontCsp ? { "content-security-policy": "default-src 'none', default-src 'none'" } : {}) }, file("public/404.html"));
     try {
       // Like the asset server's html_handling: /cv serves cv.html.
-      const path = url.pathname === "/cv" ? "/cv.html"
+      if (faults.noPrivacy && url.pathname === "/privacy") throw new Error("missing");
+      const path = url.pathname === "/cv" ? "/cv.html" : url.pathname === "/privacy" ? "/privacy.html"
         : url.pathname.endsWith("/") ? url.pathname + "index.html"
         : url.pathname.startsWith("/writing/") && !url.pathname.includes(".") ? url.pathname + ".html" : url.pathname;
       let body = file("public" + path);
@@ -156,8 +167,10 @@ test("smoke FAILs each false-PASS case from the round-2 review", async () => {
     [{ serverName: true }, /mcp initialize/],
     [{ faq: true }, /list_faq/],
     [{ noSalt: true }, /patrickjv\/health/],
+    [{ bookingNotReady: true }, /patrickjv\/health/],
+    [{ noPrivacy: true }, /\/privacy/],
   ];
-  const results = await Promise.all(cases.map(([f]) => runSmoke(f, f.serverName || f.faq || f.noSalt ? ["--mcp"] : [])));
+  const results = await Promise.all(cases.map(([f]) => runSmoke(f, f.serverName || f.faq || f.noSalt || f.bookingNotReady ? ["--mcp"] : [])));
   results.forEach((r, k) => {
     const [f, pattern] = cases[k];
     assert.equal(r.code, 1, `${JSON.stringify(f)}: exit ${r.code}\n${r.lines.join("\n")}`);

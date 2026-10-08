@@ -10,10 +10,15 @@
 import { agentData } from "../lib/agent-data.mjs";
 // Single source for the server version: the MCP Registry entry. Bump it there and both agree.
 import serverJson from "./server.json" with { type: "json" };
+import bookingJson from "../booking.json" with { type: "json" };
+import { validateConfig, withOffset } from "./booking-config.js";
+import { capAlertEmail } from "./booking-email.js";
 
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18"];
 export const ALLOWED_ORIGIN = "https://patrickjv.com";
 export const SERVER_VERSION = serverJson.version;
+// Booking rules (F-001), validated once at load: a bad booking.json fails the build and the tests.
+export const BOOKING_CONFIG = validateConfig(bookingJson);
 export const LIMITS = {
   maxBodyBytes: 16 * 1024,
   // Per IP (IPv4 address or IPv6 /64). Kept low, but not 2: hosted MCP clients (e.g. the Claude
@@ -86,8 +91,69 @@ export function tools() {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       icons: ICONS,
     },
+    // Booking (F-001). The operations are bookingOps below, shared with the HTTP API.
+    { name: "list_meeting_types", title: "Meeting types", description: "The kinds of meeting you can book with Patrick Vieira: id, title, length in minutes and what each is for.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    {
+      name: "get_availability",
+      title: "Free times",
+      description: "Free start times for a meeting type, from Patrick's live calendar: weekdays 10:00–17:00 London time, at least 24 hours ahead and up to four weeks out. Times are ISO 8601 with the Europe/London offset. Optional from and to (YYYY-MM-DD, London days) narrow the range.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type"],
+        properties: {
+          type: { type: "string", enum: BOOKING_TYPE_IDS, description: "A meeting type id from list_meeting_types." },
+          from: { type: "string", pattern: DAY_PATTERN, description: "Optional first day, YYYY-MM-DD." },
+          to: { type: "string", pattern: DAY_PATTERN, description: "Optional last day, YYYY-MM-DD." },
+        },
+      },
+      annotations: READ_ONLY,
+      icons: ICONS,
+    },
+    {
+      name: "book_meeting",
+      title: "Book a meeting",
+      description:
+        "Hold a time with Patrick Vieira for a person. Nothing is booked and no invite is sent until that person clicks the confirmation link this emails them; the hold lapses after 2 hours. Only use this when the person has asked for this meeting at this time and given you their name and email address. One pending hold per person at a time, and a few requests a day. Do not retry on error. Use get_booking_status to see whether they confirmed. Privacy: the site keeps the name, email address, time and note until 30 days after the meeting (or after an unconfirmed hold lapses); rate-limit counters are hashed. See https://patrickjv.com/privacy.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "start", "name", "email"],
+        properties: {
+          type: { type: "string", enum: BOOKING_TYPE_IDS, description: "A meeting type id from list_meeting_types." },
+          start: { type: "string", maxLength: 40, description: "Start time exactly as given by get_availability (ISO 8601 with offset)." },
+          name: { type: "string", minLength: 1, maxLength: 100, description: "The person's full name." },
+          email: { type: "string", maxLength: 254, description: "The person's email address (ASCII). The confirmation link goes here." },
+          note: { type: "string", maxLength: 500, description: "Optional: what the meeting is about, in plain text." },
+        },
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      icons: ICONS,
+    },
+    {
+      name: "get_booking_status",
+      title: "Booking status",
+      description: "The state of a booking by its ID: pending_confirmation, confirmed, declined, expired or cancelled, with a reason where there is one, the time and the meeting type. Never returns the guest's details.",
+      inputSchema: BOOKING_ID_SCHEMA,
+      annotations: READ_ONLY,
+      icons: ICONS,
+    },
+    {
+      name: "cancel_booking",
+      title: "Cancel a booking",
+      description: "Withdraw a booking. A hold that hasn't been confirmed is withdrawn at once. A confirmed meeting is not cancelled by this call: the guest is emailed a link, and only that link cancels it. Only use this when the person has asked to cancel. Do not retry on error.",
+      inputSchema: BOOKING_ID_SCHEMA,
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      icons: ICONS,
+    },
   ];
 }
+const BOOKING_TYPE_IDS = BOOKING_CONFIG.meetingTypes.map((t) => t.id);
+const DAY_PATTERN = "^\\d{4}-\\d{2}-\\d{2}$";
+const BOOKING_ID_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["booking_id"],
+  properties: { booking_id: { type: "string", pattern: "^[0-9a-f]{32}$", description: "The booking_id book_meeting returned." } },
+};
 
 // Single-line text: no control characters (prevents header injection; also tidies the body), and
 // no bidi or zero-width characters, which could make the Subject display differently from what it
@@ -393,14 +459,395 @@ async function callTool(name, args, ctx) {
       }
       return { content: [{ type: "text", text: "Thanks — your introduction has been sent to Patrick. He replies personally when he can; there is no automated follow-up." }] };
     }
+    case "list_meeting_types": return result(meetingTypes());
+    case "get_availability": return bookingResult(await bookingOps.availability(ctx, args));
+    case "book_meeting": return bookingResult(await bookingOps.book(ctx, args, "mcp"));
+    case "get_booking_status": return bookingResult(await bookingOps.status(ctx, args));
+    case "cancel_booking": return bookingResult(await bookingOps.cancel(ctx, args));
     default:
       return null;
   }
 }
 
+// A booking operation's {status, body} as a tool result: the body as structuredContent, and on
+// failure a tool error that names the error and asks agents not to retry.
+function bookingResult(r) {
+  if (r.status < 300) return { content: [{ type: "text", text: JSON.stringify(r.body) }], structuredContent: r.body };
+  return { content: [{ type: "text", text: `${r.body.message} (${r.body.error}) Do not retry automatically.` }], structuredContent: r.body, isError: true };
+}
+// Tools that take no arguments: a non-empty arguments object is a protocol error.
+const NO_ARGUMENTS = new Set(["get_profile", "list_work", "list_skills", "list_faq", "list_meeting_types"]);
+
+// ---------------------------------------------------------------------------------------------
+// Booking (F-001). Every booking operation runs in the BookingStore Durable Object (deps.booking()
+// returns its stub); the Worker validates, applies the kill switch, keys the quota with HMACs and
+// formats times. The MCP tools and the HTTP API call the same operations below, which return
+// {status, body}: an HTTP status and either the result or {error, message}.
+// ---------------------------------------------------------------------------------------------
+export const bookingEnabled = (env) => env.BOOKING_ENABLED === "true";
+// Secrets (and the BOOKING_FROM var) booking needs, plus each blocking calendar's ID secret.
+export const BOOKING_SECRETS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RESEND_API_KEY", "BOOKING_OWNER_EMAIL", "BOOKING_FROM",
+  ...BOOKING_CONFIG.calendars.filter((c) => c.blocks && c.idSecret).map((c) => c.idSecret)];
+export function bookingConfigured(env) {
+  return saltConfigured(env) && BOOKING_SECRETS.every((k) => typeof env[k] === "string" && env[k] !== "")
+    && typeof env.BOOKING?.idFromName === "function" && typeof env.BOOKING?.get === "function";
+}
+
+const TZ = BOOKING_CONFIG.timezone;
+const TYPE_IDS = BOOKING_CONFIG.meetingTypes.map((t) => t.id);
+const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const validDay = (d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`))
+  && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
+export const BOOKING_ID = /^[0-9a-f]{32}$/;
+// Link tokens are 128-bit base64url (22 characters); anything else is refused without a lookup.
+const TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
+
+// Plain-object arguments with only known fields, all strings.
+function fieldsError(args, allowed) {
+  if (!isPlainObject(args)) return "arguments must be an object";
+  const extra = Object.keys(args).filter((k) => !allowed.includes(k));
+  if (extra.length) return `unknown field(s): ${extra.join(", ")}`;
+  for (const k of Object.keys(args)) if (typeof args[k] !== "string") return `${k} must be a string`;
+  return null;
+}
+// The same address rules as request_intro: ASCII dot-atom, domain lower-cased.
+function normaliseEmail(s) {
+  const e = s.trim();
+  const m = e.length <= 254 && e.match(EMAIL_RE);
+  return m && m[1].length <= 64 ? `${m[1]}@${m[2].toLowerCase()}` : null;
+}
+
+export function validateBooking(args) {
+  const bad = fieldsError(args, ["type", "start", "name", "email", "note"]);
+  if (bad) return { error: bad };
+  if (!TYPE_IDS.includes(args.type)) return { error: `type must be one of: ${TYPE_IDS.join(", ")}` };
+  if (typeof args.start !== "string" || !ISO_WITH_OFFSET.test(args.start) || Number.isNaN(Date.parse(args.start)))
+    return { error: "start must be an ISO 8601 date-time with an offset, as given by get_availability" };
+  const name = oneLine(args.name ?? "");
+  if (!name || cpLength(name) > 100) return { error: "name is required (max 100 characters)" };
+  const email = normaliseEmail(args.email ?? "");
+  if (!email) return { error: "email must be a valid ASCII email address" };
+  // Plain text: LF newlines, no control characters. Shown only as text, never as HTML.
+  const note = (args.note ?? "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").trim();
+  if (cpLength(note) > 500) return { error: "note is too long (max 500 characters)" };
+  return { value: { type: args.type, start: new Date(Date.parse(args.start)).toISOString(), name, email, ...(note ? { note } : {}) } };
+}
+
+export function validateAvailability(args) {
+  const bad = fieldsError(args, ["type", "from", "to"]);
+  if (bad) return { error: bad };
+  if (!TYPE_IDS.includes(args.type)) return { error: `type must be one of: ${TYPE_IDS.join(", ")}` };
+  for (const k of ["from", "to"]) if (k in args && !validDay(args[k])) return { error: `${k} must be a date, YYYY-MM-DD` };
+  return { value: { type: args.type, from: args.from, to: args.to } };
+}
+
+function validateBookingId(args) {
+  const bad = fieldsError(args, ["booking_id"]);
+  if (bad) return { error: bad };
+  if (!BOOKING_ID.test(args.booking_id ?? "")) return { error: "booking_id must be the 32-character ID book_meeting returned" };
+  return { value: args.booking_id };
+}
+
+const BOOKING_ERRORS = {
+  booking_disabled: [503, "Booking isn't open yet."],
+  unavailable: [503, "Booking is unavailable right now. Please try again later."],
+  email_failed: [503, "The confirmation email couldn't be sent, so nothing was held. Please try again later."],
+  slot_taken: [409, "That time is no longer free. Please choose another."],
+  hold_pending: [429, "A booking for this email address or connection is already waiting to be confirmed. Confirm or decline it from the email first."],
+  not_found: [404, "No booking has that ID."],
+  not_cancellable: [409, "This booking can't be cancelled: it isn't a pending hold or a meeting still to come."],
+};
+function bookingFailure(r) {
+  const out = (status, message) => ({ status, body: { error: r.error, message, ...(r.reason ? { reason: r.reason } : {}), ...(r.status ? { status: r.status } : {}) } });
+  if (r.error === "invalid_input") return out(400, r.message);
+  if (r.error === "rate_limited") {
+    return out(429, r.reason === "global" ? "Booking is closed for today. Please try again tomorrow."
+      : `Too many booking requests today from this ${r.reason === "ip" ? "connection" : "email address"}. Please try again tomorrow.`);
+  }
+  // A slot that has slipped inside the notice window or past the horizon is "gone" (409), so the
+  // page reloads the slots; a start that was never a slot is a malformed request (400).
+  if (r.error === "invalid_slot") {
+    return ["notice", "horizon"].includes(r.reason) ? out(409, "That time can no longer be booked. Please choose another.")
+      : out(400, "start isn't a bookable time for this meeting type. Use a start time from get_availability.");
+  }
+  const [status, message] = BOOKING_ERRORS[r.error] ?? [503, BOOKING_ERRORS.unavailable[1]];
+  return out(status, message);
+}
+const invalid = (message) => bookingFailure({ error: "invalid_input", message });
+const failed = (error) => bookingFailure({ error });
+
+// Calls the BookingStore. A failure to reach it, or an exception inside it, is 503.
+async function viaStore(ctx, subsystem, fn) {
+  try {
+    return await fn(ctx.booking());
+  } catch {
+    logFailure(subsystem);
+    return failed("unavailable");
+  }
+}
+
+const meetingTypes = () => BOOKING_CONFIG.meetingTypes.map(({ id, title, minutes, description }) => ({ id, title, minutes, description }));
+const localSlot = (s) => ({ start: withOffset(s.start, TZ), end: withOffset(s.end, TZ) });
+
+const bookingOps = {
+  types: () => ({ status: 200, body: { types: meetingTypes() } }),
+
+  async availability(ctx, args) {
+    const { value: v, error } = validateAvailability(args);
+    if (error) return invalid(error);
+    if (!bookingConfigured(ctx.env)) return failed("unavailable");
+    return viaStore(ctx, "availability", async (store) => {
+      const { slots } = await store.availability(v.type, v.from, v.to);
+      return { status: 200, body: { timezone: TZ, slots: slots.map(localSlot) } };
+    });
+  },
+
+  async book(ctx, args, source) {
+    if (!bookingEnabled(ctx.env)) return failed("booking_disabled");
+    const { value: v, error } = validateBooking(args);
+    if (error) return invalid(error);
+    if (!bookingConfigured(ctx.env)) { logFailure("config"); return failed("unavailable"); }
+    return viaStore(ctx, "booking_store", async (store) => {
+      // The store only ever sees keyed hashes, never an IP or an address.
+      const [ipKey, emailKey] = await Promise.all([quotaHash(ctx.env, "booking-ip", ctx.ipKey), quotaHash(ctx.env, "booking-email", senderQuotaKey(v.email))]);
+      const { globalJustExhausted, ...r } = await store.request({ ...v, source }, ipKey, emailKey);
+      if (globalJustExhausted) await sendCapAlert(ctx);
+      if (r.error) {
+        if (r.error === "rate_limited") console.log(JSON.stringify({ event: "booking_quota_rejected", which: r.reason }));
+        return bookingFailure(r);
+      }
+      return { status: 202, body: { booking_id: r.booking_id, status: r.status, hold_expires: withOffset(r.hold_expires, TZ) } };
+    });
+  },
+
+  async status(ctx, args) {
+    const { value: id, error } = validateBookingId(args);
+    if (error) return invalid(error);
+    return viaStore(ctx, "booking_store", async (store) => {
+      const s = await store.status(id);
+      if (!s) return failed("not_found");
+      return { status: 200, body: { status: s.status, ...(s.status_reason ? { status_reason: s.status_reason } : {}), start: withOffset(s.start, TZ), end: withOffset(s.end, TZ), type: s.type } };
+    });
+  },
+
+  async cancel(ctx, args) {
+    if (!bookingEnabled(ctx.env)) return failed("booking_disabled");
+    const { value: id, error } = validateBookingId(args);
+    if (error) return invalid(error);
+    if (!bookingConfigured(ctx.env)) { logFailure("config"); return failed("unavailable"); }
+    return viaStore(ctx, "booking_store", async (store) => {
+      const r = await store.cancel(id);
+      return r.error ? bookingFailure(r) : { status: 200, body: r };
+    });
+  },
+};
+
+// Health for booking: bookingEnabled is the kill switch; bookingReady says booking would work if
+// switched on: every secret set (QUOTA_SALT included), and, only then, the BookingStore answers
+// and a fresh Google token refresh succeeds (cached in the store for a minute). Independent of
+// the flag, so readiness can be checked before launch. Booleans only.
+async function bookingReadiness(env, deps) {
+  let ready = false;
+  if (bookingConfigured(env)) {
+    try { ready = (await deps.booking().health()).google === true; } catch { logFailure("booking_store"); }
+  }
+  return { bookingEnabled: bookingEnabled(env), bookingReady: ready };
+}
+
+// Patrick's alert when the global cap is first reached (the store reports that once a day): to
+// INTRO_TO_ADDRESS through the send_email binding, like introductions. Failure is logged, never
+// passed on: the request that hit the cap still gets its own answer.
+export function buildAlertMime({ subject, text }, { from, to, messageId, date }) {
+  const wrapped = b64(new TextEncoder().encode(text.replace(/\r?\n/g, "\r\n"))).replace(/.{1,76}/g, "$&\r\n");
+  return [
+    `From: "patrickjv.com booking" <${from}>`,
+    `To: <${to}>`,
+    `Subject: ${encodeHeaderText(subject)}`,
+    `Date: ${date.toUTCString()}`,
+    `Message-ID: <${messageId}>`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapped,
+  ].join("\r\n");
+}
+async function sendCapAlert(ctx) {
+  try {
+    const { INTRO_FROM: from, INTRO_TO_ADDRESS: to } = ctx.env;
+    const raw = buildAlertMime(capAlertEmail({ day: ctx.now.toISOString().slice(0, 10) }), { from, to, messageId: `${crypto.randomUUID()}@patrickjv.com`, date: ctx.now });
+    await ctx.sendEmail(from, to, raw);
+  } catch {
+    logFailure("alert_email");
+  }
+}
+
+// ---- Act pages: what an emailed link does. GET shows it with a button; only POST acts. ----
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const ACT_CSS = [
+  '@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }',
+  ':root { --bg: #f4f3ee; --ink: #14171c; --muted: #535b66; --signal: #a64b00; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: ui-monospace, monospace; }',
+  "@media (prefers-color-scheme: dark) { :root { --bg: #0c0e11; --ink: #e7e9ec; --muted: #9aa3ae; --signal: #ffb547; } }",
+  "body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.0625rem; line-height: 1.65; }",
+  ".wrap { box-sizing: border-box; max-width: 44rem; margin: 0 auto; padding: 24px 16px 64px; }",
+  ".bar { font-family: var(--mono); font-size: 0.875rem; margin: 0 0 40px; }",
+  "a { color: var(--signal); }",
+  "h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 16px; font-weight: 600; letter-spacing: -0.01em; }",
+  ".muted { color: var(--muted); }",
+  "button { font: inherit; font-weight: 600; padding: 10px 20px; border: 1px solid var(--ink); border-radius: 4px; background: var(--ink); color: var(--bg); cursor: pointer; }",
+  "button:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }",
+].join("\n");
+let actCsp = null;
+async function actPolicy() {
+  if (!actCsp) {
+    const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ACT_CSS));
+    actCsp = `default-src 'none'; style-src 'sha256-${b64(new Uint8Array(d))}'; font-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`;
+  }
+  return actCsp;
+}
+
+// "Wed 21 Oct 2026, 10:00–10:30 BST (09:00–09:30 UTC)", as in the booking emails.
+function when(start, end) {
+  const parts = (iso, timeZone, opts) => Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone, ...opts }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+  const clock = (iso, timeZone) => { const p = parts(iso, timeZone, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }); return { time: `${p.hour}:${p.minute}`, zone: p.timeZoneName }; };
+  const d = parts(start, TZ, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  const s = clock(start, TZ);
+  return `${d.weekday} ${d.day} ${d.month} ${d.year}, ${s.time}–${clock(end, TZ).time} ${s.zone} (${clock(start, "UTC").time}–${clock(end, "UTC").time} UTC)`;
+}
+
+async function actPage(status, title, paragraphs, form = "") {
+  const html = `<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${esc(title)} · Patrick Vieira</title>
+<style>${ACT_CSS}</style>
+</head>
+<body>
+<main class="wrap">
+<p class="bar"><a href="/">patrickjv.com</a></p>
+<h1>${esc(title)}</h1>
+${paragraphs.join("\n")}
+${form}</main>
+</body>
+</html>
+`;
+  return new Response(html, { status, headers: {
+    "content-type": "text/html; charset=utf-8", ...SECURITY_HEADERS,
+    "content-security-policy": await actPolicy(),
+    // The form's POST must carry Origin: https://patrickjv.com; no-referrer would make it "null".
+    "referrer-policy": "same-origin",
+    "cache-control": "no-store", // the URL carries a token
+  } });
+}
+const para = (s) => `<p>${s}</p>`;
+const bookAgain = '<a href="/book">Book another time</a>';
+const LINK_ERRORS = {
+  unknown: [404, "This link isn't valid", "Check that you copied the whole link from the email."],
+  used: [404, "This link has already been used", "Nothing more will happen. If you need to change something, email hello@patrickjv.com."],
+  expired: [410, "This link has expired", "Holds last two hours, and cancel links work until the meeting starts."],
+};
+const linkError = (state) => { const [s, t, m] = LINK_ERRORS[state] ?? LINK_ERRORS.unknown; return actPage(s, t, [para(esc(m))]); };
+const ACTIONS = {
+  confirm: ["Confirm your booking", "Confirm booking", "Nothing is booked unless you confirm. If you didn't ask for this, close this page."],
+  decline: ["Decline this booking", "Decline", "Nothing has been booked. Declining frees the time now rather than when the hold lapses."],
+  cancel: ["Cancel your meeting", "Cancel meeting", "Google Calendar will tell everyone invited."],
+  confirm_cancel: ["Cancel your meeting", "Cancel meeting", "An AI agent asked to cancel this meeting for you. It stays booked unless you cancel it here."],
+};
+
+async function showLink(ctx, token) {
+  if (!TOKEN.test(token ?? "")) return linkError("unknown");
+  let peek;
+  try { peek = await ctx.booking().peek(token); } catch { logFailure("booking_store"); return actPage(503, "Booking is unavailable right now", [para("Please try the link again in a few minutes.")]); }
+  if (peek.state !== "valid" || !ACTIONS[peek.action]) return linkError(peek.state);
+  const [title, button, note] = ACTIONS[peek.action];
+  const type = BOOKING_CONFIG.meetingTypes.find((t) => t.id === peek.booking.type)?.title ?? peek.booking.type;
+  return actPage(200, title, [para(`${esc(type)} with Patrick Vieira, ${esc(when(peek.booking.start, peek.booking.end))}.`), `<p class="muted">${esc(note)}</p>`],
+    `<form method="post" action="/api/booking/act">\n<input type="hidden" name="t" value="${esc(token)}">\n<button type="submit">${esc(button)}</button>\n</form>\n`);
+}
+
+async function doLink(ctx, token) {
+  if (!TOKEN.test(token ?? "")) return linkError("unknown");
+  let r;
+  try { r = await ctx.booking().act(token); } catch { logFailure("booking_store"); r = { error: "unavailable" }; }
+  if (r.result === "confirmed") return actPage(200, "Booked", [para("Google Calendar will send you an invite from hello@patrickjv.com with the Google Meet link. I've also emailed you a link to cancel if you need to.")]);
+  if (r.result === "cancelled") return actPage(200, "Cancelled", [para("The meeting is cancelled. Google Calendar will let everyone invited know.")]);
+  if (r.result === "declined" && !r.reason) return actPage(200, "Declined", [para("Nothing was booked, and the time is free again.")]);
+  if (r.result === "declined") {
+    return actPage(409, "That slot was taken", [para(r.reason === "day_full" ? "That day filled up before you confirmed, so nothing was booked." : "That time was taken before you confirmed, so nothing was booked."), para(bookAgain)]);
+  }
+  if (r.error === "unavailable") return actPage(503, "Booking is unavailable right now", [para("Nothing has changed. Please try the same link again in a few minutes.")]);
+  return linkError(r.error);
+}
+
+// The HTTP API. The same rejection order as /mcp: path, Origin, method, media type, declared size,
+// rate limits, then the capped body read.
+const BOOKING_ROUTES = {
+  "/api/booking": ["POST"], "/api/booking/types": ["GET"], "/api/booking/availability": ["GET"], "/api/booking/act": ["GET", "POST"],
+  // For the page's WebMCP tools (the MCP server has get_booking_status and cancel_booking).
+  "/api/booking/status": ["GET"], "/api/booking/cancel": ["POST"],
+};
+// The channel a request arrived on, as the browser reports it: "page" (the /book form, the
+// default) or "webmcp" (the page's WebMCP tools). Self-reported, so it only picks the hold email's
+// wording; consent always comes from the emailed confirmation link.
+const HTTP_SOURCES = ["page", "webmcp"];
+
+async function handleBookingHttp(request, env, deps, url) {
+  const json = (status, body, extra = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS, ...extra } });
+  const err = (status, error, message, extra) => json(status, { error, message }, extra);
+  const methods = BOOKING_ROUTES[url.pathname];
+  if (!methods) return err(404, "not_found", "Not found.");
+  if (request.headers.has("origin") && request.headers.get("origin") !== ALLOWED_ORIGIN) return err(403, "forbidden_origin", "Requests from other sites aren't accepted.");
+  if (!methods.includes(request.method)) return err(405, "method_not_allowed", `Use ${methods.join(" or ")}.`, { allow: methods.join(", ") });
+  const post = request.method === "POST";
+  const isAct = url.pathname === "/api/booking/act";
+  const media = (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (post && !(media === "application/json" || (isAct && media === "application/x-www-form-urlencoded"))) return err(415, "unsupported_media_type", "Send JSON.");
+  if (Number(request.headers.get("content-length") || 0) > LIMITS.maxBodyBytes) return err(413, "too_large", "Request too large.");
+
+  const ipKey = clientKey(request.headers.get("cf-connecting-ip"));
+  try {
+    if (!(await env.RL_MCP.limit({ key: ipKey })).success) return err(429, "rate_limited", "Too many requests. Slow down and retry in a minute.", { "retry-after": "60" });
+    if (post && !(await env.RL_BURST.limit({ key: ipKey })).success) return err(429, "rate_limited", "Too many requests. Slow down and retry in a minute.", { "retry-after": "60" });
+  } catch {
+    logFailure("ratelimit");
+    return err(503, "unavailable", "Temporarily unavailable.");
+  }
+
+  let body = null;
+  if (post) {
+    let raw;
+    try { raw = await readCapped(request, LIMITS.maxBodyBytes); } catch { logFailure("body_read"); return err(400, "invalid_input", "The request body couldn't be read."); }
+    if (raw === null) return err(413, "too_large", "Request too large.");
+    try { body = media === "application/json" ? JSON.parse(raw) : Object.fromEntries(new URLSearchParams(raw)); } catch { return err(400, "invalid_input", "The request body isn't valid JSON."); }
+  }
+
+  const ctx = { env, ipKey, booking: deps.booking, sendEmail: deps.sendEmail, now: deps.now() };
+  if (isAct) return post ? doLink(ctx, isPlainObject(body) ? body.t : null) : showLink(ctx, url.searchParams.get("t"));
+  let r;
+  if (url.pathname === "/api/booking/types") r = bookingOps.types();
+  else if (url.pathname === "/api/booking/availability") {
+    const args = { type: url.searchParams.get("type") ?? "" };
+    for (const k of ["from", "to"]) if (url.searchParams.has(k)) args[k] = url.searchParams.get(k);
+    r = await bookingOps.availability(ctx, args);
+  } else if (url.pathname === "/api/booking/status") {
+    r = await bookingOps.status(ctx, { booking_id: url.searchParams.get("booking_id") ?? "" });
+  } else if (url.pathname === "/api/booking/cancel") {
+    r = await bookingOps.cancel(ctx, body);
+  } else {
+    let args = body, source = "page";
+    if (isPlainObject(body)) ({ source = "page", ...args } = body);
+    r = HTTP_SOURCES.includes(source) ? await bookingOps.book(ctx, args, source) : invalid(`source must be one of: ${HTTP_SOURCES.join(", ")}`);
+  }
+  return json(r.status, r.body);
+}
+
 export async function handle(request, env, deps) {
   const url = new URL(request.url);
   const text = (body, status, headers = {}) => new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, ...headers } });
+  if (url.pathname === "/api/booking" || url.pathname.startsWith("/api/booking/")) return handleBookingHttp(request, env, deps, url);
   if (url.pathname !== "/mcp") return text("Not found", 404);
 
   // Browsers always send Origin on cross-origin requests; server-side MCP clients send none.
@@ -470,7 +917,7 @@ export async function handle(request, env, deps) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "patrickjv.com", title: "Patrick Vieira — platform engineer", version: SERVER_VERSION, websiteUrl: "https://patrickjv.com/", icons: ICONS },
           instructions:
-            "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.",
+            "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message. To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it from their own inbox.",
         });
       }
       case "ping":
@@ -478,16 +925,16 @@ export async function handle(request, env, deps) {
       // A vendor-prefixed custom method, not a tool (clients would list a tool to users) and not an
       // extension of ping (whose result MUST be empty). Other servers answer it with -32601.
       case "patrickjv/health":
-        return ok(introReadiness(env));
+        return ok({ ...introReadiness(env), ...(await bookingReadiness(env, deps)) });
       case "tools/list":
         return ok({ tools: tools() });
       case "tools/call": {
         if (typeof params.name !== "string") return rpcError(msg.id, -32602, "tools/call requires params.name");
         const args = "arguments" in params ? params.arguments : {};
         if (!isPlainObject(args)) return rpcError(msg.id, -32602, "arguments must be an object");
-        if (params.name !== "request_intro" && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
+        if (NO_ARGUMENTS.has(params.name) && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
         const result = await callTool(params.name, args, {
-          env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve,
+          env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve, booking: deps.booking,
         });
         if (!result) return rpcError(msg.id, -32602, `Unknown tool: ${params.name}`);
         return ok(result);
