@@ -16,11 +16,16 @@ const confirmToken = (h, i = 0) => tokenIn(h.f.mails()[i].text, "confirm");
 
 // ---- HTTP API ----
 
-test("GET /api/booking/types: the meeting types from booking.json", async () => {
+test("GET /api/booking/types: whether booking is open, and the meeting types from booking.json", async () => {
+  const types = cfg.meetingTypes.map(({ id, title, minutes, description }) => ({ id, title, minutes, description }));
   const res = await harness().call("/api/booking/types");
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "application/json");
-  assert.deepEqual(await res.json(), { types: cfg.meetingTypes.map(({ id, title, minutes, description }) => ({ id, title, minutes, description })) });
+  assert.deepEqual(await res.json(), { enabled: true, types });
+  // The page and the WebMCP script read `enabled` to stay hidden until launch.
+  for (const value of ["false", undefined, "TRUE"]) {
+    assert.deepEqual(await (await harness({ env: { BOOKING_ENABLED: value } }).call("/api/booking/types")).json(), { enabled: false, types }, String(value));
+  }
 });
 
 test("GET /api/booking/availability: free slots as ISO 8601 with the London offset", async () => {
@@ -396,9 +401,29 @@ test("BOOKING_ENABLED not \"true\": every write path is 503 booking_disabled; ty
     const cancel = await h.call("/api/booking/cancel", { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: { booking_id: "a".repeat(32) } });
     assert.equal(cancel.status, 503);
     assert.equal((await h.call("/api/booking/types")).status, 200);
-    assert.equal((await tool(h, "list_meeting_types")).isError, undefined);
     assert.equal(h.f.mails().length, 0);
   }
+});
+
+test("BOOKING_ENABLED not \"true\": MCP hides booking — tools/list omits the five tools, instructions don't mention it, calls say it isn't open", async () => {
+  for (const value of ["false", undefined, "TRUE", "1"]) {
+    const h = harness({ env: { BOOKING_ENABLED: value } });
+    const { result } = await mcp(h, rpc("tools/list"));
+    assert.deepEqual(result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"], String(value));
+    const init = await mcp(h, rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
+    assert.doesNotMatch(init.result.instructions, /book|meeting/i, String(value));
+    assert.match(init.result.instructions, /request_intro/);
+    for (const [name, args] of [["list_meeting_types", {}], ["get_availability", { type: "consultation" }], ["book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" }],
+      ["get_booking_status", { booking_id: "a".repeat(32) }], ["cancel_booking", { booking_id: "a".repeat(32) }]]) {
+      const r = await tool(h, name, args);
+      assert.equal(r.isError, true, name);
+      assert.equal(r.structuredContent.error, "booking_disabled", name);
+      assert.match(r.content[0].text, /^Booking isn't open yet\./, name);
+    }
+    assert.equal(h.storeCalls(), 0, "nothing reaches the BookingStore");
+  }
+  // Switched on, all ten are listed.
+  assert.equal((await mcp(harness(), rpc("tools/list"))).result.tools.length, 10);
 });
 
 test("kill switch: availability works while configured, and is 503 when not configured", async () => {
@@ -408,7 +433,8 @@ test("kill switch: availability works while configured, and is 503 when not conf
   const res = await unconfigured.call("/api/booking/availability?type=consultation");
   assert.equal(res.status, 503);
   assert.equal((await res.json()).error, "unavailable");
-  assert.equal((await tool(unconfigured, "get_availability", { type: "consultation" })).structuredContent.error, "unavailable");
+  const onButUnconfigured = harness({ env: { GOOGLE_REFRESH_TOKEN: undefined } });
+  assert.equal((await tool(onButUnconfigured, "get_availability", { type: "consultation" })).structuredContent.error, "unavailable");
 });
 
 test("kill switch: links for holds made before it was turned off still work", async () => {
@@ -504,12 +530,15 @@ test("mcp/wrangler.jsonc: booking route, BookingStore Durable Object (migration 
 
 // ---- Server metadata ----
 
-test("server.json: minor version bump for the booking tools; description fits the Registry's 100 characters", async () => {
+// The Registry entry stays at the published 1.1.0 until launch: the monitor checks that the live
+// serverInfo.version matches the Registry, so the bump (to 1.2.0, mentioning booking) is published
+// right after the deploy that sets BOOKING_ENABLED=true (docs/06 launch checklist).
+test("server.json: unchanged until launch (1.1.0, no booking); description fits the Registry's 100 characters", async () => {
   const s = JSON.parse(readFileSync(new URL("./server.json", import.meta.url), "utf8"));
-  assert.equal(s.version, "1.2.0");
+  assert.equal(s.version, "1.1.0");
   assert.ok(s.description.length <= 100, `${s.description.length}`);
-  assert.match(s.description, /booking/);
+  assert.doesNotMatch(s.description, /book/i);
   const init = await mcp(harness(), rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
-  assert.equal(init.result.serverInfo.version, "1.2.0");
+  assert.equal(init.result.serverInfo.version, s.version);
   assert.match(init.result.instructions, /book_meeting only when a person has asked/);
 });

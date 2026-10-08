@@ -60,12 +60,17 @@ export function validateConfig(cfg) {
 }
 
 // Zone maths with Intl only (proven by spike S1, docs/specs/F-001-spikes/tz-slots.mjs).
-// Wall-clock fields of a UTC instant in tz.
+// Wall-clock fields of a UTC instant in tz. Building a DateTimeFormat is far dearer than using
+// one, and a full-horizon availability call makes thousands of these, so one is kept per zone.
+const formatters = new Map();
 function wallClock(utcMs, tz) {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hourCycle: "h23",
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    .formatToParts(new Date(utcMs));
-  return Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  let f = formatters.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    formatters.set(tz, f);
+  }
+  return Object.fromEntries(f.formatToParts(new Date(utcMs)).map((x) => [x.type, x.value]));
 }
 // Offset of tz from UTC, in minutes, at a UTC instant.
 function offsetAt(utcMs, tz) {
@@ -97,6 +102,10 @@ const hhmmOf = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m
 // Every slot the hours allow for a meeting type, on London days fromDay..toDay inclusive. Each
 // day's times are converted separately, so a clock change between days can't shift them.
 export function candidateSlots(cfg, typeId, fromDay, toDay) {
+  return candidates(cfg, typeId, fromDay, toDay).map(({ start, end }) => ({ start, end }));
+}
+// The same, each with its London day and its times in ms, for availableSlots and checkSlot.
+function candidates(cfg, typeId, fromDay, toDay) {
   const type = cfg.meetingTypes.find((t) => t.id === typeId);
   if (!type) return [];
   const open = minutesOf(cfg.hours.start), close = minutesOf(cfg.hours.end);
@@ -104,8 +113,8 @@ export function candidateSlots(cfg, typeId, fromDay, toDay) {
   for (let day = fromDay; day <= toDay; day = nextDay(day)) {
     if (!cfg.hours.days.includes(DAY_NAMES[new Date(`${day}T00:00:00Z`).getUTCDay()])) continue;
     for (let m = open; m + type.minutes <= close; m += cfg.slotStepMinutes) {
-      const start = localToUtcMs(day, hhmmOf(m), cfg.timezone);
-      out.push({ start: new Date(start).toISOString(), end: new Date(start + type.minutes * 60000).toISOString() });
+      const startMs = localToUtcMs(day, hhmmOf(m), cfg.timezone), endMs = startMs + type.minutes * 60000;
+      out.push({ start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), startMs, endMs, day });
     }
   }
   return out;
@@ -114,7 +123,17 @@ export function candidateSlots(cfg, typeId, fromDay, toDay) {
 const HOUR = 3600000, DAY = 24 * HOUR;
 // Bookings that hold their time: holds, and meetings that exist or are being created or deleted.
 const LIVE = new Set(["pending_confirmation", "confirming", "confirmed", "cancelling"]);
-const overlaps = (aStart, aEnd, b) => Date.parse(b.start) < aEnd && Date.parse(b.end) > aStart;
+const overlaps = (aStart, aEnd, b) => b.start < aEnd && b.end > aStart;
+
+// Busy times and live bookings (other than excludeId) with their times parsed once, and each
+// meeting's London day worked out once, rather than again for every slot checked.
+const parseBusy = (busy) => busy.map((b) => ({ start: Date.parse(b.start), end: Date.parse(b.end) }));
+function liveOthers(bookings, excludeId, tz) {
+  return bookings.filter((b) => LIVE.has(b.status) && b.id !== excludeId).map((b) => {
+    const meeting = b.status !== "pending_confirmation";
+    return { start: Date.parse(b.start), end: Date.parse(b.end), meeting, day: meeting ? localDay(b.start, tz) : null };
+  });
+}
 
 // Whether `start` (any ISO 8601 form) can be booked now for a meeting type.
 export function checkSlot({ cfg, typeId, start, now, busy, bookings, ignoreNotice = false, excludeId }) {
@@ -122,18 +141,24 @@ export function checkSlot({ cfg, typeId, start, now, busy, bookings, ignoreNotic
   const ms = typeof start === "string" ? Date.parse(start) : NaN;
   if (Number.isNaN(ms)) return { ok: false, reason: "not_a_slot" };
   const day = localDay(new Date(ms).toISOString(), cfg.timezone);
-  const slot = candidateSlots(cfg, typeId, day, day).find((s) => Date.parse(s.start) === ms);
+  const slot = candidates(cfg, typeId, day, day).find((s) => s.startMs === ms);
   if (!slot) return { ok: false, reason: "not_a_slot" };
+  return checkCandidate(cfg, slot, now, parseBusy(busy), liveOthers(bookings, excludeId, cfg.timezone), ignoreNotice);
+}
+
+// checkSlot's rules for a slot already known to be a candidate, against parsed busy times and
+// bookings: availableSlots calls this directly instead of regenerating each day per slot.
+function checkCandidate(cfg, slot, now, busy, others, ignoreNotice = false) {
+  const ms = slot.startMs;
   if (!ignoreNotice && ms < now.getTime() + cfg.minNoticeHours * HOUR) return { ok: false, reason: "notice" };
   if (ms > now.getTime() + cfg.horizonDays * DAY) return { ok: false, reason: "horizon" };
   // The meeting plus the buffer before and after must touch nothing busy or booked.
   const buffer = cfg.bufferMinutes * 60000;
-  const from = ms - buffer, to = Date.parse(slot.end) + buffer;
+  const from = ms - buffer, to = slot.endMs + buffer;
   if (busy.some((b) => overlaps(from, to, b))) return { ok: false, reason: "busy" };
-  const others = bookings.filter((b) => LIVE.has(b.status) && b.id !== excludeId);
   if (others.some((b) => overlaps(from, to, b))) return { ok: false, reason: "taken" };
   // The daily cap counts meetings, not holds, so fake holds can't fill a day.
-  const meetings = others.filter((b) => b.status !== "pending_confirmation" && localDay(b.start, cfg.timezone) === day);
+  const meetings = others.filter((b) => b.meeting && b.day === slot.day);
   if (meetings.length >= cfg.maxPerDay) return { ok: false, reason: "day_full" };
   return { ok: true };
 }
@@ -145,8 +170,10 @@ export function availableSlots({ cfg, typeId, now, from, to, busy, bookings }) {
   const last = localDay(new Date(now.getTime() + cfg.horizonDays * DAY).toISOString(), cfg.timezone);
   const first = from && from > today ? from : today;
   const end = to && to < last ? to : last;
-  return candidateSlots(cfg, typeId, first, end)
-    .filter((s) => checkSlot({ cfg, typeId, start: s.start, now, busy, bookings }).ok);
+  const parsedBusy = parseBusy(busy), others = liveOthers(bookings, undefined, cfg.timezone);
+  return candidates(cfg, typeId, first, end)
+    .filter((s) => checkCandidate(cfg, s, now, parsedBusy, others).ok)
+    .map(({ start, end }) => ({ start, end }));
 }
 
 // Agent-facing form of a stored UTC time: local wall time in tz with its offset, to the second.
