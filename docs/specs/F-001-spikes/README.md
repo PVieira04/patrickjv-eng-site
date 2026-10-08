@@ -177,6 +177,7 @@ After booking was switched on, these were checked on the live site:
   - guest list "hidden at organizer's request", so `guestsCanSeeOtherGuests: false` works and Patrick's personal address isn't shown;
   - a working Meet link;
   - the note shown as plain text.
+- **Agent cancellation:** `cancel_booking` over MCP on the confirmed meeting returned `cancellation: requested` and left it `confirmed`. Once the guest used the emailed "Confirm cancellation" link, the status read `cancelled` (`guest_cancelled`) and all 27 Tuesday slots were free again.
 - **WebMCP:** the live homepage was loaded in headless Chromium with a recording stand-in for `document.modelContext`. All ten tools registered once `/api/booking/types` reported `enabled`, and the read and status tools returned live data. This covers the page script and the API, not Chrome's own experimental WebMCP.
 - **Found and fixed:**
   - `hold_expires` had a fractional offset (`+00:59.997…`) because of milliseconds. Fixed in #5.
