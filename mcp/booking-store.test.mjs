@@ -360,6 +360,51 @@ test("confirm: a failed 'booked' email is logged but the booking stands", async 
   assert.ok(!/jane|example/i.test(logs[0]));
 });
 
+// ---- Links: decline, single use, expiry, peeking -------------------------------------------
+
+test("decline: the hold ends (guest_declined), both links are spent and the slot is free", async () => {
+  const t = setup();
+  const h = await hold(t);
+  assert.deepEqual(await act(t, h.decline), { result: "declined" });
+  const b = row(t, h.id);
+  assert.deepEqual([b.status, b.status_reason], ["declined", "guest_declined"]);
+  assert.deepEqual(await act(t, h.confirm), { error: "used" });
+  assert.deepEqual(await act(t, h.decline), { error: "used" });
+  assert.deepEqual(store.liveBookings(t.sql, later(HOUR)), []);
+  assert.equal(t.calls.inserted.length, 0);
+});
+
+test("links expire with the hold: confirm and decline stop working at hold expiry", async () => {
+  const t = setup();
+  const h = await hold(t);
+  const atExpiry = later(2 * HOUR);
+  assert.deepEqual(await act(t, h.confirm, atExpiry), { error: "expired" });
+  assert.deepEqual(await act(t, h.decline, atExpiry), { error: "expired" });
+  assert.equal(t.calls.inserted.length, 0);
+});
+
+test("links: an unknown or malformed token does nothing", async () => {
+  const t = setup();
+  await hold(t);
+  for (const token of ["x", "", undefined, (await store.newToken()).token]) assert.deepEqual(await act(t, token), { error: "unknown" });
+  assert.equal(row(t, t.sql.exec("SELECT id FROM bookings").one().id).status, "pending_confirmation");
+});
+
+test("peek: says what a link would do and its state, without changing anything or showing PII", async () => {
+  const t = setup();
+  const h = await hold(t);
+  const view = { type: "consultation", start: SLOT, end: "2026-10-21T10:30:00.000Z", status: "pending_confirmation" };
+  assert.deepEqual(await store.peekToken(t.sql, h.confirm, later(HOUR)), { state: "valid", action: "confirm", booking: view });
+  assert.deepEqual(await store.peekToken(t.sql, h.decline, later(HOUR)), { state: "valid", action: "decline", booking: view });
+  assert.equal(row(t, h.id).status, "pending_confirmation", "peeking changes nothing");
+  assert.equal((await store.peekToken(t.sql, h.confirm, later(2 * HOUR))).state, "expired");
+  assert.deepEqual(await store.peekToken(t.sql, "nope", later(HOUR)), { state: "unknown" });
+  await act(t, h.confirm);
+  const used = await store.peekToken(t.sql, h.confirm, later(HOUR));
+  assert.equal(used.state, "used");
+  assert.equal(used.booking.status, "confirmed");
+});
+
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
