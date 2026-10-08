@@ -538,6 +538,48 @@ test("agent cancel: finished bookings are not cancellable; unknown IDs are not f
   assert.deepEqual(await agentCancel(t, store.newId()), { error: "not_found" });
 });
 
+// ---- Retention -------------------------------------------------------------------------------
+
+const DAYS = 24 * HOUR;
+const bookingCount = (t) => sqlCount(t, "SELECT count(*) c FROM bookings");
+
+test("retention: a meeting's record and links are deleted 30 days after the meeting, even if cancelled", async () => {
+  const t = setup();
+  const kept = await booked(t);
+  const gone = await booked(t, { start: "2026-10-22T10:00:00.000Z" });
+  await act(t, gone.cancel);
+  const end = new Date("2026-10-21T10:30:00.000Z");
+  assert.equal(row(t, kept.id).delete_after, later(30 * DAYS, end).toISOString());
+  store.prune(t.sql, later(30 * DAYS - 1, end));
+  assert.equal(bookingCount(t), 2);
+  store.prune(t.sql, later(30 * DAYS, end));
+  assert.equal(bookingCount(t), 1, "the 21 Oct meeting is gone");
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE booking_id = ?", kept.id), 0, "with its links");
+  store.prune(t.sql, later(31 * DAYS, end));
+  assert.equal(bookingCount(t), 0, "the cancelled 22 Oct meeting a day later");
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens"), 0);
+});
+
+test("retention: a hold that never became a meeting is deleted 30 days after it lapsed", async () => {
+  const t = setup();
+  await hold(t); // left to expire
+  const declined = await hold(t, { start: "2026-10-22T10:00:00.000Z" });
+  await act(t, declined.decline);
+  store.expireHolds(t.sql, later(2 * HOUR));
+  store.prune(t.sql, later(30 * DAYS + 2 * HOUR - 1));
+  assert.equal(bookingCount(t), 2);
+  store.prune(t.sql, later(30 * DAYS + 2 * HOUR));
+  assert.equal(bookingCount(t), 0);
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens"), 0);
+});
+
+test("retention: quota counters older than two days are deleted", () => {
+  const t = setup();
+  for (const day of ["2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19"]) reserve(t.sql, "ip", "em", day);
+  store.prune(t.sql, NOW);
+  assert.deepEqual(t.sql.exec("SELECT DISTINCT day FROM quota ORDER BY day").toArray().map((r) => r.day), ["2026-10-17", "2026-10-18", "2026-10-19"]);
+});
+
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
