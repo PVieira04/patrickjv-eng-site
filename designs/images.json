@@ -3,7 +3,7 @@
     "inputs": {
       "designs/favicon/chosen.svg": "357bdab467d49440f00adfbbd565e408848db062b4b0a7836b90b157e58d65d6",
       "designs/favicon/make-icons.cjs": "8554052cb04a37f579aa93a10e69f3446f6f252bb73fadaf5f8f8b48c9a84da3",
-      "sharp (package.json)": "a41a17a6dee7e6c171e9e9f080d6cf5dd8036787e685eee695102fa92516a860"
+      "sharp (package.json)": "da2434505f7d547fb009987a38af259392b5ae129950feea1ccbd1228633e7bd"
     },
     "outputs": {
       "public/favicon.svg": "357bdab467d49440f00adfbbd565e408848db062b4b0a7836b90b157e58d65d6",
@@ -24,7 +24,7 @@
       "designs/og/fonts/IBMPlexSans-Regular.ttf": "6dbe082463cf749cfa057d45c3048c90f4df031496498e5b5bdfd0b6babb9d16",
       "designs/og/fonts/IBMPlexSans-SemiBold.ttf": "5311c66fd6d04ae45671236f7eae667b671c06c1dc7e88d52c206e5fadd0fb21",
       "designs/og/fonts/OFL.txt": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
-      "sharp (package.json)": "a41a17a6dee7e6c171e9e9f080d6cf5dd8036787e685eee695102fa92516a860"
+      "sharp (package.json)": "da2434505f7d547fb009987a38af259392b5ae129950feea1ccbd1228633e7bd"
     },
     "outputs": {
       "public/og-card.jpg": "9df7d5ae5496d95a5ec7f96ca3f7c29ec66a401e6b878900e8fb66785ebf7df3"
