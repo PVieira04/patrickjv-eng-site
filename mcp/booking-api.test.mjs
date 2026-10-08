@@ -16,11 +16,16 @@ const confirmToken = (h, i = 0) => tokenIn(h.f.mails()[i].text, "confirm");
 
 // ---- HTTP API ----
 
-test("GET /api/booking/types: the meeting types from booking.json", async () => {
+test("GET /api/booking/types: whether booking is open, and the meeting types from booking.json", async () => {
+  const types = cfg.meetingTypes.map(({ id, title, minutes, description }) => ({ id, title, minutes, description }));
   const res = await harness().call("/api/booking/types");
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "application/json");
-  assert.deepEqual(await res.json(), { types: cfg.meetingTypes.map(({ id, title, minutes, description }) => ({ id, title, minutes, description })) });
+  assert.deepEqual(await res.json(), { enabled: true, types });
+  // The page and the WebMCP script read `enabled` to stay hidden until launch.
+  for (const value of ["false", undefined, "TRUE"]) {
+    assert.deepEqual(await (await harness({ env: { BOOKING_ENABLED: value } }).call("/api/booking/types")).json(), { enabled: false, types }, String(value));
+  }
 });
 
 test("GET /api/booking/availability: free slots as ISO 8601 with the London offset", async () => {
