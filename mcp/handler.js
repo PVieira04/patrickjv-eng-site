@@ -558,7 +558,7 @@ const BOOKING_ERRORS = {
   unavailable: [503, "Booking is unavailable right now. Please try again later."],
   email_failed: [503, "The confirmation email couldn't be sent, so nothing was held. Please try again later."],
   slot_taken: [409, "That time is no longer free. Please choose another."],
-  hold_pending: [429, "A booking for this email address or connection is already waiting to be confirmed. Confirm or decline it from the email first."],
+  hold_pending: [429, "A booking for this email address is already waiting to be confirmed. Confirm or decline it from the email first."],
   not_found: [404, "No booking has that ID."],
   not_cancellable: [409, "This booking can't be cancelled: it isn't a pending hold or a meeting still to come."],
 };

@@ -398,12 +398,18 @@ export async function recoverConfirm(sql, b, { now, cfg, deps }) {
   if (existing) return settleConfirmed(sql, b, { now, cfg, deps, meetLink: existing.meetLink ?? null });
   // Nothing was made, and time has passed: check the slot again, as a live confirm does.
   const { busy } = await slotFreeBusy(b, cfg, deps);
-  // ---- Synchronous from here to the decline. No await. ----
   if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
   const check = deps.checkSlot({ ...confirmSlot(b, cfg, now), busy, bookings: meetings(sql) });
-  // The guest may have been told their booking was being finished. Nothing new is sent to them:
-  // no meeting, no "Booked" email, and get_booking_status shows declined.
-  if (!check.ok) return declineConfirm(sql, b.id, check.reason, now.toISOString());
+  if (!check.ok) {
+    // The clash may be this booking's own meeting: a slow live insert can land between the first
+    // look and free/busy. Ask once more before declining.
+    const late = await deps.getEvent(b.id);
+    if (late) return settleConfirmed(sql, b, { now, cfg, deps, meetLink: late.meetLink ?? null });
+    if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
+    // The guest may have been told their booking was being finished. Nothing new is sent to them:
+    // no meeting, no "Booked" email, and get_booking_status shows declined.
+    return declineConfirm(sql, b.id, check.reason, now.toISOString());
+  }
   const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
