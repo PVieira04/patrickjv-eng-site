@@ -87,6 +87,12 @@ const forEmail = (b) => ({
 const TAKEN = new Set(["busy", "taken", "day_full"]);
 const slotError = (reason) => ({ error: TAKEN.has(reason) ? "slot_taken" : "invalid_slot", reason });
 
+// Moves a booking to a final state and kills every link still outstanding for it.
+function settle(sql, id, status, reason, nowIso) {
+  sql.exec("UPDATE bookings SET status = ?, status_reason = ? WHERE id = ?", status, reason, id);
+  sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND used_at IS NULL", nowIso, id);
+}
+
 // One live hold at a time per IP and per email, so fake holds cost an attacker many of both.
 function holdPending(sql, { now, ipKey, emailKey, cfg }) {
   const limit = cfg.caps.liveHoldsPerKey ?? 1;
@@ -139,7 +145,14 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
   // ---- End of claim. ----
 
   const booking = sql.exec("SELECT * FROM bookings WHERE id = ?", id).one();
-  await deps.sendEmail("hold", forEmail(booking), { confirmUrl: deps.actUrl(confirm.token), declineUrl: deps.actUrl(decline.token) });
+  try {
+    await deps.sendEmail("hold", forEmail(booking), { confirmUrl: deps.actUrl(confirm.token), declineUrl: deps.actUrl(decline.token) });
+  } catch {
+    // Nobody can confirm a hold they never heard about: release it now rather than in 2 hours.
+    logFailure("email");
+    settle(sql, id, "cancelled", "email_failed", nowIso);
+    return { error: "email_failed", ...flag };
+  }
   return { booking_id: id, status: "pending_confirmation", hold_expires: holdExpires, ...flag };
 }
 
