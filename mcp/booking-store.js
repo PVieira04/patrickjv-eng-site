@@ -198,7 +198,9 @@ function lookupToken(sql, hash, now) {
   const tok = sql.exec("SELECT * FROM tokens WHERE hash = ?", hash).toArray()[0];
   const booking = tok && sql.exec("SELECT * FROM bookings WHERE id = ?", tok.booking_id).toArray()[0];
   if (!booking) return { error: "unknown" };
-  if (tok.used_at) return { error: "used" };
+  // A spent confirm link whose booking is still confirming: Google's answer was lost and the
+  // alarm is finishing it, which the page says rather than "already used".
+  if (tok.used_at) return booking.status === "confirming" ? { error: "used", confirming: true } : { error: "used" };
   if (tok.expires_at <= now.toISOString()) return { error: "expired" };
   return { tok, booking };
 }
