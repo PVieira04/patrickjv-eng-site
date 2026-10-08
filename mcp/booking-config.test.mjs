@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateConfig, localToUtc, localDay } from "./booking-config.js";
+import { validateConfig, localToUtc, localDay, withOffset } from "./booking-config.js";
 
 const TZ = "Europe/London";
 
@@ -38,4 +38,19 @@ test("clocks change (S1): localDay is the London calendar day, not the UTC one",
   assert.equal(localDay("2026-10-26T23:30:00.000Z", TZ), "2026-10-26"); // 23:30 GMT
   assert.equal(localDay("2027-03-28T23:30:00.000Z", TZ), "2027-03-29"); // 00:30 BST
   assert.equal(localDay("2026-10-25T00:30:00.000Z", TZ), "2026-10-25"); // 01:30 BST, the hour that repeats
+});
+
+// Stored times are UTC (Date#toISOString); agents get ISO 8601 with London's offset at that instant.
+test("UTC storage and offset output: stored as Z, shown to agents with the London offset", () => {
+  const stored = localToUtc("2026-10-26", "10:00", TZ);
+  assert.match(stored, /^\d{4}-\d\d-\d\dT\d\d:\d\d:00\.000Z$/);
+  assert.equal(withOffset(stored, TZ), "2026-10-26T10:00:00+00:00"); // GMT
+  assert.equal(withOffset("2026-10-23T09:00:00.000Z", TZ), "2026-10-23T10:00:00+01:00"); // BST
+  assert.equal(withOffset("2027-03-29T15:30:00.000Z", TZ), "2027-03-29T16:30:00+01:00");
+  // Round trip: the offset form names the same instant as the stored one.
+  for (const iso of ["2026-10-23T09:00:00.000Z", "2026-10-26T10:00:00.000Z"])
+    assert.equal(new Date(withOffset(iso, TZ)).toISOString(), iso);
+  // Other zones format the same way (negative and non-hour offsets).
+  assert.equal(withOffset("2026-10-26T10:00:00.000Z", "America/New_York"), "2026-10-26T06:00:00-04:00");
+  assert.equal(withOffset("2026-10-26T10:00:00.000Z", "Asia/Kathmandu"), "2026-10-26T15:45:00+05:45");
 });
