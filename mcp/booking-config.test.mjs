@@ -285,3 +285,38 @@ test("validateConfig: a calendar that doesn't block needs no ID (it is never que
   assert.deepEqual(cfg.calendars[2], { account: "personal", label: "Birthdays", blocks: false });
   assert.equal(validateConfig(cfg), cfg);
 });
+
+// Performance (review): a full-horizon availableSlots, with ~20 live bookings, must stay cheap —
+// it runs on every get_availability. The golden hash pins the result to the output of the
+// original, unoptimised implementation on this fixed input, so a faster version can't drift.
+test("availableSlots: full horizon with 20 bookings is fast and gives exactly the original result", async () => {
+  const cfg = realConfig();
+  const now = new Date("2026-10-19T09:00:00.000Z"); // Mon, BST; the horizon crosses the 25 Oct clock change
+  const days = ["2026-10-21", "2026-10-22", "2026-10-23", "2026-10-26", "2026-10-27", "2026-10-28", "2026-11-02", "2026-11-04", "2026-11-10", "2026-11-13"];
+  const statuses = ["confirmed", "pending_confirmation", "confirming", "cancelled", "cancelling"];
+  const bookings = Array.from({ length: 17 }, (_, i) => {
+    const start = Date.parse(localToUtc(days[i % days.length], `${String(10 + (i * 3) % 7).padStart(2, "0")}:${["00", "15", "30", "45"][i % 4]}`, TZ));
+    return { id: `b${i}`, status: statuses[i % statuses.length], start: new Date(start).toISOString(), end: new Date(start + 30 * 60000).toISOString() };
+  });
+  // A day filled by three meetings (maxPerDay), so day_full is exercised too.
+  for (const [i, t] of ["10:00", "12:00", "14:00"].entries()) {
+    const start = Date.parse(localToUtc("2026-11-05", t, TZ));
+    bookings.push({ id: `f${i}`, status: "confirmed", start: new Date(start).toISOString(), end: new Date(start + 30 * 60000).toISOString() });
+  }
+  const busy = [
+    { start: "2026-10-22T11:00:00Z", end: "2026-10-22T13:00:00Z" },
+    { start: "2026-10-26T15:00:00Z", end: "2026-10-26T16:00:00Z" },
+    { start: "2026-11-09T00:00:00Z", end: "2026-11-10T00:00:00Z" },
+  ];
+  const run = (typeId) => availableSlots({ cfg, typeId, now, busy, bookings });
+  run("consultation"); // warm up
+  const t0 = performance.now();
+  const slots = { consultation: run("consultation"), "recruiter-intro": run("recruiter-intro") };
+  const ms = performance.now() - t0;
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("sha256").update(JSON.stringify(slots)).digest("hex");
+  assert.deepEqual([slots.consultation.length, slots["recruiter-intro"].length, hash], GOLDEN);
+  assert.ok(ms < 200, `two full-horizon calls took ${ms.toFixed(1)} ms`);
+});
+// From the original implementation (commit c703977) on the input above.
+const GOLDEN = [381, 410, "082808ca43196a7f6ab30d9305e78ab254a888bbae0146cc406317a580bb4a91"];
