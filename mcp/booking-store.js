@@ -265,16 +265,25 @@ export async function peekToken(sql, token, now) {
   return { state, action: tok.action, booking: { type: b.type, start: b.start_utc, end: b.end_utc, status: b.status } };
 }
 
+// What a confirm checks the slot against: the rules without notice (it was given when held), and
+// live free/busy around the meeting with its buffer.
+const confirmSlot = (b, cfg, now) => ({ cfg, typeId: b.type, start: b.start_utc, now, ignoreNotice: true, excludeId: b.id });
+const slotFreeBusy = (b, cfg, deps) => {
+  const buffer = cfg.bufferMinutes * MINUTE;
+  return deps.freeBusy(plus(b.start_utc, -buffer), plus(b.end_utc, buffer));
+};
+function declineConfirm(sql, id, reason, nowIso) {
+  const why = reason === "day_full" ? "day_full" : "slot_taken";
+  settle(sql, id, "declined", why, nowIso);
+  return { result: "declined", reason: why };
+}
+
 async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
   const nowIso = now.toISOString();
   // A hold that already left pending has spent its links; this is a backstop.
   if (b.status !== "pending_confirmation" || b.hold_expires <= nowIso) return { error: "used" };
-  const slot = { cfg, typeId: b.type, start: b.start_utc, now, ignoreNotice: true, excludeId: b.id };
-  const decline = (reason) => {
-    const why = reason === "day_full" ? "day_full" : "slot_taken";
-    settle(sql, b.id, "declined", why, nowIso);
-    return { result: "declined", reason: why };
-  };
+  const slot = confirmSlot(b, cfg, now);
+  const decline = (reason) => declineConfirm(sql, b.id, reason, nowIso);
 
   // ---- Claim: synchronous, no await. A double click finds the token used. ----
   const claim = deps.checkSlot({ ...slot, busy: [], bookings: meetings(sql) });
@@ -290,10 +299,9 @@ async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
     sql.exec("UPDATE tokens SET used_at = NULL WHERE hash = ?", tok.hash);
     return { error: "unavailable" };
   };
-  const buffer = cfg.bufferMinutes * MINUTE;
   let busy;
   try {
-    ({ busy } = await deps.freeBusy(plus(b.start_utc, -buffer), plus(b.end_utc, buffer)));
+    ({ busy } = await slotFreeBusy(b, cfg, deps));
   } catch {
     return rollback("google_freebusy");
   }
@@ -368,6 +376,14 @@ async function settleConfirmed(sql, b, { now, cfg, deps, meetLink }) {
 export async function recoverConfirm(sql, b, { now, cfg, deps }) {
   const existing = await deps.getEvent(b.id);
   if (existing) return settleConfirmed(sql, b, { now, cfg, deps, meetLink: existing.meetLink ?? null });
+  // Nothing was made, and time has passed: check the slot again, as a live confirm does.
+  const { busy } = await slotFreeBusy(b, cfg, deps);
+  // ---- Synchronous from here to the decline. No await. ----
+  if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
+  const check = deps.checkSlot({ ...confirmSlot(b, cfg, now), busy, bookings: meetings(sql) });
+  // The guest may have been told their booking was being finished. Nothing new is sent to them:
+  // no meeting, no "Booked" email, and get_booking_status shows declined.
+  if (!check.ok) return declineConfirm(sql, b.id, check.reason, now.toISOString());
   const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
