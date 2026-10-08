@@ -153,7 +153,7 @@ INFO re-insert of a deleted id: 409
 ALL PASS
 ```
 
-Checked by hand in the guest inbox: the invite arrived, its organiser shows as "Patrick, hello@patrickjv.com" (the personal address isn't visible), and it has a working "Join with Google Meet" link. The cancellation arrived after the delete.
+Checked by hand in the guest inbox: the invite arrived, its organiser shows as "Patrick, hello@patrickjv.com" (the personal address isn't visible), and it has a working "Join with Google Meet" link. The delete returned 204; arrival of the cancellation email wasn't checked.
 
 **Findings beyond pass/fail:**
 
@@ -164,4 +164,4 @@ Checked by hand in the guest inbox: the invite arrived, its organiser shows as "
 - **Scope classification** (Console): `calendar.freebusy` non-sensitive, `calendar.events.owned` sensitive, none restricted.
 - **The spike's first version passed a check on missing data:** with free/busy failing, "Free event doesn't block" passed vacuously. `spike.mjs` now skips the blocking checks when free/busy returns an error.
 
-**The Testing refresh token** was shown in a chat transcript during the spike. It's revoked after the run, and the production token is created fresh once the app is published.
+**The Testing refresh token** was shown in a chat transcript during the spike. It must be revoked (`POST https://oauth2.googleapis.com/revoke`). The production token is created fresh once the app is published.
