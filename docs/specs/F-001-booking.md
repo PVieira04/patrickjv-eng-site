@@ -11,7 +11,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | F-001 |
-| Status | Draft |
+| Status | Approved |
 | Phase | v1 |
 | Owner | @PVieira04 |
 | Created | 2026-10-08 |
@@ -160,6 +160,7 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 - [ ] **(US-8)** When the global cap is reached, the page and tools say "Booking is closed for today" and Patrick gets one alert email (to `INTRO_TO_ADDRESS`, via the existing `send_email` binding) that day, so a cap exhausted by abuse doesn't go unnoticed.
 - [ ] **(US-8)** The WAF flood rule covers the booking API path as well as `/mcp`.
 - [ ] **(US-8)** `BOOKING_ENABLED=false` makes every booking-write path refuse and the page say booking is closed; read tools still work.
+- [ ] **(US-8)** Ships dark: `BOOKING_ENABLED` is `"false"` in `mcp/wrangler.jsonc` until the launch steps are done. `/book` is not in the nav or sitemap until launch. Health reports `bookingEnabled` and `bookingReady` separately, and the smoke check passes when booking is disabled, failing only when it's enabled but not ready.
 
 ### Non-functional
 
@@ -174,6 +175,10 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 ---
 
 ## Technical
+
+### Code layout
+
+Flat files in `mcp/` so the existing `npm test` glob (`mcp/*.test.mjs`) picks the tests up: `booking-config.js` (config validation, London time, slots, availability rules), `booking-store.js` (SQLite schema and the booking state machine with injected Google and email calls), `booking-google.js` (Calendar client), `booking-email.js` (Resend client and email texts). `handler.js` and `index.js` wire them in. The build's `npm test` step is what fails a bad `booking.json`.
 
 ### Where it runs
 
@@ -235,6 +240,8 @@ CREATE TABLE bookings (
   source        TEXT NOT NULL,           -- page | mcp | webmcp
   guest_name    TEXT NOT NULL,
   guest_email   TEXT NOT NULL,
+  ip_key        TEXT NOT NULL,           -- HMAC of the client IP (/64), for the one-live-hold rule
+  email_key     TEXT NOT NULL,           -- HMAC of the lower-cased email, same
   note          TEXT,                    -- ≤500 chars, plain text
   event_id      TEXT,                    -- Google event ID once confirmed
   hold_expires  TEXT,                    -- for pending only
