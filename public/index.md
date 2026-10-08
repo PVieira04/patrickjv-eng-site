@@ -2,7 +2,7 @@
 
 Platform engineer in London (not the footballer of the same name). Canonical page: https://patrickjv.com/
 
-**Platform Engineer** · London, United Kingdom
+**AI Platform Engineer** · London, United Kingdom
 
 > I build the platforms, infrastructure and identity systems that let a small team ship like a large one — with AI agents held to the same standard as people.
 

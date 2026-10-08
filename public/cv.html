@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Patrick Vieira — CV</title>
-<meta name="description" content="CV of Patrick Vieira, Lead Platform Engineer, London.">
+<meta name="description" content="CV of Patrick Vieira, AI Platform Engineer, London.">
 <link rel="canonical" href="https://patrickjv.com/cv">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
@@ -55,27 +55,28 @@ dd { margin: 0; }
 <main class="sheet">
   <header>
     <h1>Patrick Vieira</h1>
-    <p class="role">Lead Platform Engineer · London</p>
+    <p class="role">AI Platform Engineer · London</p>
     <p class="contact"><a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a> · <a href="https://patrickjv.com/">patrickjv.com</a> · <a href="https://www.linkedin.com/in/patrickvieira/">linkedin.com/in/patrickvieira</a> · <a href="https://github.com/PVieira04">github.com/PVieira04</a></p>
   </header>
   <section>
     <h2>Profile</h2>
-    <p>I lead platform engineering at a small London fintech, reporting to the CEO. I joined in 2023 to run IT and operations, grew the role into platform engineering, and now own architecture, infrastructure, identity and security, and carry production. I build the developer platform the team ships with and hold AI-written code to the same standard as anyone's: a written spec first, tests first, gated by CI and reviewed by a model from a second vendor.</p>
+    <p>I build AI platforms: the developer platform a small London fintech ships with, and the infrastructure, identity and security underneath it. Implementation is agent-drafted inside a delivery system I designed and enforce, and I am accountable for everything that merges. I joined in 2023 to run IT and operations, replaced the managed IT provider with in-house systems, then built the engineering function; I report to the CEO and carry production.</p>
   </section>
   <section>
     <h2>Experience</h2>
     <article>
-      <div class="row"><h3>Lead Platform Engineer<span class="org">, Altimist Ltd</span></h3><span class="dates">Aug 2023 – present</span></div>
+      <div class="row"><h3>Lead Platform Engineer<span class="org">, Altimist Ltd (contract title: IT &amp; Operations Manager)</span></h3><span class="dates">Aug 2023 – present</span></div>
       <ul>
-        <li>Founded and run the internal developer platform for AI-assisted delivery, built around a golden path from spec to merge: a Claude Code plugin and an engineering-standards baseline rolled out to about 26 repositories by automated pull request, with new repositories brought under golden-path governance as code. Specs before code, tests first, a gate that stops an agent finishing until typecheck, lint and tests pass, and adversarial review by a second vendor's model, which is also how I review the team's work. Three colleagues now extend it (40+ of their pull requests merged since July 2026).</li>
-        <li>One of four engineers on the company's AI assistant product, now in pre-launch: scaffolded it (Next.js on Cloudflare Workers) and built its security baseline and its safety escalation to a person.</li>
-        <li>Wrote the product's release pack: a timed database restore drill (recovered in 2 min 15 s with no data lost), a rehearsed production rollback and de-duplicated on-call alerting. Diagnosed a public-site outage caused by an origin certificate that could not renew, and moved the domain to edge-served routing so it cannot recur.</li>
-        <li>Built the first version of the company's identity provider: WebAuthn passkeys on did:web with W3C Verifiable Credentials, the sign-in for internal applications since May 2026, with client libraries published on npm. Handed it over to a colleague in August 2026.</li>
-        <li>Run cloud and SaaS infrastructure as code through Terraform Cloud (plan on pull request, apply on merge, daily drift detection) across GitHub, Cloudflare, Kafka, Databricks and observability. Moved all hosting to Cloudflare Workers and retired Vercel (Sep 2026); removing Vercel's per-seat charges cut the monthly hosting bill roughly tenfold.</li>
-        <li>Put Microsoft 365 and access security under code: phishing-resistant MFA for admins, a geo-fenced sign-in policy piloted in report-only mode before enforcement, a scheduled quarterly compliance evidence pack, and leaver tooling that suspends access in every system and verifies nothing survives. Moved AWS from root-account use to IAM Identity Center.</li>
+        <li>Joined to run IT and operations and brought IT in-house, replacing the managed IT provider (£5k+ a month): built the office network (hardware and configuration), set the security baseline, and automated joiner and leaver processes.</li>
+        <li>With no platform or engineering function in place, built the developer platform for AI-assisted delivery that everyone at the company now uses daily. Since June 2026 it has been the golden path from spec to merge: a Claude Code plugin and a versioned standards baseline rolled out to about 26 repositories by automated pull request. Three colleagues extend it (40+ of their pull requests merged).</li>
+        <li>Agent-drafted, human-accountable delivery: a written spec and acceptance tests first, a gate that blocks an agent from finishing until typecheck, lint and tests pass, and adversarial review by a second vendor's model before I approve and merge. 1,400+ merged pull requests across 40 repositories in ten months.</li>
+        <li>One of four engineers on the company's AI assistant product, now in pre-launch: scaffolded it (Next.js on Cloudflare Workers), built its security baseline, and wrote the rules that let its AI triage hand a case to a person, including fixing an instruction revision that talked the model out of escalating.</li>
+        <li>Wrote the product's release pack: a timed database restore drill (recovered in 2 min 15 s with no data lost), a rehearsed production rollback and de-duplicated on-call alerting. Diagnosed a public-site outage caused by an origin certificate that could not renew, and removed the dependency on it by serving the domain from the edge.</li>
+        <li>Building the Software Factory, an agent execution and evaluation platform on the same golden path: sandboxed runs with per-run credentials, queue-based dispatch with a dead-letter queue and transactional outbox, review stations against written criteria and an automatic revert watcher. Running in staging; no production runs yet.</li>
+        <li>Built the first version of the company's identity provider (WebAuthn passkeys on did:web with W3C Verifiable Credentials), the sign-in for internal applications since May 2026, with client libraries published on npm. Handed it over to a colleague in August 2026.</li>
+        <li>Run cloud and SaaS infrastructure as code through Terraform Cloud (plan on pull request, apply on merge, daily drift detection): authoritative GitHub access, provider credentials read ephemerally from 1Password, production and staging keys separated. The Microsoft 365 tenant is code too: phishing-resistant admin MFA, a geo-fenced sign-in policy piloted in report-only mode first, and leaver tooling that suspends access in every system and verifies it was removed. Consolidated hosting onto Cloudflare Workers and retired Vercel (Sep 2026).</li>
         <li>Built an on-premises Python speech pipeline on an NVIDIA DGX Spark (NeMo transcription, diarisation, voiceprint speaker naming) for audio that cannot leave the building; it feeds searchable, human-verified records for decision and action tracking.</li>
-        <li>Building the Software Factory, an agent execution and evaluation platform with the same golden path as its backbone: sandboxed runs with per-run credentials, durable queue-driven dispatch, review stations against written criteria and an automatic revert watcher. Running in staging; no production runs yet.</li>
-        <li>Set technical direction through architecture decision records (44 of the company's 61) and wrote the onboarding guides and handovers colleagues work from. 1,400+ merged pull requests across 40 repositories in ten months, including agent-assisted work.</li>
+        <li>Set technical direction through 44 of the company's 61 architecture decision records, and wrote the handovers and onboarding guides colleagues work from.</li>
       </ul>
     </article>
     <article>
@@ -95,9 +96,9 @@ dd { margin: 0; }
   <section>
     <h2>Selected personal projects</h2>
     <ul>
-      <li><b>patrickjv.com</b>: One content file generates the page, schema.org data, llms.txt, Markdown and WebMCP tools, plus a remote MCP server listed on the MCP Registry; Cloudflare Workers, 110+ tests and a production smoke monitor.</li>
+      <li><b>patrickjv.com</b>: Personal site and test bed for the golden path: one content file generates its machine-readable copies (schema.org, llms.txt, Markdown, WebMCP tools) and checks the hand-written page against them; a remote MCP server listed on the MCP Registry; 110+ tests and a production smoke monitor. Source public on GitHub.</li>
       <li><b>Writing (patrickjv.com/writing)</b>: Holding agent-written code to the same standard as anyone's; Rehearse the restore, time the rollback.</li>
-      <li><b>Marine forecast service</b>: A Python service, running unattended since February 2026, that emails twice-daily ensemble forecasts to a yacht at sea, with database migrations, a watchdog and delivery tracking.</li>
+      <li><b>Marine forecast service</b>: A Python service maintained since February 2026 that emails twice-daily ensemble forecasts to a yacht at sea, with idempotent database migrations, retry handling, a watchdog and delivery monitoring. Public snapshot on GitHub.</li>
     </ul>
   </section>
   <section>
@@ -105,7 +106,7 @@ dd { margin: 0; }
     <dl>
       <dt>Programming</dt><dd>TypeScript, Python, SQL, PowerShell</dd>
       <dt>Platform and delivery</dt><dd>internal developer platforms, golden paths, developer experience, CI/CD (GitHub Actions), GitOps, infrastructure as code, test-driven development, code review, release and rollback practice, architecture decision records</dd>
-      <dt>AI</dt><dd>agentic AI, AI agents, Claude Code, Model Context Protocol (MCP), LLM evaluation (review gates), speech recognition (NVIDIA NeMo)</dd>
+      <dt>AI</dt><dd>agentic engineering, AI agents, Claude Code, Model Context Protocol (MCP), LLM evaluation (review gates), speech recognition (NVIDIA NeMo)</dd>
       <dt>Infrastructure</dt><dd>Cloudflare (Workers, Containers, Queues, Durable Objects, R2), Terraform Cloud, Neon Postgres, AWS (organisation and IAM), Microsoft 365 and Entra ID</dd>
       <dt>Identity and security</dt><dd>WebAuthn passkeys, did:web, Verifiable Credentials, conditional access, identity and access management, secrets management (1Password)</dd>
     </dl>
