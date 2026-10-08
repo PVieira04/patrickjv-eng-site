@@ -106,3 +106,41 @@ test("migrate is idempotent", () => {
   const tables = sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").toArray().map((r) => r.name);
   assert.deepEqual(tables, ["bookings", "quota", "tokens"]);
 });
+
+// ---- Caps -----------------------------------------------------------------------------------
+
+const DAY = "2026-10-19";
+const reserve = (sql, ipKey, emailKey, day = DAY) => store.reserveQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+
+test("caps: 4 requests per IP a day, then refused as ip", () => {
+  const { sql } = setup();
+  for (let i = 0; i < 4; i++) assert.equal(reserve(sql, "ipA", `e${i}`).ok, true);
+  assert.deepEqual(reserve(sql, "ipA", "e9"), { ok: false, which: "ip" });
+  assert.equal(reserve(sql, "ipB", "e9").ok, true, "another IP is unaffected");
+});
+
+test("caps: 2 requests per email a day, then refused as email", () => {
+  const { sql } = setup();
+  assert.equal(reserve(sql, "i1", "same").ok, true);
+  assert.equal(reserve(sql, "i2", "same").ok, true);
+  assert.deepEqual(reserve(sql, "i3", "same"), { ok: false, which: "email" });
+});
+
+test("caps: 10 in total a day; the 10th signals the global cap just ran out, exactly once", () => {
+  const { sql } = setup();
+  const results = Array.from({ length: 10 }, (_, i) => reserve(sql, `i${i}`, `e${i}`));
+  assert.ok(results.every((r) => r.ok));
+  assert.deepEqual(results.map((r) => !!r.globalJustExhausted), [...Array(9).fill(false), true]);
+  // Global is checked first: a request that would also break the IP cap is reported as global,
+  // and later refusals never signal again.
+  for (let i = 0; i < 3; i++) assert.deepEqual(reserve(sql, "i0", `x${i}`), { ok: false, which: "global" });
+});
+
+test("caps: a refused request reserves nothing; reservations are never refunded; a new day starts at zero", () => {
+  const { sql } = setup();
+  for (let i = 0; i < 4; i++) reserve(sql, "ipA", `e${i}`);
+  reserve(sql, "ipA", "e9"); // refused for ip: must not use up e9's or the global allowance
+  assert.equal(sql.exec("SELECT n FROM quota WHERE day = ? AND kind = 'global'", DAY).one().n, 4);
+  assert.equal(sql.exec("SELECT count(*) c FROM quota WHERE key = 'e9'").one().c, 0);
+  assert.equal(reserve(sql, "ipA", "e0", "2026-10-20").ok, true);
+});
