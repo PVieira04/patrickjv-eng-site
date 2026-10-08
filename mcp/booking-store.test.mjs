@@ -144,3 +144,81 @@ test("caps: a refused request reserves nothing; reservations are never refunded;
   assert.equal(sql.exec("SELECT count(*) c FROM quota WHERE key = 'e9'").one().c, 0);
   assert.equal(reserve(sql, "ipA", "e0", "2026-10-20").ok, true);
 });
+
+// ---- Requests make holds --------------------------------------------------------------------
+
+const HOLD_EXPIRES = "2026-10-19T11:00:00.000Z";
+
+for (const source of ["page", "mcp", "webmcp"]) {
+  test(`request (${source}): holds the slot for 2 hours, creates no event, emails confirm and decline links`, async () => {
+    const t = setup();
+    const r = await request(t, { source });
+    assert.match(r.booking_id, /^[0-9a-f]{32}$/);
+    assert.deepEqual(r, { booking_id: r.booking_id, status: "pending_confirmation", hold_expires: HOLD_EXPIRES });
+    assert.equal(t.calls.inserted.length, 0, "no Google event");
+    assert.equal(t.calls.freeBusy, 1, "checked live free/busy");
+    const b = row(t, r.booking_id);
+    assert.equal(b.status, "pending_confirmation");
+    assert.equal(b.source, source);
+    assert.equal(b.start_utc, SLOT);
+    assert.equal(b.end_utc, "2026-10-21T10:30:00.000Z");
+    assert.equal(b.hold_expires, HOLD_EXPIRES);
+    assert.equal(b.event_id, null);
+    const [mail] = t.calls.emails;
+    assert.equal(t.calls.emails.length, 1);
+    assert.equal(mail.kind, "hold");
+    assert.equal(mail.booking.email, "jane@example.com");
+    assert.equal(mail.booking.holdExpires, HOLD_EXPIRES);
+    assert.ok(mail.links.confirmUrl.startsWith(ACT) && mail.links.declineUrl.startsWith(ACT));
+    const tokens = t.sql.exec("SELECT * FROM tokens ORDER BY action").toArray();
+    assert.deepEqual(tokens.map((k) => [k.action, k.expires_at, k.used_at]), [["confirm", HOLD_EXPIRES, null], ["decline", HOLD_EXPIRES, null]]);
+    // Only hashes are stored: the hash of each emailed token is there, the token itself nowhere.
+    const dump = JSON.stringify(t.sql.exec("SELECT * FROM tokens").toArray()) + JSON.stringify(t.sql.exec("SELECT * FROM bookings").toArray());
+    for (const url of [mail.links.confirmUrl, mail.links.declineUrl]) {
+      assert.ok(!dump.includes(tokenOf(url)));
+      const h = await store.hashToken(tokenOf(url));
+      assert.ok(tokens.some((k) => k.hash === h));
+    }
+  });
+}
+
+test("status: by booking ID, with no name, email or note", async () => {
+  const t = setup();
+  const { booking_id } = await request(t);
+  assert.deepEqual(store.getStatus(t.sql, booking_id), { status: "pending_confirmation", status_reason: null, start: SLOT, end: "2026-10-21T10:30:00.000Z", type: "consultation" });
+  assert.equal(store.getStatus(t.sql, store.newId()), null);
+});
+
+test("request: a refused cap returns 429-style error before any Google call or email", async () => {
+  const t = setup();
+  for (let i = 0; i < 4; i++) reserve(t.sql, "busyIp", `x${i}`, DAY);
+  const r = await request(t, {}, { ipKey: "busyIp" });
+  assert.deepEqual(r, { error: "rate_limited", reason: "ip" });
+  assert.equal(t.calls.freeBusy, 0);
+  assert.equal(t.calls.emails.length, 0);
+});
+
+test("request: the one that uses up the global cap carries the alert signal", async () => {
+  const t = setup();
+  for (let i = 0; i < 9; i++) reserve(t.sql, `p${i}`, `q${i}`, DAY);
+  const r = await request(t);
+  assert.equal(r.status, "pending_confirmation");
+  assert.equal(r.globalJustExhausted, true);
+});
+
+test("request: a slot that is busy in a calendar, or not bookable, is refused and nothing is held", async () => {
+  const t = setup({ busy: [{ start: "2026-10-21T10:30:00.000Z", end: "2026-10-21T11:00:00.000Z" }] });
+  assert.deepEqual(await request(t), { error: "slot_taken", reason: "busy" });
+  assert.deepEqual(await request(t, { start: "2026-10-19T15:00:00.000Z" }), { error: "invalid_slot", reason: "notice" });
+  assert.deepEqual(await request(t, { type: "nope" }), { error: "invalid_slot", reason: "unknown_type" });
+  assert.equal(t.calls.freeBusy, 1, "invalid slots never reach Google");
+  assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
+  assert.equal(t.calls.emails.length, 0);
+});
+
+test("request: free/busy failing returns unavailable and holds nothing", async () => {
+  const t = setup();
+  t.deps.freeBusy = async () => { await tick(); throw new Error("google down"); };
+  assert.deepEqual(await request(t), { error: "unavailable" });
+  assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
+});
