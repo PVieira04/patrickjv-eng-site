@@ -7,7 +7,7 @@ import { checkSlot, availableSlots } from "./booking-config.js";
 import {
   migrate, requestBooking, act, cancelByAgent, peekToken, getStatus, liveBookings, expireHolds, prune, nextAlarmAt, recoverConfirm,
 } from "./booking-store.js";
-import { createGoogle, assertNoErrors } from "./booking-google.js";
+import { createGoogle, assertNoErrors, meetLinkOf } from "./booking-google.js";
 import { createMailer, holdEmail, bookedEmail, cancelRequestEmail } from "./booking-email.js";
 
 export const ACT_URL = "https://patrickjv.com/api/booking/act";
@@ -54,6 +54,8 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     actUrl: (token) => `${ACT_URL}?t=${token}`,
     day: (iso) => iso.slice(0, 10), // quota days are UTC days, like request_intro's
     insertEvent: (e) => google.insertEvent(e),
+    // Null if there is no such event; otherwise just its Meet link (all the store needs).
+    getEvent: async (id) => { const ev = await google.getEvent(id); return ev && { meetLink: meetLinkOf(ev) }; },
     deleteEvent: (id) => google.deleteEvent(id),
     ownerEmail: env.BOOKING_OWNER_EMAIL,
   };

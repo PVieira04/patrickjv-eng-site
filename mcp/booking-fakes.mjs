@@ -34,7 +34,7 @@ export function fakeFetch(opts = {}) {
     }
     const m = u.pathname.match(/\/calendars\/primary\/events(?:\/([^/]+))?$/);
     if (m && (init.method || "GET") === "POST") {
-      if (opts.fail?.insert) return json(500, { error: { errors: [{ reason: "backendError" }] } });
+      if (opts.fail?.insert) return json(403, { error: { errors: [{ reason: "rateLimitExceeded" }] } }); // refused: nothing made
       if (opts.insertStatus === 409 || events.has(body.id)) return json(409, { error: { errors: [{ reason: "duplicate" }] } });
       const ev = { ...body, hangoutLink: "https://meet.google.com/abc-defg-hij", conferenceData: { createRequest: { status: { statusCode: "success" } } } };
       events.set(body.id, ev);

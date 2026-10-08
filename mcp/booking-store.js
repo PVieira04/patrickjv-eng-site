@@ -304,8 +304,14 @@ async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
   try {
     // 409 (already created by an earlier attempt) comes back as created:false: still a success.
     event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail));
-  } catch {
-    return rollback("google_insert");
+  } catch (e) {
+    // Google refused (a 4xx, the token refresh included): nothing was made.
+    if (e?.status >= 400 && e.status < 500) return rollback("google_insert");
+    // A timeout, network error or 5xx may have come after Google made the event. Rolling back
+    // could orphan a meeting, so the row stays confirming, its slot held and its link spent, and
+    // the alarm's recovery settles it once it can see whether the event exists.
+    logFailure("google_insert_unknown");
+    return { result: "confirming" };
   }
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
@@ -356,10 +362,13 @@ async function settleConfirmed(sql, b, { now, cfg, deps, meetLink }) {
   return { result: "confirmed" };
 }
 
-// Alarm work: finishes a confirm cut off mid-call (row left in confirming). Throws if Google
-// fails, leaving the row for the next alarm.
+// Alarm work: finishes a confirm that was cut off, or whose insert had no clear answer (row left
+// in confirming). First asks Google whether the event exists: if it does, the booking is
+// confirmed. Throws if Google fails, leaving the row for the next alarm.
 export async function recoverConfirm(sql, b, { now, cfg, deps }) {
-  const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made before the cut
+  const existing = await deps.getEvent(b.id);
+  if (existing) return settleConfirmed(sql, b, { now, cfg, deps, meetLink: existing.meetLink ?? null });
+  const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
 
