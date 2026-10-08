@@ -196,3 +196,34 @@ test("buffers: availableSlots drops every slot within 15 minutes of busy time", 
   const held = availableSlots({ ...opts, busy: [], bookings: [{ id: "h", ...span("11:00", "11:30"), status: "pending_confirmation" }] }).map((s) => s.start);
   assert.deepEqual(held, left);
 });
+
+test("day_full: at most 3 confirmed meetings per London day; holds don't count", () => {
+  const b = (id, hhmm, status = "confirmed") => ({ id, ...span(hhmm, hhmm.replace(":00", ":30")), status });
+  const three = [b("a", "10:00"), b("b", "13:00"), b("c", "15:00")];
+  assert.deepEqual(check(SLOT, { bookings: three }), { ok: false, reason: "day_full" });
+  // Meetings being created or deleted still count; holds don't, so fake holds can't fill a day.
+  assert.deepEqual(check(SLOT, { bookings: [b("a", "10:00", "confirming"), b("b", "13:00", "cancelling"), b("c", "15:00")] }), { ok: false, reason: "day_full" });
+  assert.deepEqual(check(SLOT, { bookings: [b("a", "10:00", "pending_confirmation"), b("b", "13:00"), b("c", "15:00")] }), { ok: true });
+  assert.deepEqual(check(SLOT, { bookings: [b("a", "10:00", "cancelled"), b("b", "13:00"), b("c", "15:00")] }), { ok: true });
+  // Another day's meetings don't count.
+  assert.deepEqual(check(SLOT, { bookings: three.map((x) => ({ ...x, start: x.start.replace("11-04", "11-05"), end: x.end.replace("11-04", "11-05") })) }), { ok: true });
+  // The confirm being re-checked doesn't count itself: it would be the 3rd, not the 4th.
+  const own = { id: "me", ...span("11:00", "11:30"), status: "confirming" };
+  assert.deepEqual(check(SLOT, { bookings: [own, b("b", "13:00"), b("c", "15:00")], excludeId: "me", ignoreNotice: true }), { ok: true });
+  assert.deepEqual(check(SLOT, { bookings: [own, ...three], excludeId: "me", ignoreNotice: true }), { ok: false, reason: "day_full" });
+  // A full day offers no slots; the next day is unaffected.
+  const opts = { cfg: realConfig(), typeId: "consultation", now: NOW, busy: [], bookings: three };
+  assert.deepEqual(availableSlots({ ...opts, from: "2026-11-04", to: "2026-11-04" }), []);
+  assert.equal(availableSlots({ ...opts, from: "2026-11-05", to: "2026-11-05" }).length, 27);
+});
+
+test("day_full counts by the London day, not the UTC day", () => {
+  // Fri 23 Oct 2026 is BST: 23:00 UTC on the 22nd is already 00:00 on the 23rd in London.
+  const now = new Date("2026-10-21T12:00:00.000Z");
+  const slot = "2026-10-23T09:00:00.000Z"; // 10:00 BST
+  const at = (iso) => ({ start: iso, end: new Date(Date.parse(iso) + 30 * 60000).toISOString(), status: "confirmed" });
+  const london23 = ["2026-10-22T23:00:00.000Z", "2026-10-22T23:30:00.000Z", "2026-10-23T14:00:00.000Z"].map((iso, i) => ({ id: `l${i}`, ...at(iso) }));
+  const london22 = ["2026-10-22T21:00:00.000Z", "2026-10-22T22:00:00.000Z", "2026-10-23T14:00:00.000Z"].map((iso, i) => ({ id: `m${i}`, ...at(iso) }));
+  assert.deepEqual(check(slot, { now, bookings: london23 }), { ok: false, reason: "day_full" });
+  assert.deepEqual(check(slot, { now, bookings: london22 }), { ok: true });
+});
