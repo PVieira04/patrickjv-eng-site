@@ -525,12 +525,15 @@ test("mcp/wrangler.jsonc: booking route, BookingStore Durable Object (migration 
 
 // ---- Server metadata ----
 
-test("server.json: minor version bump for the booking tools; description fits the Registry's 100 characters", async () => {
+// The Registry entry stays at the published 1.1.0 until launch: the monitor checks that the live
+// serverInfo.version matches the Registry, so the bump (to 1.2.0, mentioning booking) is published
+// right after the deploy that sets BOOKING_ENABLED=true (docs/06 launch checklist).
+test("server.json: unchanged until launch (1.1.0, no booking); description fits the Registry's 100 characters", async () => {
   const s = JSON.parse(readFileSync(new URL("./server.json", import.meta.url), "utf8"));
-  assert.equal(s.version, "1.2.0");
+  assert.equal(s.version, "1.1.0");
   assert.ok(s.description.length <= 100, `${s.description.length}`);
-  assert.match(s.description, /booking/);
+  assert.doesNotMatch(s.description, /book/i);
   const init = await mcp(harness(), rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
-  assert.equal(init.result.serverInfo.version, "1.2.0");
+  assert.equal(init.result.serverInfo.version, s.version);
   assert.match(init.result.instructions, /book_meeting only when a person has asked/);
 });
