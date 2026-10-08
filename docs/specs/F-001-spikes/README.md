@@ -165,3 +165,19 @@ Checked by hand in the guest inbox: the invite arrived, its organiser shows as "
 - **The spike's first version passed a check on missing data:** with free/busy failing, "Free event doesn't block" passed vacuously. `spike.mjs` now skips the blocking checks when free/busy returns an error.
 
 **The Testing refresh token** was shown in a chat transcript during the spike. It must be revoked (`POST https://oauth2.googleapis.com/revoke`). The production token is created fresh once the app is published.
+
+## Launch checks (8 Oct 2026)
+
+After booking was switched on, these were checked on the live site:
+
+- **`/book`:** a booking made from a phone went through end to end.
+- **MCP:** `list_meeting_types`, `get_availability`, `book_meeting` and `get_booking_status` were called against `https://patrickjv.com/mcp`. The guest confirmed from their inbox, and the status read `confirmed`.
+- **The guest's Google invite:**
+  - organiser "Patrick, hello@patrickjv.com";
+  - guest list "hidden at organizer's request", so `guestsCanSeeOtherGuests: false` works and Patrick's personal address isn't shown;
+  - a working Meet link;
+  - the note shown as plain text.
+- **WebMCP:** the live homepage was loaded in headless Chromium with a recording stand-in for `document.modelContext`. All ten tools registered once `/api/booking/types` reported `enabled`, and the read and status tools returned live data. This covers the page script and the API, not Chrome's own experimental WebMCP.
+- **Found and fixed:**
+  - `hold_expires` had a fractional offset (`+00:59.997…`) because of milliseconds. Fixed in #5.
+  - The invite read "1pm (Coordinated Universal Time)" for 14:00 BST. Events now carry `timeZone: Europe/London`. Fixed in #6.
