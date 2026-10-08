@@ -59,3 +59,80 @@ export function reserveQuota(sql, { day, ipKey, emailKey, caps }) {
   }
   return g + 1 === caps.globalPerDay ? { ok: true, globalJustExhausted: true } : { ok: true };
 }
+
+// Redacted failure log, as handler.js's logFailure: an event name and the subsystem only.
+const logFailure = (subsystem) => console.error(JSON.stringify({ event: "booking_failure", subsystem }));
+
+const MINUTE = 60e3, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
+const plus = (iso, ms) => new Date(Date.parse(iso) + ms).toISOString();
+
+// Bookings that occupy their slot: everything in progress or confirmed, and holds not yet lapsed
+// (by the clock, whether or not the alarm has marked them expired yet).
+export function liveBookings(sql, now) {
+  return sql.exec(
+    `SELECT id, start_utc AS start, end_utc AS "end", status FROM bookings
+     WHERE status IN ('confirming', 'confirmed', 'cancelling')
+        OR (status = 'pending_confirmation' AND hold_expires > ?)`,
+    now.toISOString(),
+  ).toArray();
+}
+
+// What the email templates need; the only place guest details leave the store.
+const forEmail = (b) => ({
+  id: b.id, type: b.type, start: b.start_utc, end: b.end_utc, name: b.guest_name, email: b.guest_email,
+  note: b.note, source: b.source, holdExpires: b.hold_expires,
+});
+
+// Slot-check reasons that mean "someone or something else has it" rather than "not a valid slot".
+const TAKEN = new Set(["busy", "taken", "day_full"]);
+const slotError = (reason) => ({ error: TAKEN.has(reason) ? "slot_taken" : "invalid_slot", reason });
+
+export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, deps }) {
+  const nowIso = now.toISOString();
+  const quota = reserveQuota(sql, { day: deps.day(nowIso), ipKey, emailKey, caps: cfg.caps });
+  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
+  const flag = quota.globalJustExhausted ? { globalJustExhausted: true } : {};
+  const type = cfg.meetingTypes.find((t) => t.id === input.type);
+  const slot = { cfg, typeId: input.type, start: input.start, now };
+  // Cheap pre-check, so an invalid or already-taken slot never reaches Google.
+  const pre = deps.checkSlot({ ...slot, busy: [], bookings: liveBookings(sql, now) });
+  if (!pre.ok) return { ...slotError(pre.reason), ...flag };
+
+  const end = plus(input.start, type.minutes * MINUTE);
+  const buffer = cfg.bufferMinutes * MINUTE;
+  let busy;
+  try {
+    ({ busy } = await deps.freeBusy(plus(input.start, -buffer), plus(end, buffer)));
+  } catch {
+    logFailure("google_freebusy");
+    return { error: "unavailable", ...flag };
+  }
+  const [confirm, decline] = await Promise.all([newToken(), newToken()]);
+  const id = newId();
+  const holdExpires = new Date(now.getTime() + cfg.holdHours * HOUR).toISOString();
+
+  // ---- Claim: synchronous from here to the inserts. No await. ----
+  const check = deps.checkSlot({ ...slot, busy, bookings: liveBookings(sql, now) });
+  if (!check.ok) return { ...slotError(check.reason), ...flag };
+  sql.exec(
+    `INSERT INTO bookings (id, type, start_utc, end_utc, status, source, guest_name, guest_email, ip_key, email_key, note, hold_expires, created_at, delete_after)
+     VALUES (?, ?, ?, ?, 'pending_confirmation', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, input.type, input.start, end, input.source, input.name, input.email, ipKey, emailKey, input.note ?? null,
+    holdExpires, nowIso, plus(holdExpires, cfg.retentionDays * DAY),
+  );
+  for (const [t, action] of [[confirm, "confirm"], [decline, "decline"]]) {
+    sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, ?, ?)", t.hash, id, action, holdExpires);
+  }
+  // ---- End of claim. ----
+
+  const booking = sql.exec("SELECT * FROM bookings WHERE id = ?", id).one();
+  await deps.sendEmail("hold", forEmail(booking), { confirmUrl: deps.actUrl(confirm.token), declineUrl: deps.actUrl(decline.token) });
+  return { booking_id: id, status: "pending_confirmation", hold_expires: holdExpires, ...flag };
+}
+
+// A booking's state for whoever holds its ID (a bearer secret): never the guest's details.
+export function getStatus(sql, bookingId) {
+  return sql.exec(
+    `SELECT status, status_reason, start_utc AS start, end_utc AS "end", type FROM bookings WHERE id = ?`, bookingId,
+  ).toArray()[0] ?? null;
+}
