@@ -641,6 +641,18 @@ const bookingOps = {
   },
 };
 
+// Health for booking: bookingEnabled is the kill switch; bookingReady says booking would work if
+// switched on: every secret set (QUOTA_SALT included), and, only then, the BookingStore answers
+// and a fresh Google token refresh succeeds (cached in the store for a minute). Independent of
+// the flag, so readiness can be checked before launch. Booleans only.
+async function bookingReadiness(env, deps) {
+  let ready = false;
+  if (bookingConfigured(env)) {
+    try { ready = (await deps.booking().health()).google === true; } catch { logFailure("booking_store"); }
+  }
+  return { bookingEnabled: bookingEnabled(env), bookingReady: ready };
+}
+
 // Patrick's alert when the global cap is first reached (the store reports that once a day).
 async function sendCapAlert(ctx) {}
 
@@ -887,7 +899,7 @@ export async function handle(request, env, deps) {
       // A vendor-prefixed custom method, not a tool (clients would list a tool to users) and not an
       // extension of ping (whose result MUST be empty). Other servers answer it with -32601.
       case "patrickjv/health":
-        return ok(introReadiness(env));
+        return ok({ ...introReadiness(env), ...(await bookingReadiness(env, deps)) });
       case "tools/list":
         return ok({ tools: tools() });
       case "tools/call": {

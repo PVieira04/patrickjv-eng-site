@@ -83,6 +83,7 @@ const PAGES = [
   ["/favicon.ico", ["image/x-icon", "image/vnd.microsoft.icon"], "public/favicon.ico"],
   ["/cv", ["text/html"], "public/cv.html"],
   ["/cv.pdf", ["application/pdf"], "public/cv.pdf"],
+  ["/privacy", ["text/html"], "public/privacy.html"],
   ["/writing/", ["text/html"], "public/writing/index.html"],
   // Every post, as HTML and as Markdown.
   ...readdirSync(new URL("writing/", import.meta.url)).filter((f) => f.endsWith(".md")).sort().flatMap((f) => {
@@ -250,8 +251,10 @@ if (flags.has("--mcp")) {
     return expect(result?.isError !== true && same, `${items?.length ?? 0} items${same ? "" : ", differ from content.json"}${result?.isError ? ", isError" : ""}`);
   });
   // Readiness, not delivery: request_intro's secret, email binding, quota Durable Object and rate
-  // limits are configured. Read-only and sends nothing; delivery itself is never exercised here.
-  await check("mcp patrickjv/health -> introReady (salt, email, quota, rate limits configured)", async () => {
+  // limits are configured; and if booking is switched on, bookingReady (its secrets set, a Google
+  // token refresh works, the BookingStore answers). Booking switched off passes. Read-only and
+  // sends nothing; delivery itself is never exercised here.
+  await check("mcp patrickjv/health -> introReady, and bookingReady if booking is enabled", async () => {
     const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
     if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     const v = healthVerdict(res.json.result);
