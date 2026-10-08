@@ -178,7 +178,9 @@ export function availableSlots({ cfg, typeId, now, from, to, busy, bookings }) {
 
 // Agent-facing form of a stored UTC time: local wall time in tz with its offset, to the second.
 export function withOffset(iso, tz) {
-  const ms = Date.parse(iso);
+  // To the whole second: the zone offset is found by comparing wall-clock fields (seconds at most),
+  // so leftover milliseconds would turn it into a fraction of a minute.
+  const ms = Math.floor(Date.parse(iso) / 1000) * 1000;
   const off = offsetAt(ms, tz);
   const a = Math.abs(off);
   const pad = (n) => String(n).padStart(2, "0");
