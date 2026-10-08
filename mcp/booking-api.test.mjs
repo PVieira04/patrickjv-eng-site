@@ -501,3 +501,15 @@ test("mcp/wrangler.jsonc: booking route, BookingStore Durable Object (migration 
   for (const k of BOOKING_SECRETS.filter((k) => k !== "BOOKING_FROM")) assert.match(text, new RegExp(`wrangler secret put ${k} -c mcp/wrangler\\.jsonc`), k);
   assert.doesNotMatch(text, /@gmail\.com|@googlemail\.com/, "calendar IDs are secrets");
 });
+
+// ---- Server metadata ----
+
+test("server.json: minor version bump for the booking tools; description fits the Registry's 100 characters", async () => {
+  const s = JSON.parse(readFileSync(new URL("./server.json", import.meta.url), "utf8"));
+  assert.equal(s.version, "1.2.0");
+  assert.ok(s.description.length <= 100, `${s.description.length}`);
+  assert.match(s.description, /booking/);
+  const init = await mcp(harness(), rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
+  assert.equal(init.result.serverInfo.version, "1.2.0");
+  assert.match(init.result.instructions, /book_meeting only when a person has asked/);
+});
