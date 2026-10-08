@@ -222,7 +222,7 @@ test("GET act: unknown or used links are 404, expired links are 410, and the pag
   const t = confirmToken(h);
   const unknown = await h.call("/api/booking/act?t=nope");
   assert.equal(unknown.status, 404);
-  assert.match(await unknown.text(), /isn't valid/);
+  assert.match(await unknown.text(), /<h1>This link isn(&#39;|')t valid<\/h1>/);
   assert.equal((await h.call("/api/booking/act")).status, 404);
   assert.equal((await h.call(`/api/booking/act?t=${"x".repeat(500)}`)).status, 404);
   h.clock.now = new Date(NOW.getTime() + 3 * 3600e3);
