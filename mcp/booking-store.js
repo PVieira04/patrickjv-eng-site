@@ -44,19 +44,29 @@ export async function newToken() {
   return { token, hash: await hashToken(token) };
 }
 
-// Daily caps, reserved before any Google call or email and never refunded (fail closed), like
-// request_intro's. Synchronous, so atomic inside the Durable Object. Global is checked first, and
-// a refused request writes nothing, so refusals never eat into anyone's allowance. The request
-// that uses up the global cap says so, once a day, so Patrick can be alerted.
+// Daily caps, never refunded (fail closed), like request_intro's. Synchronous, so atomic inside
+// the Durable Object. A request refused by a cap writes nothing, so refusals never eat into
+// anyone's allowance. Per-IP and per-email counts are taken before any Google call
+// (reserveBookingQuota); the global count only when a hold email is about to be sent
+// (reserveGlobalQuota), so invalid or refused requests can't close booking for everyone.
+const quotaCount = (sql, day, kind, key) => sql.exec("SELECT n FROM quota WHERE day = ? AND kind = ? AND key = ?", day, kind, key).toArray()[0]?.n ?? 0;
+const quotaAdd = (sql, day, kind, key) => sql.exec("INSERT INTO quota (day, kind, key, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, kind, key) DO UPDATE SET n = n + 1", day, kind, key);
+
 export function reserveBookingQuota(sql, { day, ipKey, emailKey, caps }) {
-  const count = (kind, key) => sql.exec("SELECT n FROM quota WHERE day = ? AND kind = ? AND key = ?", day, kind, key).toArray()[0]?.n ?? 0;
-  const g = count("global", "");
+  // A closed day (global cap used up) is checked first, without counting.
+  if (quotaCount(sql, day, "global", "") >= caps.globalPerDay) return { ok: false, which: "global" };
+  if (quotaCount(sql, day, "ip", ipKey) >= caps.perIpPerDay) return { ok: false, which: "ip" };
+  if (quotaCount(sql, day, "email", emailKey) >= caps.perEmailPerDay) return { ok: false, which: "email" };
+  quotaAdd(sql, day, "ip", ipKey);
+  quotaAdd(sql, day, "email", emailKey);
+  return { ok: true };
+}
+
+// The request that uses up the global cap says so, once a day, so Patrick can be alerted.
+export function reserveGlobalQuota(sql, { day, caps }) {
+  const g = quotaCount(sql, day, "global", "");
   if (g >= caps.globalPerDay) return { ok: false, which: "global" };
-  if (count("ip", ipKey) >= caps.perIpPerDay) return { ok: false, which: "ip" };
-  if (count("email", emailKey) >= caps.perEmailPerDay) return { ok: false, which: "email" };
-  for (const [kind, key] of [["global", ""], ["ip", ipKey], ["email", emailKey]]) {
-    sql.exec("INSERT INTO quota (day, kind, key, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, kind, key) DO UPDATE SET n = n + 1", day, kind, key);
-  }
+  quotaAdd(sql, day, "global", "");
   return g + 1 === caps.globalPerDay ? { ok: true, globalJustExhausted: true } : { ok: true };
 }
 
@@ -104,15 +114,16 @@ function holdPending(sql, { now, emailKey, cfg }) {
 
 export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, deps }) {
   const nowIso = now.toISOString();
-  const quota = reserveBookingQuota(sql, { day: deps.day(nowIso), ipKey, emailKey, caps: cfg.caps });
-  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
-  const flag = quota.globalJustExhausted ? { globalJustExhausted: true } : {};
-  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending", ...flag };
+  const day = deps.day(nowIso);
+  // Refusals that cost nothing come first, and write no quota.
+  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending" };
   const type = cfg.meetingTypes.find((t) => t.id === input.type);
   const slot = { cfg, typeId: input.type, start: input.start, now };
   // Cheap pre-check, so an invalid or already-taken slot never reaches Google.
   const pre = deps.checkSlot({ ...slot, busy: [], bookings: liveBookings(sql, now) });
-  if (!pre.ok) return { ...slotError(pre.reason), ...flag };
+  if (!pre.ok) return slotError(pre.reason);
+  const quota = reserveBookingQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
 
   const end = plus(input.start, type.minutes * MINUTE);
   const buffer = cfg.bufferMinutes * MINUTE;
@@ -121,7 +132,7 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
     ({ busy } = await deps.freeBusy(plus(input.start, -buffer), plus(end, buffer)));
   } catch {
     logFailure("google_freebusy");
-    return { error: "unavailable", ...flag };
+    return { error: "unavailable" };
   }
   const [confirm, decline] = await Promise.all([newToken(), newToken()]);
   const id = newId();
@@ -129,9 +140,13 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
 
   // ---- Claim: synchronous from here to the inserts. No await. ----
   // Both rules again: other requests ran while free/busy was awaited.
-  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending", ...flag };
+  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending" };
   const check = deps.checkSlot({ ...slot, busy, bookings: liveBookings(sql, now) });
-  if (!check.ok) return { ...slotError(check.reason), ...flag };
+  if (!check.ok) return slotError(check.reason);
+  // Counted here, just before the hold email, and never refunded even if the email fails.
+  const global = reserveGlobalQuota(sql, { day, caps: cfg.caps });
+  if (!global.ok) return { error: "rate_limited", reason: "global" };
+  const flag = global.globalJustExhausted ? { globalJustExhausted: true } : {};
   sql.exec(
     `INSERT INTO bookings (id, type, start_utc, end_utc, status, source, guest_name, guest_email, ip_key, email_key, note, hold_expires, created_at, delete_after)
      VALUES (?, ?, ?, ?, 'pending_confirmation', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

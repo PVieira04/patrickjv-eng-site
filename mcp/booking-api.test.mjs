@@ -12,6 +12,8 @@ const cfg = JSON.parse(readFileSync(new URL("../booking.json", import.meta.url),
 const SLOT = "2026-10-21T10:00:00+01:00"; // Wed 10:00 London = 09:00 UTC
 
 const booking = (over = {}) => ({ type: "consultation", start: SLOT, name: "Jane Smith", email: "jane@example.com", note: "About platforms", ...over });
+// Separate free slots (GMT weeks, 10:00 to 16:00), for using up the global cap with real holds.
+const freeSlot = (i) => `2026-10-${26 + Math.floor(i / 7)}T${10 + (i % 7)}:00:00+00:00`;
 const confirmToken = (h, i = 0) => tokenIn(h.f.mails()[i].text, "confirm");
 
 // ---- HTTP API ----
@@ -89,9 +91,9 @@ test("POST /api/booking: slot taken is 409, a second live hold is 429 hold_pendi
   const p = await pending.json();
   assert.equal(p.error, "hold_pending");
   assert.equal(typeof p.message, "string");
-  // Use up the global cap from many addresses.
-  for (let i = 0; i < 10; i++) await h.post(booking({ email: `g${i}@example.com`, start: "2026-10-23T10:00:00+01:00" }), { ip: `192.0.2.${i}` });
-  const closed = await h.post(booking({ email: "late@example.com" }), { ip: "192.0.2.99" });
+  // Use up the global cap with holds from many addresses (only a hold email counts towards it).
+  for (let i = 0; i < 10; i++) await h.post(booking({ email: `g${i}@example.com`, start: freeSlot(i) }), { ip: `192.0.2.${i}` });
+  const closed = await h.post(booking({ email: "late@example.com", start: freeSlot(10) }), { ip: "192.0.2.99" });
   assert.equal(closed.status, 429);
   assert.match((await closed.json()).message, /closed for today/i);
 });
@@ -456,7 +458,7 @@ const decodeWords = (h) => new TextDecoder().decode(new Uint8Array(
 const mimeBody = (raw) => new TextDecoder().decode(Uint8Array.from(atob(raw.split("\r\n\r\n").slice(1).join("").replace(/\r\n/g, "")), (c) => c.charCodeAt(0)));
 async function exhaust(h) {
   const out = [];
-  for (let i = 0; i < 12; i++) out.push(await h.post(booking({ email: `g${i}@example.com`, start: "2026-10-23T10:00:00+01:00" }), { ip: `192.0.2.${i}` }));
+  for (let i = 0; i < 12; i++) out.push(await h.post(booking({ email: `g${i}@example.com`, start: freeSlot(i) }), { ip: `192.0.2.${i}` }));
   return out;
 }
 
