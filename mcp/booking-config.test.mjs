@@ -252,7 +252,7 @@ test("validateConfig: every bad value is refused, naming the field", () => {
     ...["slotStepMinutes", "minNoticeHours", "horizonDays", "bufferMinutes", "maxPerDay", "holdHours", "retentionDays"].flatMap((k) =>
       [0, -1, 1.5, "15", null].map((v) => [k, bad((c) => { c[k] = v; })])),
     ["caps", bad((c) => { delete c.caps; })],
-    ...["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerKey"].flatMap((k) =>
+    ...["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerEmail"].flatMap((k) =>
       [0, 2.5, "4", undefined].map((v) => [`caps.${k}`, bad((c) => { c.caps[k] = v; })])),
     ["meetingTypes", bad((c) => { c.meetingTypes = []; })],
     ["meetingTypes", bad((c) => { c.meetingTypes = {}; })],

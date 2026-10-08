@@ -12,7 +12,7 @@ const cfg = {
   hours: { days: ["mon", "tue", "wed", "thu", "fri"], start: "10:00", end: "17:00" },
   slotStepMinutes: 15, minNoticeHours: 24, horizonDays: 28, bufferMinutes: 15, maxPerDay: 3,
   holdHours: 2, retentionDays: 30,
-  caps: { perIpPerDay: 4, perEmailPerDay: 2, globalPerDay: 10, liveHoldsPerKey: 1 },
+  caps: { perIpPerDay: 4, perEmailPerDay: 2, globalPerDay: 10, liveHoldsPerEmail: 1 },
   meetingTypes: [
     { id: "consultation", title: "Consultation", minutes: 30, description: "A consultation." },
     { id: "recruiter-intro", title: "Recruiter intro", minutes: 15, description: "An intro." },
@@ -583,7 +583,7 @@ test("retention: quota counters older than two days are deleted", () => {
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
-const OPEN = { ...cfg, caps: { perIpPerDay: 1000, perEmailPerDay: 1000, globalPerDay: 1000, liveHoldsPerKey: 1 } };
+const OPEN = { ...cfg, caps: { perIpPerDay: 1000, perEmailPerDay: 1000, globalPerDay: 1000, liveHoldsPerEmail: 1 } };
 const PARALLEL = 25;
 
 test("race: 25 parallel requests for one slot (and slots overlapping it) produce exactly one hold", async () => {
@@ -597,18 +597,14 @@ test("race: 25 parallel requests for one slot (and slots overlapping it) produce
   assert.equal(t.calls.emails.length, 1);
 });
 
-// ---- One live hold per IP and per email -----------------------------------------------------
+// ---- One live hold per email (not per IP: people share connections) ------------------------
 
 const hourly = (i) => later(48 * HOUR + i * HOUR).toISOString(); // separate, non-overlapping slots
 
-test("one live hold per IP: a second request from the same IP while one is pending is hold_pending", async () => {
+test("one live hold is keyed on email only: another email from the same IP can still hold a slot", async () => {
   const t = setup();
   assert.equal((await request(t, { start: hourly(1) }, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
-  const fb = t.calls.freeBusy;
-  assert.deepEqual(await request(t, { start: hourly(3) }, { ipKey: "ipA", emailKey: "b" }), { error: "hold_pending" });
-  assert.equal(t.calls.freeBusy, fb, "refused before any Google call");
-  assert.equal(t.calls.emails.length, 1);
-  assert.equal(sqlCount(t, "SELECT count(*) c FROM quota WHERE kind = 'email' AND key = 'b'"), 1, "the refused request still used its quota");
+  assert.equal((await request(t, { start: hourly(3) }, { ipKey: "ipA", emailKey: "b" })).status, "pending_confirmation");
 });
 
 test("one live hold per email: a second request for the same email while one is pending is hold_pending", async () => {
