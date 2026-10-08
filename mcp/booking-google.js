@@ -4,6 +4,8 @@
 // It never logs: callers log the failing subsystem only, as logFailure does.
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const API = "https://www.googleapis.com/calendar/v3";
+// Every call gives up after this, so a hung Google can't hold a booking open for long.
+const TIMEOUT_MS = 20_000;
 
 // `status` is the HTTP status (0 when there was no usable response); `reason` is Google's short
 // error code (e.g. invalid_grant, notFound). Messages never carry tokens, secrets or addresses.
@@ -43,6 +45,7 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
 
   async function refresh() {
     const res = await fetch(TOKEN_URL, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }).toString(),
@@ -68,9 +71,11 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
   }
 
   async function api(path, { method = "GET", body } = {}) {
+    const token = await accessToken(); // before the timeout starts: a refresh has its own
     const res = await fetch(API + path, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       method,
-      headers: { authorization: `Bearer ${await accessToken()}`, ...(body ? { "content-type": "application/json" } : {}) },
+      headers: { authorization: `Bearer ${token}`, ...(body ? { "content-type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, ok: res.ok, body: await readJson(res) };

@@ -2,6 +2,8 @@
 // tracking), and the texts it sends. Switching provider changes only createMailer and its secret.
 // Nothing here logs: callers log the failing subsystem only, as logFailure does.
 const RESEND_URL = "https://api.resend.com/emails";
+// A send gives up after this, so a hung Resend can't hold a booking open for long.
+const TIMEOUT_MS = 15_000;
 
 // `status` is the HTTP status; `reason` is Resend's error name (e.g. rate_limit_exceeded). The
 // message never carries an address or the key: Resend's own messages can echo the recipient.
@@ -17,6 +19,7 @@ export class MailError extends Error {
 export function createMailer({ apiKey, from, fetch }) {
   async function send({ to, subject, text }) {
     const res = await fetch(RESEND_URL, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({ from, to: [to], subject, text }),

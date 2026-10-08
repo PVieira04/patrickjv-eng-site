@@ -300,31 +300,64 @@ async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
   const check = deps.checkSlot({ ...slot, busy, bookings: meetings(sql) });
   if (!check.ok) return decline(check.reason);
 
-  const type = cfg.meetingTypes.find((t) => t.id === b.type);
-  const attendees = [{ email: b.guest_email, displayName: b.guest_name }];
-  if (deps.ownerEmail) attendees.push({ email: deps.ownerEmail });
-  const description = [`${type?.title ?? b.type}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${b.note}` : ""].join("");
   let event;
   try {
     // 409 (already created by an earlier attempt) comes back as created:false: still a success.
-    event = await deps.insertEvent({ id: b.id, summary: `${type?.title ?? b.type}: ${b.guest_name}`, description, start: b.start_utc, end: b.end_utc, attendees });
+    event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail));
   } catch {
     return rollback("google_insert");
   }
+  return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
+}
 
+// The Google event for a booking, the same for a live confirm and the alarm's recovery. Attendees
+// are plain addresses: the guest's and Patrick's.
+export function buildEvent(b, cfg, ownerEmail) {
+  const title = cfg.meetingTypes.find((t) => t.id === b.type)?.title ?? b.type;
+  return {
+    id: b.id, summary: `${title}: ${b.guest_name}`,
+    description: [`${title}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${b.note}` : ""].join(""),
+    start: b.start_utc, end: b.end_utc, attendees: [b.guest_email, ownerEmail].filter(Boolean),
+  };
+}
+
+// A confirm that ended some other way meanwhile: what the caller is told.
+function outcome(sql, id) {
+  const r = sql.exec("SELECT status, status_reason FROM bookings WHERE id = ?", id).toArray()[0];
+  if (r?.status === "confirmed") return { result: "confirmed" };
+  if (r?.status === "declined") return { result: "declined", reason: r.status_reason };
+  return { error: "used" };
+}
+
+// The event exists: the booking is confirmed, its links are spent, and the guest gets a cancel
+// link. The live confirm and the alarm's recovery both end here, and the write only happens while
+// the row is still confirming, so whichever finishes first settles it and sends "Booked"; the
+// other does nothing.
+async function settleConfirmed(sql, b, { now, cfg, deps, meetLink }) {
+  const nowIso = now.toISOString();
   const cancel = await newToken();
-  sql.exec(
-    "UPDATE bookings SET status = 'confirmed', status_reason = NULL, event_id = ?, hold_expires = NULL, delete_after = ? WHERE id = ?",
+  // ---- Synchronous from here to the inserts. No await. ----
+  const won = sql.exec(
+    "UPDATE bookings SET status = 'confirmed', status_reason = NULL, event_id = ?, hold_expires = NULL, delete_after = ? WHERE id = ? AND status = 'confirming' RETURNING id",
     b.id, plus(b.end_utc, cfg.retentionDays * DAY), b.id,
-  );
+  ).toArray().length;
+  if (!won) return outcome(sql, b.id);
   sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND used_at IS NULL", nowIso, b.id);
   sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel', ?)", cancel.hash, b.id, b.start_utc);
+  // ---- End of the write. ----
   try {
-    await deps.sendEmail("booked", forEmail(b), { cancelUrl: deps.actUrl(cancel.token), meetLink: event?.meetLink ?? null });
+    await deps.sendEmail("booked", forEmail(b), { cancelUrl: deps.actUrl(cancel.token), meetLink });
   } catch {
     logFailure("email"); // Google's invite still reaches the guest.
   }
   return { result: "confirmed" };
+}
+
+// Alarm work: finishes a confirm cut off mid-call (row left in confirming). Throws if Google
+// fails, leaving the row for the next alarm.
+export async function recoverConfirm(sql, b, { now, cfg, deps }) {
+  const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made before the cut
+  return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
 
 // A booking's state for whoever holds its ID (a bearer secret): never the guest's details. With
