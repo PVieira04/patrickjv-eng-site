@@ -492,6 +492,19 @@ test("recovery: no event and the slot has since gone busy → declined slot_take
   assert.equal(t.calls.emails.length, 1, "only the hold email: nothing new is sent");
 });
 
+test("recovery: the live insert lands while recovery checks free/busy → our own event isn't mistaken for a clash", async () => {
+  const t = setup();
+  const h = await cutOff(t);
+  // First look: no event yet. By the time free/busy answers, the slow live insert has made it, so
+  // the slot reads busy because of the booking's own meeting.
+  let looks = 0;
+  t.deps.getEvent = async () => { await tick(); return looks++ === 0 ? null : { meetLink: null }; };
+  t.deps.freeBusy = async () => { await tick(); return { busy: [{ start: SLOT, end: "2026-10-21T11:00:00.000Z" }] }; };
+  assert.deepEqual(await store.recoverConfirm(t.sql, h.row, { now: later(HOUR), cfg, deps: t.deps }), { result: "confirmed" });
+  assert.equal(t.calls.inserted.length, 0, "nothing inserted: the event already exists");
+  assert.equal(row(t, h.id).status, "confirmed");
+});
+
 test("confirm: if free/busy fails, the hold is rolled back", async () => {
   const t = setup();
   const h = await hold(t);
