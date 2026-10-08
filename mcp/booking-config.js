@@ -58,6 +58,9 @@ export function candidateSlots(cfg, typeId, fromDay, toDay) {
 }
 
 const HOUR = 3600000, DAY = 24 * HOUR;
+// Bookings that hold their time: holds, and meetings that exist or are being created or deleted.
+const LIVE = new Set(["pending_confirmation", "confirming", "confirmed", "cancelling"]);
+const overlaps = (aStart, aEnd, b) => Date.parse(b.start) < aEnd && Date.parse(b.end) > aStart;
 
 // Whether `start` (any ISO 8601 form) can be booked now for a meeting type.
 export function checkSlot({ cfg, typeId, start, now, busy, bookings, ignoreNotice = false, excludeId }) {
@@ -69,6 +72,12 @@ export function checkSlot({ cfg, typeId, start, now, busy, bookings, ignoreNotic
   if (!slot) return { ok: false, reason: "not_a_slot" };
   if (!ignoreNotice && ms < now.getTime() + cfg.minNoticeHours * HOUR) return { ok: false, reason: "notice" };
   if (ms > now.getTime() + cfg.horizonDays * DAY) return { ok: false, reason: "horizon" };
+  // The meeting plus the buffer before and after must touch nothing busy or booked.
+  const buffer = cfg.bufferMinutes * 60000;
+  const from = ms - buffer, to = Date.parse(slot.end) + buffer;
+  if (busy.some((b) => overlaps(from, to, b))) return { ok: false, reason: "busy" };
+  const others = bookings.filter((b) => LIVE.has(b.status) && b.id !== excludeId);
+  if (others.some((b) => overlaps(from, to, b))) return { ok: false, reason: "taken" };
   return { ok: true };
 }
 
