@@ -310,13 +310,16 @@ async function confirmHold(sql, { tok, booking: b }, { now, cfg, deps }) {
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
 
+// Google shows an event description as HTML (the summary is plain text).
+const escapeHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 // The Google event for a booking, the same for a live confirm and the alarm's recovery. Attendees
 // are plain addresses: the guest's and Patrick's.
 export function buildEvent(b, cfg, ownerEmail) {
   const title = cfg.meetingTypes.find((t) => t.id === b.type)?.title ?? b.type;
   return {
     id: b.id, summary: `${title}: ${b.guest_name}`,
-    description: [`${title}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${b.note}` : ""].join(""),
+    description: [`${escapeHtml(title)}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${escapeHtml(b.note)}` : ""].join(""),
     start: b.start_utc, end: b.end_utc, attendees: [b.guest_email, ownerEmail].filter(Boolean),
   };
 }
