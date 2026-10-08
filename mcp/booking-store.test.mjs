@@ -485,6 +485,59 @@ test("race: a cancel link clicked 20 times at once deletes the event once", asyn
   assert.equal(t.calls.deleted.length, 1);
 });
 
+// ---- Agent cancels ---------------------------------------------------------------------------
+
+const agentCancel = (t, bookingId, now = later(HOUR)) => store.cancelByAgent(t.sql, { bookingId, now, deps: t.deps });
+
+test("agent cancel: a pending hold is withdrawn at once (agent_withdrew), freeing the slot and the person's hold", async () => {
+  const t = setup();
+  const h = await hold(t, {}, { ipKey: "ipA", emailKey: "a" });
+  assert.deepEqual(await agentCancel(t, h.id), { status: "cancelled" });
+  const b = row(t, h.id);
+  assert.deepEqual([b.status, b.status_reason], ["cancelled", "agent_withdrew"]);
+  assert.deepEqual(await act(t, h.confirm), { error: "used" });
+  assert.deepEqual(store.liveBookings(t.sql, later(HOUR)), []);
+  assert.equal((await request(t, {}, { ipKey: "ipA", emailKey: "a", now: later(HOUR) })).status, "pending_confirmation");
+});
+
+test("agent cancel: a confirmed booking only gets a confirm-cancellation email; the guest's click cancels it", async () => {
+  const t = setup();
+  const b = await booked(t);
+  assert.deepEqual(await agentCancel(t, b.id), { status: "confirmed", cancellation: "requested" });
+  assert.equal(row(t, b.id).status, "confirmed");
+  assert.equal(t.calls.deleted.length, 0);
+  const mail = t.calls.emails.at(-1);
+  assert.equal(mail.kind, "cancel_request");
+  const link = tokenOf(mail.links.confirmCancelUrl);
+  const tok = t.sql.exec("SELECT action, expires_at FROM tokens WHERE hash = ?", await store.hashToken(link)).one();
+  assert.deepEqual(tok, { action: "confirm_cancel", expires_at: SLOT });
+  // Asking again while that link is outstanding sends nothing more.
+  assert.deepEqual(await agentCancel(t, b.id), { status: "confirmed", cancellation: "requested" });
+  assert.equal(t.calls.emails.filter((e) => e.kind === "cancel_request").length, 1);
+  assert.deepEqual(await act(t, link), { result: "cancelled" });
+  assert.deepEqual(t.calls.deleted, [b.id]);
+  assert.equal(row(t, b.id).status_reason, "guest_cancelled");
+  assert.deepEqual(await act(t, b.cancel), { error: "used" }, "the original cancel link is spent too");
+});
+
+test("agent cancel: if the cancellation email fails, nothing changes and the agent is told", async () => {
+  const t = setup({ emailFails: (kind) => kind === "cancel_request" });
+  const b = await booked(t);
+  assert.deepEqual(await agentCancel(t, b.id), { error: "email_failed" });
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action = 'confirm_cancel' AND used_at IS NULL"), 0);
+  assert.equal(row(t, b.id).status, "confirmed");
+});
+
+test("agent cancel: finished bookings are not cancellable; unknown IDs are not found", async () => {
+  const t = setup();
+  const h = await hold(t);
+  await act(t, h.decline);
+  assert.deepEqual(await agentCancel(t, h.id), { error: "not_cancellable", status: "declined" });
+  const h2 = await hold(t, {}, {});
+  assert.deepEqual(await agentCancel(t, h2.id, later(2 * HOUR)), { error: "not_cancellable", status: "expired" }, "a lapsed hold");
+  assert.deepEqual(await agentCancel(t, store.newId()), { error: "not_found" });
+});
+
 // ---- Races: exactly one winner --------------------------------------------------------------
 
 // Caps high enough that only the slot rules decide.
