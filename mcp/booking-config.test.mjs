@@ -320,3 +320,10 @@ test("availableSlots: full horizon with 20 bookings is fast and gives exactly th
 });
 // From the original implementation (commit c703977) on the input above.
 const GOLDEN = [381, 410, "082808ca43196a7f6ab30d9305e78ab254a888bbae0146cc406317a580bb4a91"];
+
+// Found in the live MCP test (8 Oct 2026): hold_expires (now + 2 h) has milliseconds, and the
+// offset came out fractional ("+00:59.99778…"). Output is to the second with a whole-minute offset.
+test("withOffset: an instant with milliseconds still gets a whole-minute offset", () => {
+  assert.equal(withOffset("2026-10-09T00:13:21.997Z", "Europe/London"), "2026-10-09T01:13:21+01:00");
+  assert.equal(withOffset("2026-10-26T10:00:00.500Z", "Europe/London"), "2026-10-26T10:00:00+00:00");
+});
