@@ -43,7 +43,7 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
   // The one place guest email is sent (switching provider changes only createMailer).
   const sendEmail = async (kind, b, links) => {
     const base = { name: b.name, typeTitle: typeTitle(b.type), start: b.start, end: b.end };
-    const mail = kind === "hold" ? holdEmail({ ...base, note: b.note, holdExpires: b.holdExpires, viaAgent: b.source !== "page", ...links })
+    const mail = kind === "hold" ? holdEmail({ ...base, holdExpires: b.holdExpires, viaAgent: b.source !== "page", ...links })
       : kind === "booked" ? bookedEmail({ ...base, ...links })
       : kind === "cancel_request" ? cancelRequestEmail({ ...base, ...links })
       : null;

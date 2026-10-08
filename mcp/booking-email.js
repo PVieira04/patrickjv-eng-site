@@ -52,11 +52,10 @@ const when = (start, end) => {
 const at = (iso) => { const l = clock(iso, TZ); return `${dateOf(iso)}, ${l.time} ${l.zone} (${clock(iso, "UTC").time} UTC)`; };
 
 const lines = (...ls) => ls.filter((l) => l !== null).join("\n");
-const quote = (note) => note.replace(/\r\n?/g, "\n").split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
 
 // The texts below are public copy: plain, British English, first person from Patrick.
-export function holdEmail({ name, typeTitle, start, end, note, confirmUrl, declineUrl, holdExpires, viaAgent }) {
-  const hasNote = typeof note === "string" && note.trim() !== "";
+// No note: whoever asked for the hold wrote it, and this goes to an inbox that may not be theirs.
+export function holdEmail({ name, typeTitle, start, end, confirmUrl, declineUrl, holdExpires, viaAgent }) {
   return {
     subject: `Please confirm: ${typeTitle} with Patrick Vieira`,
     text: lines(
@@ -68,7 +67,6 @@ export function holdEmail({ name, typeTitle, start, end, note, confirmUrl, decli
       "",
       when(start, end),
       "",
-      ...(hasNote ? ["Your note:", quote(note.trim()), ""] : []),
       `I'm holding this time until ${at(holdExpires)}. It isn't booked until you confirm.`,
       "",
       "To confirm, open this link:",
