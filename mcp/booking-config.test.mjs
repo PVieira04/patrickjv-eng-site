@@ -159,3 +159,40 @@ test("availableSlots: from now + 24 h to now + 28 days, from/to clamped to that 
   assert.deepEqual(availableSlots({ cfg, typeId: "consultation", now: NOW, from: "2026-12-01", busy: [], bookings: [] }), []);
   assert.deepEqual(availableSlots({ cfg, typeId: "consultation", now: NOW, to: "2026-11-02", busy: [], bookings: [] }), []);
 });
+
+// Wed 4 Nov 2026 (GMT), 11:00–11:30: with 15-minute buffers, 10:45–11:45 must be clear.
+const SLOT = "2026-11-04T11:00:00.000Z";
+const at = (hhmm) => `2026-11-04T${hhmm}:00.000Z`;
+const span = (a, b) => ({ start: at(a), end: at(b) });
+
+test("buffers: the slot plus 15 minutes either side must be free in free/busy", () => {
+  for (const ok of [span("10:30", "10:45"), span("11:45", "12:00"), span("09:00", "10:00")])
+    assert.deepEqual(check(SLOT, { busy: [ok] }), { ok: true }, JSON.stringify(ok));
+  for (const clash of [span("10:30", "10:46"), span("11:44", "12:00"), span("11:10", "11:20"), span("09:00", "13:00")])
+    assert.deepEqual(check(SLOT, { busy: [span("09:00", "09:15"), clash] }), { ok: false, reason: "busy" }, JSON.stringify(clash));
+});
+
+test("buffers: the same 15 minutes against other bookings and live holds", () => {
+  const b = (id, a, z, status) => ({ id, ...span(a, z), status });
+  for (const status of ["pending_confirmation", "confirming", "confirmed", "cancelling"]) {
+    assert.deepEqual(check(SLOT, { bookings: [b("x", "11:30", "12:00", status)] }), { ok: false, reason: "taken" }, status);
+    assert.deepEqual(check(SLOT, { bookings: [b("x", "11:45", "12:15", status)] }), { ok: true }, status);
+    assert.deepEqual(check(SLOT, { bookings: [b("x", "10:15", "10:45", status)] }), { ok: true }, status);
+  }
+  // Finished bookings don't block.
+  for (const status of ["declined", "expired", "cancelled"])
+    assert.deepEqual(check(SLOT, { bookings: [b("x", "11:00", "11:30", status)] }), { ok: true }, status);
+  // A confirm re-checks its own slot without tripping over its own row.
+  const own = b("me", "11:00", "11:30", "confirming");
+  assert.deepEqual(check(SLOT, { bookings: [own], excludeId: "me" }), { ok: true });
+  assert.deepEqual(check(SLOT, { bookings: [own, b("other", "11:15", "11:30", "pending_confirmation")], excludeId: "me" }), { ok: false, reason: "taken" });
+});
+
+test("buffers: availableSlots drops every slot within 15 minutes of busy time", () => {
+  const opts = { cfg: realConfig(), typeId: "consultation", now: NOW, from: "2026-11-04", to: "2026-11-04" };
+  const free = availableSlots({ ...opts, busy: [], bookings: [] }).map((s) => s.start);
+  const left = availableSlots({ ...opts, busy: [span("11:00", "11:30")], bookings: [] }).map((s) => s.start);
+  assert.deepEqual(free.filter((s) => !left.includes(s)), [at("10:30"), at("10:45"), at("11:00"), at("11:15"), at("11:30")]);
+  const held = availableSlots({ ...opts, busy: [], bookings: [{ id: "h", ...span("11:00", "11:30"), status: "pending_confirmation" }] }).map((s) => s.start);
+  assert.deepEqual(held, left);
+});
