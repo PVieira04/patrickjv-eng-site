@@ -221,3 +221,29 @@ test("insertEvent: any other error throws GoogleError (the caller rolls the clai
   assert.ok(e instanceof GoogleError);
   assert.deepEqual([e.status, e.reason], [500, "backendError"]);
 });
+
+test("deleteEvent: deletes from hello@'s primary calendar with attendees notified; 204 deleted, 404/410 not", async () => {
+  for (const [status, deleted] of [[204, true], [404, false], [410, false]]) {
+    const { g, fetch } = client([["POST", /oauth2/, tokenOk()], ["DELETE", /\/calendars\/primary\/events\//, { status }]]);
+    assert.deepEqual(await g.deleteEvent(ID), { deleted }, String(status));
+    assert.equal(fetch.calls[1].url, `${API}/calendars/primary/events/${ID}?sendUpdates=all`);
+  }
+  const { g } = client([["POST", /oauth2/, tokenOk()], ["DELETE", /events/, { status: 500, body: { error: { errors: [{ reason: "backendError" }] } } }]]);
+  await assert.rejects(g.deleteEvent(ID), (e) => e instanceof GoogleError && e.status === 500);
+});
+
+test("free/busy only: exactly these methods, and every Calendar call is freeBusy or on hello@'s primary calendar", async () => {
+  const { g, fetch } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /freeBusy$/, { body: { calendars: { primary: { busy: [] } } } }],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("pending")],
+    ["GET", EVENT_URL, eventBody("success", MEET)],
+    ["DELETE", /\/calendars\/primary\/events\//, { status: 204 }],
+  ]);
+  assert.deepEqual(Object.keys(g).sort(), ["accessToken", "deleteEvent", "freeBusy", "insertEvent", "ping"]);
+  await g.freeBusy(["primary"], "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z");
+  await g.insertEvent(EVENT);
+  await g.deleteEvent(ID);
+  for (const c of fetch.calls.filter((x) => x.url.startsWith(API)))
+    assert.match(c.url.slice(API.length), /^\/freeBusy$|^\/calendars\/primary\/events(\/|\?)/, c.url);
+});
