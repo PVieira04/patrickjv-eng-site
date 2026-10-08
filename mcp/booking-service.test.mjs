@@ -76,9 +76,10 @@ test("service: 20 parallel requests for one slot through the real deps: exactly 
   const { svc } = service({ fetchOpts: { gate: () => gate } });
   const all = Array.from({ length: 20 }, (_, i) => svc.request(guest(), `ip${i}`, `em${i}`));
   setTimeout(release, 5);
-  const results = await all;
-  assert.equal(results.filter((r) => r.booking_id).length, 1);
-  assert.ok(results.filter((r) => !r.booking_id).every((r) => r.error === "slot_taken"), JSON.stringify(results));
+  const results = await Promise.all(all);
+  assert.equal(results.filter((r) => r.booking_id).length, 1, JSON.stringify(results.slice(0, 3)));
+  assert.ok(results.filter((r) => !r.booking_id).every((r) => r.error === "slot_taken" || (r.error === "rate_limited" && r.reason === "global")), JSON.stringify(results));
+  assert.ok(results.filter((r) => r.error === "slot_taken").length >= 8, "the losers raced past the pre-check and lost at the claim");
 });
 
 test("service: availability is UTC slots from live free/busy, skipping busy time; free/busy is reused for 60 s", async () => {

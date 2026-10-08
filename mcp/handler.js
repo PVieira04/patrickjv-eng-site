@@ -10,10 +10,14 @@
 import { agentData } from "../lib/agent-data.mjs";
 // Single source for the server version: the MCP Registry entry. Bump it there and both agree.
 import serverJson from "./server.json" with { type: "json" };
+import bookingJson from "../booking.json" with { type: "json" };
+import { validateConfig } from "./booking-config.js";
 
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18"];
 export const ALLOWED_ORIGIN = "https://patrickjv.com";
 export const SERVER_VERSION = serverJson.version;
+// Booking rules (F-001), validated once at load: a bad booking.json fails the build and the tests.
+export const BOOKING_CONFIG = validateConfig(bookingJson);
 export const LIMITS = {
   maxBodyBytes: 16 * 1024,
   // Per IP (IPv4 address or IPv6 /64). Kept low, but not 2: hosted MCP clients (e.g. the Claude
