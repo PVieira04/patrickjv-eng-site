@@ -227,3 +227,61 @@ test("day_full counts by the London day, not the UTC day", () => {
   assert.deepEqual(check(slot, { now, bookings: london23 }), { ok: false, reason: "day_full" });
   assert.deepEqual(check(slot, { now, bookings: london22 }), { ok: true });
 });
+
+// npm test runs before every deploy, so this is how a bad booking.json fails the build.
+test("booking.json: the repo's real file passes validation", () => {
+  const cfg = realConfig();
+  assert.equal(validateConfig(cfg), cfg);
+});
+
+test("validateConfig: every bad value is refused, naming the field", () => {
+  const bad = (fn) => { const c = realConfig(); fn(c); return c; };
+  for (const [field, cfg] of [
+    ["config", null], ["config", []],
+    ["timezone", bad((c) => { c.timezone = "Mars/Olympus"; })],
+    ["timezone", bad((c) => { delete c.timezone; })],
+    ["hours", bad((c) => { delete c.hours; })],
+    ["hours.days", bad((c) => { c.hours.days = ["mon", "funday"]; })],
+    ["hours.days", bad((c) => { c.hours.days = []; })],
+    ["hours.days", bad((c) => { c.hours.days = ["mon", "mon"]; })],
+    ["hours.start", bad((c) => { c.hours.start = "9:00"; })],
+    ["hours.start", bad((c) => { c.hours.start = "24:00"; })],
+    ["hours.end", bad((c) => { c.hours.end = "17:60"; })],
+    ["hours.end", bad((c) => { c.hours.start = "17:00"; c.hours.end = "10:00"; })],
+    ["hours.end", bad((c) => { c.hours.end = "10:00"; })],
+    ...["slotStepMinutes", "minNoticeHours", "horizonDays", "bufferMinutes", "maxPerDay", "holdHours", "retentionDays"].flatMap((k) =>
+      [0, -1, 1.5, "15", null].map((v) => [k, bad((c) => { c[k] = v; })])),
+    ["caps", bad((c) => { delete c.caps; })],
+    ...["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerKey"].flatMap((k) =>
+      [0, 2.5, "4", undefined].map((v) => [`caps.${k}`, bad((c) => { c.caps[k] = v; })])),
+    ["meetingTypes", bad((c) => { c.meetingTypes = []; })],
+    ["meetingTypes", bad((c) => { c.meetingTypes = {}; })],
+    ["meetingTypes[0].id", bad((c) => { c.meetingTypes[0].id = "Consultation"; })],
+    ["meetingTypes[0].id", bad((c) => { c.meetingTypes[0].id = "a b"; })],
+    ["meetingTypes[1].id", bad((c) => { c.meetingTypes[1].id = "consultation"; })],
+    ["meetingTypes[0].title", bad((c) => { c.meetingTypes[0].title = ""; })],
+    ["meetingTypes[0].description", bad((c) => { c.meetingTypes[0].description = 42; })],
+    ["meetingTypes[0].minutes", bad((c) => { c.meetingTypes[0].minutes = 20; })], // not a multiple of the 15-minute step
+    ["meetingTypes[0].minutes", bad((c) => { c.meetingTypes[0].minutes = 0; })],
+    ["meetingTypes[1].minutes", bad((c) => { c.meetingTypes[1].minutes = "15"; })],
+    ["calendars", bad((c) => { c.calendars = "primary"; })],
+    ["calendars[0]", bad((c) => { c.calendars[0].id = "primary"; })], // both id and idSecret
+    ["calendars[3]", bad((c) => { delete c.calendars[3].id; })], // blocks, but neither
+    ["calendars[2]", bad((c) => { c.calendars[2].id = "x"; c.calendars[2].idSecret = "CAL_X"; })],
+    ["calendars[0].blocks", bad((c) => { c.calendars[0].blocks = "yes"; })],
+    ["calendars[0].idSecret", bad((c) => { c.calendars[0].idSecret = "cal-main"; })],
+    ["calendars[3].id", bad((c) => { c.calendars[3].id = ""; })],
+    // A personal calendar's ID is an email address: it belongs in a Worker secret, not this public file.
+    ["calendars[3].id", bad((c) => { c.calendars[3].id = "someone@googlemail.com"; })],
+    ["calendars[1].account", bad((c) => { delete c.calendars[1].account; })],
+    ["calendars[1].label", bad((c) => { c.calendars[1].label = ""; })],
+  ]) {
+    assert.throws(() => validateConfig(cfg), (e) => e instanceof Error && e.message.includes(field), `${field}: ${JSON.stringify(cfg)?.slice(0, 120)}`);
+  }
+});
+
+test("validateConfig: a calendar that doesn't block needs no ID (it is never queried)", () => {
+  const cfg = realConfig();
+  assert.deepEqual(cfg.calendars[2], { account: "personal", label: "Birthdays", blocks: false });
+  assert.equal(validateConfig(cfg), cfg);
+});
