@@ -32,7 +32,7 @@
   },
   "cv": {
     "inputs": {
-      "public/cv.html": "1f86d3f9169cf280b79a500898673c573bc811946cd63ae3a5c10765f5aed252",
+      "public/cv.html": "fcc0e6e77c6936cae55b093b81e4db5aa8d9f47c11e8ae39d0e52060eaab21d2",
       "designs/make-cv-pdf.mjs": "1af4358b0a34cb9e8e60df9ed2c5678b74a38eb56eb1b3f2533fe6f0f127593d",
       "public/fonts/ibm-plex-mono-latin-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
       "public/fonts/ibm-plex-mono-latin-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
@@ -40,7 +40,7 @@
       "playwright-core (package.json)": "135f3e7fabc10c4d2ff2bb4f1b5dbc3d32eb0e4ff7dd6b4b8c8a6e96f4824f9d"
     },
     "outputs": {
-      "public/cv.pdf": "850ed39ecab6cb2fb02bd4a69e83a9809e39e848d4f3465e2e79fb35c70b55d4"
+      "public/cv.pdf": "7467d398f1f76d105601519e750c13bc612039617ce21bf8db497bab306194b1"
     }
   }
 }
