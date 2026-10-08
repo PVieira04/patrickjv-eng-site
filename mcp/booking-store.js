@@ -247,12 +247,13 @@ export async function cancelByAgent(sql, { bookingId, now, deps }) {
   const link = await newToken();
   const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
   if (!b) return { error: "not_found" };
-  const status = getStatus(sql, b.id, now).status;
+  // Decided on the internal state: a hold being confirmed must not be withdrawn under the confirm.
+  const status = internalStatus(sql, b.id, now).status;
   if (status === "pending_confirmation") {
     settle(sql, b.id, "cancelled", "agent_withdrew", nowIso);
     return { status: "cancelled" };
   }
-  if (status !== "confirmed" || b.start_utc <= nowIso) return { error: "not_cancellable", status };
+  if (status !== "confirmed" || b.start_utc <= nowIso) return { error: "not_cancellable", status: callerStatus(status) };
   const requested = { status: "confirmed", cancellation: "requested" };
   // One outstanding request at a time, so a booking ID can't be used to flood the guest's inbox.
   const outstanding = sql.exec(
@@ -407,7 +408,17 @@ export async function recoverConfirm(sql, b, { now, cfg, deps }) {
 
 // A booking's state for whoever holds its ID (a bearer secret): never the guest's details. With
 // `now`, a hold that has lapsed but not yet been swept by the alarm reads as expired.
+// The in-between states are the store's own: callers see the state they know.
 export function getStatus(sql, bookingId, now) {
+  const view = internalStatus(sql, bookingId, now);
+  return view && { ...view, status: callerStatus(view.status) };
+}
+
+// confirming is still a hold to the guest until it settles; cancelling is still a meeting.
+const CALLER_STATUS = { confirming: "pending_confirmation", cancelling: "confirmed" };
+const callerStatus = (status) => CALLER_STATUS[status] ?? status;
+
+function internalStatus(sql, bookingId, now) {
   const b = sql.exec(
     `SELECT status, status_reason, start_utc AS start, end_utc AS "end", type, hold_expires FROM bookings WHERE id = ?`, bookingId,
   ).toArray()[0];

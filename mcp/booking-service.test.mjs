@@ -173,7 +173,7 @@ test("recovery: a Google failure leaves the booking for the next alarm, which co
   const later = new Date(NOW.getTime() + 5 * 60e3);
   const fresh = service({ sql, now: later, fetchOpts: { fail: { insert: true } } });
   await quiet(() => fresh.svc.alarm());
-  assert.equal(fresh.svc.status(booking_id).status, "confirming");
+  assert.equal(sql.exec("SELECT status FROM bookings WHERE id = ?", booking_id).one().status, "confirming");
   assert.ok(fresh.storage.at() <= later.getTime() + 5 * 60e3, "retried soon, not at midnight");
 });
 
