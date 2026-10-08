@@ -3,6 +3,7 @@
 // other calendars for free/busy; the only events it touches are on hello@'s own primary calendar.
 // It never logs: callers log the failing subsystem only, as logFailure does.
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
+const API = "https://www.googleapis.com/calendar/v3";
 
 // `status` is the HTTP status (0 when there was no usable response); `reason` is Google's short
 // error code (e.g. invalid_grant, notFound). Messages never carry tokens, secrets or addresses.
@@ -15,9 +16,27 @@ export class GoogleError extends Error {
   }
 }
 
-export function assertNoErrors() { throw new Error("not implemented"); }
+// Any calendar that couldn't be read makes availability unknown, never "free". The message names
+// no calendar: personal calendar IDs are email addresses, kept as secrets.
+export function assertNoErrors(result) {
+  if (result.errors.length) throw new GoogleError("free/busy failed for a calendar", { status: 503, reason: result.errors[0].reason });
+}
 
 const readJson = async (res) => { try { return await res.json(); } catch { return null; } };
+// Google's error bodies: {error: {errors: [{reason}], status}} for the Calendar API.
+const apiReason = (body) => body?.error?.errors?.[0]?.reason || body?.error?.status || "unknown";
+
+// Sorted, with overlapping or touching intervals joined; times normalised to toISOString().
+function mergeBusy(intervals) {
+  const sorted = intervals.map((b) => [Date.parse(b.start), Date.parse(b.end)]).sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const [s, e] of sorted) {
+    const last = out[out.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else out.push([s, e]);
+  }
+  return out.map(([s, e]) => ({ start: new Date(s).toISOString(), end: new Date(e).toISOString() }));
+}
 
 export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now = () => new Date(), sleep }) {
   let cached = null; // { token, expiresAt (ms) }
@@ -48,5 +67,29 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
     try { await refresh(); return true; } catch { return false; }
   }
 
-  return { accessToken, ping };
+  async function api(path, { method = "GET", body } = {}) {
+    const res = await fetch(API + path, {
+      method,
+      headers: { authorization: `Bearer ${await accessToken()}`, ...(body ? { "content-type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: res.status, ok: res.ok, body: await readJson(res) };
+  }
+  const fail = (what, r) => new GoogleError(`Google ${what} failed`, { status: r.status, reason: apiReason(r.body) });
+
+  // The only read of other calendars: busy intervals, no titles or details.
+  async function freeBusy(calendarIds, timeMin, timeMax) {
+    const r = await api("/freeBusy", { method: "POST", body: { timeMin, timeMax, items: calendarIds.map((id) => ({ id })) } });
+    if (!r.ok) throw fail("freebusy", r);
+    const busy = [], errors = [];
+    for (const id of calendarIds) {
+      const cal = r.body?.calendars?.[id];
+      if (!cal) errors.push({ calendar: id, reason: "missing" });
+      else if (cal.errors?.length) errors.push({ calendar: id, reason: cal.errors[0].reason || "unknown" });
+      else busy.push(...(cal.busy || []));
+    }
+    return { busy: mergeBusy(busy), errors };
+  }
+
+  return { accessToken, freeBusy, ping };
 }
