@@ -35,10 +35,10 @@
 
 # Booking (F-001, ships dark: noindex and unlinked until launch).
 /book
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UsgWugZVeUdyYPRgdKPM06QQRxMBO6FUCTlbyCS2OQs='; script-src 'sha256-K4YfqhQEk5ezAfak0Fmj2d1RyOveFX1ctnFsQAzFdb0='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UsgWugZVeUdyYPRgdKPM06QQRxMBO6FUCTlbyCS2OQs='; script-src 'sha256-EJYRrTCHeTJOJEP6Nbdo+j2aTpK2D1wdSNTDH/jQF9w='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /book.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UsgWugZVeUdyYPRgdKPM06QQRxMBO6FUCTlbyCS2OQs='; script-src 'sha256-K4YfqhQEk5ezAfak0Fmj2d1RyOveFX1ctnFsQAzFdb0='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UsgWugZVeUdyYPRgdKPM06QQRxMBO6FUCTlbyCS2OQs='; script-src 'sha256-EJYRrTCHeTJOJEP6Nbdo+j2aTpK2D1wdSNTDH/jQF9w='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 # Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
 /writing/gating-agent-written-code

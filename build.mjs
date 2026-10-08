@@ -616,9 +616,10 @@ const bookScript = (copy) => `
       return res.json().catch(function () { return null; }).then(function (data) { return { status: res.status, ok: res.ok, data: data || {} }; });
     });
   }
+  function closed() { form.hidden = true; show("closed", true); say(t.messages.closed); }
   function failed(r) {
     var m = t.messages, server = typeof r.data.message === "string" ? r.data.message : "";
-    if (r.status === 503 && r.data.error === "booking_disabled") { form.hidden = true; show("closed", true); return say(m.closed); }
+    if (r.status === 503 && r.data.error === "booking_disabled") return closed();
     say(r.status === 429 ? server || m.rateLimited : r.status === 400 ? server || m.invalid : r.status === 503 ? m.unavailable : m.error);
   }
   function broken() { say(t.messages.error); }
@@ -671,6 +672,8 @@ const bookScript = (copy) => `
   say(t.messages.loadingTypes);
   call("/api/booking/types").then(function (r) {
     if (!r.ok) return failed(r);
+    // Closed until launch: say so straight away rather than after the visitor fills in the form.
+    if (r.data.enabled !== true) return closed();
     (r.data.types || []).forEach(function (m) { choice("types", "type", m.id, m.title + " · " + t.labels.minutes.replace("{n}", m.minutes), m.description); });
     form.hidden = false;
     say("");
