@@ -209,6 +209,36 @@ async function cancelMeeting(sql, { tok, booking: b }, { now, deps }) {
   return { result: "cancelled" };
 }
 
+// cancel_booking. Withdrawing a hold needs no consent (nothing exists yet); cancelling a meeting
+// does, so the guest is emailed a link and only that link cancels it.
+export async function cancelByAgent(sql, { bookingId, now, deps }) {
+  const nowIso = now.toISOString();
+  const link = await newToken();
+  const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
+  if (!b) return { error: "not_found" };
+  const status = getStatus(sql, b.id, now).status;
+  if (status === "pending_confirmation") {
+    settle(sql, b.id, "cancelled", "agent_withdrew", nowIso);
+    return { status: "cancelled" };
+  }
+  if (status !== "confirmed" || b.start_utc <= nowIso) return { error: "not_cancellable", status };
+  const requested = { status: "confirmed", cancellation: "requested" };
+  // One outstanding request at a time, so a booking ID can't be used to flood the guest's inbox.
+  const outstanding = sql.exec(
+    "SELECT count(*) AS c FROM tokens WHERE booking_id = ? AND action = 'confirm_cancel' AND used_at IS NULL AND expires_at > ?", b.id, nowIso,
+  ).one().c;
+  if (outstanding) return requested;
+  sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'confirm_cancel', ?)", link.hash, b.id, b.start_utc);
+  try {
+    await deps.sendEmail("cancel_request", forEmail(b), { confirmCancelUrl: deps.actUrl(link.token) });
+  } catch {
+    logFailure("email");
+    sql.exec("UPDATE tokens SET used_at = ? WHERE hash = ?", nowIso, link.hash);
+    return { error: "email_failed" };
+  }
+  return requested;
+}
+
 // What a link would do, for the GET page (which must never change state). Async only because
 // hashing is. No guest details.
 export async function peekToken(sql, token, now) {
