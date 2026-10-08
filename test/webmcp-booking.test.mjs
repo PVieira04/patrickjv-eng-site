@@ -68,7 +68,7 @@ test("WebMCP: booking stays hidden when GET /api/booking/types fails or is unrea
 
 test("WebMCP: older drafts' provideContext gets the read tools, then all ten once booking is open", async () => {
   const provided = [];
-  await runPage(harness(), { mc: { provideContext: (c) => { provided.push(c.tools.map((t) => t.name)); return Promise.resolve(); } } });
+  await runPage(harness(), { mc: { provideContext: (c) => { provided.push(Array.from(c.tools, (t) => t.name)); /* an array of this realm, not the VM's */ return Promise.resolve(); } } });
   assert.deepEqual(provided, [READ_AND_INTRO, [...READ_AND_INTRO, ...BOOKING_TOOLS]]);
 });
 

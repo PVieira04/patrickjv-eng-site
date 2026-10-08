@@ -28,6 +28,8 @@ const BANNED = /altimist|the company|fintech|\bceo\b|wimbledon/i;
 // their names, descriptions and schemas, so the two surfaces cannot drift.
 const TOOL_DATA = { get_profile: "profile", list_work: "work", list_skills: "skills", list_faq: "faq" };
 // Booking tools (F-001): the page script implements each by calling the same-origin booking API.
+// Parity is checked here for every tool; the page registers the booking ones at runtime only once
+// GET /api/booking/types reports enabled (tested in test/webmcp-booking.test.mjs).
 const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 const DAY = 864e5;
 

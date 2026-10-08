@@ -892,7 +892,8 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
 <script>
 /* WebMCP: four read-only tools (get_profile, list_work, list_skills, list_faq), request_intro,
    which emails Patrick only after the person confirms every field, and the five booking tools,
-   which call the same-origin booking API (/api/booking*). Names, descriptions and schemas
+   which call the same-origin booking API (/api/booking*) and are registered only once
+   GET /api/booking/types reports enabled: true. Names, descriptions and schemas
    come from the MCP server (spliced in by build.mjs). Does nothing unless the browser exposes
    document.modelContext (current draft) or navigator.modelContext (earlier drafts). */
 (function () {
@@ -1003,10 +1004,21 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
         execute: t.data ? async function () { return reply(d[t.data]); } : t.name === "request_intro" ? requestIntro : BOOKING[t.name]
       };
     });
-    // registerTool returns a promise in the current draft: contain each rejection.
+    var always = tools.filter(function (t) { return !BOOKING[t.name]; });
+    var booking = tools.filter(function (t) { return !!BOOKING[t.name]; });
+    // registerTool returns a promise in the current draft: contain each rejection. provideContext
+    // (earlier drafts) replaces the whole set, so it is given every tool registered so far.
     var quiet = function () {};
-    if (typeof mc.registerTool === "function") tools.forEach(function (t) { try { Promise.resolve(mc.registerTool(t)).catch(quiet); } catch (e) {} });
-    else if (typeof mc.provideContext === "function") Promise.resolve(mc.provideContext({ tools: tools })).catch(quiet);
+    var provide = function (added, all) {
+      if (typeof mc.registerTool === "function") added.forEach(function (t) { try { Promise.resolve(mc.registerTool(t)).catch(quiet); } catch (e) {} });
+      else if (typeof mc.provideContext === "function") Promise.resolve(mc.provideContext({ tools: all })).catch(quiet);
+    };
+    provide(always, always);
+    // Booking stays hidden until launch: its tools are registered only once the booking API says
+    // it is open (BOOKING_ENABLED). Any failure leaves them unregistered.
+    api("/api/booking/types").then(function (r) {
+      if (r.ok && r.data && r.data.enabled === true) provide(booking, always.concat(booking));
+    }).catch(quiet);
   } catch (e) {}
 })();
 </script>

@@ -595,7 +595,8 @@ const meetingTypes = () => BOOKING_CONFIG.meetingTypes.map(({ id, title, minutes
 const localSlot = (s) => ({ start: withOffset(s.start, TZ), end: withOffset(s.end, TZ) });
 
 const bookingOps = {
-  types: () => ({ status: 200, body: { types: meetingTypes() } }),
+  // `enabled` lets the /book page and the homepage's WebMCP script stay hidden until launch.
+  types: (ctx) => ({ status: 200, body: { enabled: bookingEnabled(ctx.env), types: meetingTypes() } }),
 
   async availability(ctx, args) {
     const { value: v, error } = validateAvailability(args);
@@ -832,7 +833,7 @@ async function handleBookingHttp(request, env, deps, url) {
   const ctx = { env, ipKey, booking: deps.booking, sendEmail: deps.sendEmail, now: deps.now() };
   if (isAct) return post ? doLink(ctx, isPlainObject(body) ? body.t : null) : showLink(ctx, url.searchParams.get("t"));
   let r;
-  if (url.pathname === "/api/booking/types") r = bookingOps.types();
+  if (url.pathname === "/api/booking/types") r = bookingOps.types(ctx);
   else if (url.pathname === "/api/booking/availability") {
     const args = { type: url.searchParams.get("type") ?? "" };
     for (const k of ["from", "to"]) if (url.searchParams.has(k)) args[k] = url.searchParams.get(k);
