@@ -140,3 +140,84 @@ test("free/busy only: the client has no method that lists or reads events", () =
   assert.equal(typeof g.freeBusy, "function");
   for (const k of Object.keys(g)) assert.ok(allowed.includes(k), `unexpected method ${k}`);
 });
+
+const ID = "0123456789abcdef0123456789abcdef";
+const EVENT = {
+  id: ID, summary: "Consultation: Jane Smith", description: "Booked via patrickjv.com.",
+  start: "2026-10-26T10:00:00.000Z", end: "2026-10-26T10:30:00.000Z",
+  attendees: ["patrick@example.org", "jane@example.com"],
+};
+const MEET = "https://meet.google.com/abc-defg-hij";
+const eventBody = (statusCode, link) => ({ body: {
+  id: ID, ...(link ? { hangoutLink: link } : {}),
+  conferenceData: { createRequest: { requestId: ID, status: { statusCode } } },
+} });
+const EVENT_URL = new RegExp(`/calendars/primary/events/${ID}$`);
+
+test("insertEvent: on hello@'s primary calendar, Patrick and the guest invited, Meet requested, invites sent", async () => {
+  const { g, fetch } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("success", MEET)],
+  ]);
+  assert.deepEqual(await g.insertEvent(EVENT), { created: true, meetLink: MEET });
+  const ins = fetch.calls[1];
+  // "primary" with hello@'s token: hello@ is the organiser, so guests never see Patrick's address as organiser.
+  assert.equal(ins.url, `${API}/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all`);
+  assert.equal(ins.headers.authorization, "Bearer at-1");
+  const b = JSON.parse(ins.body);
+  assert.equal(b.id, ID, "the booking ID is the event ID, so a retry is a 409, not a second event");
+  assert.equal(b.summary, "Consultation: Jane Smith", "the title is passed through as given");
+  assert.equal(b.description, EVENT.description);
+  assert.deepEqual(b.start, { dateTime: EVENT.start });
+  assert.deepEqual(b.end, { dateTime: EVENT.end });
+  assert.deepEqual(b.attendees, [{ email: "patrick@example.org" }, { email: "jane@example.com" }]);
+  assert.equal(b.guestsCanSeeOtherGuests, false, "the guest isn't shown Patrick's personal address in the guest list");
+  assert.deepEqual(b.conferenceData, { createRequest: { requestId: ID, conferenceSolutionKey: { type: "hangoutsMeet" } } });
+});
+
+test("insertEvent: while Meet creation is pending, re-reads the event (1 s apart) until it succeeds", async () => {
+  const { g, fetch, sleeps } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("pending")],
+    ["GET", EVENT_URL, [eventBody("pending"), eventBody("success", MEET)]],
+  ]);
+  assert.deepEqual(await g.insertEvent(EVENT), { created: true, meetLink: MEET });
+  assert.deepEqual(sleeps, [1000, 1000]);
+  assert.equal(fetch.calls.filter((c) => c.method === "GET").length, 2);
+});
+
+test("insertEvent: Meet still pending after 5 tries, or failed: created, with no link (the invite carries it)", async () => {
+  const pending = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("pending")],
+    ["GET", EVENT_URL, eventBody("pending")],
+  ]);
+  assert.deepEqual(await pending.g.insertEvent(EVENT), { created: true, meetLink: null });
+  assert.deepEqual(pending.sleeps, [1000, 1000, 1000, 1000, 1000]);
+  const failed = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("failure")],
+  ]);
+  assert.deepEqual(await failed.g.insertEvent(EVENT), { created: true, meetLink: null });
+  assert.deepEqual(failed.sleeps, []);
+});
+
+test("insertEvent: 409 duplicate means already created; the event is read back for its Meet link", async () => {
+  const { g, fetch } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, { status: 409, body: { error: { code: 409, errors: [{ reason: "duplicate" }] } } }],
+    ["GET", EVENT_URL, eventBody("success", MEET)],
+  ]);
+  assert.deepEqual(await g.insertEvent(EVENT), { created: false, meetLink: MEET });
+  assert.equal(fetch.calls[2].url, `${API}/calendars/primary/events/${ID}`);
+});
+
+test("insertEvent: any other error throws GoogleError (the caller rolls the claim back)", async () => {
+  const { g } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendars\/primary\/events\?/, { status: 500, body: { error: { code: 500, errors: [{ reason: "backendError" }] } } }],
+  ]);
+  const e = await g.insertEvent(EVENT).catch((x) => x);
+  assert.ok(e instanceof GoogleError);
+  assert.deepEqual([e.status, e.reason], [500, "backendError"]);
+});
