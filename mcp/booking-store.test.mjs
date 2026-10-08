@@ -349,6 +349,13 @@ test("confirm: re-checks, creates the event (Meet, guest invited, type in the ti
   assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action IN ('confirm', 'decline') AND used_at IS NULL"), 0, "confirm and decline links are spent");
 });
 
+test("event: Google renders the description as HTML, so the note and type title are escaped there (not in the title)", () => {
+  const b = { id: "x", type: "t", start_utc: SLOT, end_utc: SLOT, guest_name: "Jane <b>", guest_email: "jane@example.com", note: `<a href="https://evil.example">click</a> & more` };
+  const ev = store.buildEvent(b, { ...cfg, meetingTypes: [{ id: "t", title: "Q&A <1:1>" }] });
+  assert.equal(ev.description, "Q&amp;A &lt;1:1&gt;, booked on patrickjv.com.\nNote from the guest:\n&lt;a href=\"https://evil.example\"&gt;click&lt;/a&gt; &amp; more");
+  assert.equal(ev.summary, "Q&A <1:1>: Jane <b>", "the title is plain text in Google");
+});
+
 test("confirm: a 409 from Google (event already exists) still counts as created", async () => {
   const t = setup();
   t.deps.insertEvent = async () => { await tick(); return { created: false, meetLink: null }; };
