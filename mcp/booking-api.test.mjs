@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { SECURITY_HEADERS } from "./handler.js";
+import { SECURITY_HEADERS, BOOKING_SECRETS } from "./handler.js";
 import { tokenIn } from "./booking-fakes.mjs";
 import { harness, quiet, NOW, ORIGIN } from "./booking-harness.mjs";
 
@@ -486,4 +486,18 @@ test("global cap: a failed alert is logged by subsystem only and doesn't change 
   assert.ok(responses.slice(0, 10).every((r) => r.status !== 503), "the request that hit the cap still gets its own answer");
   assert.ok(lines.some((x) => x.includes('"subsystem":"alert_email"')), lines.join("\n"));
   for (const x of lines) assert.ok(!x.includes("@example.com"), x);
+});
+
+// ---- mcp/wrangler.jsonc ----
+
+test("mcp/wrangler.jsonc: booking route, BookingStore Durable Object (migration v2), ships dark, secrets documented", () => {
+  const text = readFileSync(new URL("./wrangler.jsonc", import.meta.url), "utf8");
+  const w = JSON.parse(text.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"));
+  assert.deepEqual(w.routes.map((r) => r.pattern), ["patrickjv.com/mcp*", "patrickjv.com/api/booking*"]);
+  assert.ok(w.durable_objects.bindings.some((b) => b.name === "BOOKING" && b.class_name === "BookingStore"));
+  assert.deepEqual(w.migrations, [{ tag: "v1", new_sqlite_classes: ["IntroQuota"] }, { tag: "v2", new_sqlite_classes: ["BookingStore"] }]);
+  assert.equal(w.vars.BOOKING_ENABLED, "false", "ships dark until the launch checklist is done");
+  assert.equal(w.vars.BOOKING_FROM, "Patrick Vieira <hello@patrickjv.com>");
+  for (const k of BOOKING_SECRETS.filter((k) => k !== "BOOKING_FROM")) assert.match(text, new RegExp(`wrangler secret put ${k} -c mcp/wrangler\\.jsonc`), k);
+  assert.doesNotMatch(text, /@gmail\.com|@googlemail\.com/, "calendar IDs are secrets");
 });
