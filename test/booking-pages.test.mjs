@@ -200,7 +200,7 @@ function openBook({ zone = "Europe/Paris", routes }) {
   return { $, requests, radios, labelFor, choose, status: () => visible($("status")) };
 }
 
-const TYPES = { status: 200, body: { types: [
+const TYPES = { status: 200, body: { enabled: true, types: [
   { id: "consultation", title: "Consultation", minutes: 30, description: "A free 30-minute call." },
   { id: "recruiter-intro", title: "Recruiter intro", minutes: 15, description: "A short intro call." },
 ] } };
@@ -344,6 +344,18 @@ test("/book booking closed (503 booking_disabled) on submit: says booking isn't 
   assert.equal(v.$("book").hidden, true);
   assert.equal(v.$("closed").hidden, false);
   assert.equal(walk(v.$("closed")).find((e) => e.tag === "a").href, "/#contact");
+});
+
+test("/book booking closed is shown on load when /api/booking/types reports enabled: false (or doesn't say)", async () => {
+  for (const enabled of [false, undefined]) {
+    const v = openBook({ routes: ready({ "GET /api/booking/types": { status: 200, body: { ...TYPES.body, enabled } } }) });
+    await settle();
+    assert.equal(v.status(), M.closed, String(enabled));
+    assert.equal(v.$("closed").hidden, false);
+    assert.equal(v.$("book").hidden, true);
+    assert.equal(v.radios("types").length, 0, "no meeting types offered");
+    assert.deepEqual(v.requests.map((r) => r.url), ["/api/booking/types"], "nothing else is asked");
+  }
 });
 
 test("/book booking closed is also shown when the first request is refused", async () => {
