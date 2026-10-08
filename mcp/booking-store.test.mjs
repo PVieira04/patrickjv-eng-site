@@ -110,7 +110,7 @@ test("migrate is idempotent", () => {
   store.migrate(sql);
   store.migrate(sql);
   const tables = sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").toArray().map((r) => r.name);
-  assert.deepEqual(tables, ["bookings", "quota", "tokens"]);
+  assert.deepEqual(tables, ["bookings", "health", "quota", "tokens"]);
 });
 
 // ---- Caps -----------------------------------------------------------------------------------
@@ -310,6 +310,17 @@ test("request: if the hold email fails, the hold is released at once and nothing
   const again = setup();
   again.sql = t.sql;
   assert.equal((await request(again, {}, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
+});
+
+test("email health: consecutive failed guest emails are counted (any kind), and one success resets the count", async () => {
+  let down = true;
+  const t = setup({ emailFails: () => down });
+  assert.equal(store.emailFailures(t.sql), 0);
+  for (let i = 0; i < 3; i++) await quietly(() => request(t, { start: `2026-10-2${2 + i}T10:00:00.000Z` }));
+  assert.equal(store.emailFailures(t.sql), 3);
+  down = false;
+  assert.equal((await request(t, { start: "2026-10-26T10:00:00.000Z" })).status, "pending_confirmation");
+  assert.equal(store.emailFailures(t.sql), 0);
 });
 
 // ---- Confirm ---------------------------------------------------------------------------------

@@ -120,6 +120,17 @@ test("service: the alarm expires lapsed holds and schedules the next run", async
   assert.equal(storage.at(), Date.parse("2026-10-20T00:00:00.000Z"), "next UTC midnight");
 });
 
+test("service: health reports email down after 3 guest emails in a row fail, and up again after one succeeds", async () => {
+  const { svc, f } = service({ fetchOpts: { fail: { mail: true } } });
+  for (let i = 0; i < 2; i++) await quiet(() => svc.request(guest({ start: `2026-10-2${2 + i}T09:00:00.000Z` }), `ip${i}`, `em${i}`));
+  assert.equal((await svc.health()).email, true, "two failures could be a blip");
+  await quiet(() => svc.request(guest({ start: "2026-10-26T10:00:00.000Z" }), "ip9", "em9"));
+  assert.equal((await svc.health()).email, false);
+  delete f.opts.fail;
+  await svc.request(guest({ start: "2026-10-27T10:00:00.000Z" }), "ip8", "em8");
+  assert.equal((await svc.health()).email, true);
+});
+
 test("service: a request that writes quota but holds nothing still sets the alarm, so its counters get pruned", async () => {
   const { svc, storage } = service({ fetchOpts: { busy: [{ start: SLOT, end: "2026-10-21T10:00:00.000Z" }] } });
   assert.equal((await svc.request(guest(), "ip1", "em1")).error, "slot_taken");
@@ -127,8 +138,8 @@ test("service: a request that writes quota but holds nothing still sets the alar
 });
 
 test("service: health pings Google with a fresh token refresh", async () => {
-  assert.deepEqual(await service().svc.health(), { google: true });
-  assert.deepEqual(await service({ fetchOpts: { fail: { token: true } } }).svc.health(), { google: false });
+  assert.deepEqual(await service().svc.health(), { google: true, email: true });
+  assert.deepEqual(await service({ fetchOpts: { fail: { token: true } } }).svc.health(), { google: false, email: true });
 });
 
 // Recovery: a confirm (or cancel) whose Durable Object was evicted mid-call leaves the row in

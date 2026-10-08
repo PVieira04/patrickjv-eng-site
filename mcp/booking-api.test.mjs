@@ -444,6 +444,12 @@ test("patrickjv/health: bookingEnabled is the flag; bookingReady means secrets s
   }
 });
 
+test("patrickjv/health: bookingReady is false once 3 guest emails in a row have failed", async () => {
+  const h = harness({ fetchOpts: { fail: { mail: true } } });
+  for (let i = 0; i < 3; i++) await quiet(() => h.post(booking({ email: `m${i}@example.com`, start: freeSlot(i) }), { ip: `192.0.2.${i}` }));
+  assert.equal((await healthOf(h)).bookingReady, false);
+});
+
 test("patrickjv/health: never reveals booking secrets, calendar IDs or the owner's address", async () => {
   const h = harness();
   const text = await (await h.call("/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: rpc("patrickjv/health") })).text();
