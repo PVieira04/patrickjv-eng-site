@@ -84,6 +84,7 @@ const request = (t, over = {}, keys = {}) => {
   return store.requestBooking(t.sql, { cfg: keys.cfg ?? cfg, now: keys.now ?? NOW, input: input(over), ipKey: keys.ipKey ?? `ip${n}`, emailKey: keys.emailKey ?? `em${n}`, deps: t.deps });
 };
 const row = (t, id) => t.sql.exec("SELECT * FROM bookings WHERE id = ?", id).one();
+const sqlCount = (t, q, ...b) => t.sql.exec(q, ...b).one().c;
 
 test("booking IDs are 32 random lowercase hex characters (128 bits), never repeated", () => {
   const ids = new Set(Array.from({ length: 1000 }, () => store.newId()));
@@ -237,5 +238,40 @@ test("race: 25 parallel requests for one slot (and slots overlapping it) produce
   assert.equal(won.length, 1, `winners: ${won.length}`);
   assert.ok(results.filter((r) => !r.status).every((r) => r.error === "slot_taken"));
   assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 1);
+  assert.equal(t.calls.emails.length, 1);
+});
+
+// ---- One live hold per IP and per email -----------------------------------------------------
+
+const hourly = (i) => later(48 * HOUR + i * HOUR).toISOString(); // separate, non-overlapping slots
+
+test("one live hold per IP: a second request from the same IP while one is pending is hold_pending", async () => {
+  const t = setup();
+  assert.equal((await request(t, { start: hourly(1) }, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
+  const fb = t.calls.freeBusy;
+  assert.deepEqual(await request(t, { start: hourly(3) }, { ipKey: "ipA", emailKey: "b" }), { error: "hold_pending" });
+  assert.equal(t.calls.freeBusy, fb, "refused before any Google call");
+  assert.equal(t.calls.emails.length, 1);
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM quota WHERE kind = 'email' AND key = 'b'"), 1, "the refused request still used its quota");
+});
+
+test("one live hold per email: a second request for the same email while one is pending is hold_pending", async () => {
+  const t = setup();
+  await request(t, { start: hourly(1) }, { ipKey: "ip1", emailKey: "same" });
+  assert.deepEqual(await request(t, { start: hourly(3) }, { ipKey: "ip2", emailKey: "same" }), { error: "hold_pending" });
+});
+
+test("one live hold: once the first hold has lapsed, the same person can request again", async () => {
+  const t = setup();
+  await request(t, { start: hourly(1) }, { ipKey: "ipA", emailKey: "a" });
+  const r = await request(t, { start: hourly(3) }, { ipKey: "ipA", emailKey: "a", now: later(2 * HOUR) });
+  assert.equal(r.status, "pending_confirmation");
+});
+
+test("race: 20 parallel requests from one email for different slots produce exactly one hold", async () => {
+  const t = setup();
+  const results = await Promise.all(Array.from({ length: 20 }, (_, i) => request(t, { start: hourly(2 * i) }, { cfg: OPEN, emailKey: "same" })));
+  assert.equal(results.filter((r) => r.status === "pending_confirmation").length, 1);
+  assert.ok(results.filter((r) => !r.status).every((r) => r.error === "hold_pending"));
   assert.equal(t.calls.emails.length, 1);
 });
