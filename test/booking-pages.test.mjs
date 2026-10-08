@@ -81,3 +81,51 @@ test("/privacy makes no request to another origin and runs no script", () => {
   assert.deepEqual(externalRequests(html), []);
   assert.equal(all(html).filter((e) => e.tag === "script" && e.attrs.type !== "application/ld+json").length, 0);
 });
+
+// ---- /book (ships dark) ----
+
+test("/book is generated, noindex, with its own title and one <h1>", () => {
+  assert.ok(existsSync(join(ROOT, "public/book.html")), "public/book.html is missing");
+  const html = read("public/book.html");
+  assert.match(html, /<title>Book a meeting — Patrick Vieira<\/title>/);
+  assert.match(html, /<meta name="robots" content="noindex">/);
+  assert.equal(all(html).filter((e) => e.tag === "h1").length, 1);
+});
+
+test("/book ships dark: not in the sitemap, the homepage, index.md or llms.txt", () => {
+  assert.doesNotMatch(read("public/sitemap.xml"), /\/book/);
+  for (const f of ["public/index.html", "public/writing/index.html", "public/privacy.html"])
+    assert.ok(!all(read(f)).some((e) => e.tag === "a" && /^(https:\/\/patrickjv\.com)?\/book/.test(e.attrs.href ?? "")), `${f} links to /book`);
+  for (const f of ["public/index.md", "public/llms.txt"]) assert.doesNotMatch(read(f), /patrickjv\.com\/book/, f);
+});
+
+test("/book has exactly one CSP rule per path and makes no request to another origin", () => {
+  const headers = read("public/_headers");
+  assert.deepEqual(checkHeaders(headers), []);
+  for (const p of ["/book", "/book.html"]) {
+    const rules = rulesFor(headers, p);
+    assert.equal(rules.length, 1, `one rule for ${p}`);
+    assert.match(rules[0], /Content-Security-Policy: default-src 'none'.*frame-ancestors 'none'/);
+  }
+  assert.deepEqual(externalRequests(read("public/book.html")), []);
+});
+
+test("/book form: native controls, every field labelled, a polite live status region", () => {
+  const els = all(read("public/book.html"));
+  const ids = new Set(els.filter((e) => e.tag === "label").map((e) => e.attrs.for));
+  for (const id of ["name", "email", "note"]) {
+    assert.ok(els.some((e) => e.attrs.id === id && /^(input|textarea)$/.test(e.tag)), `no #${id} field`);
+    assert.ok(ids.has(id), `#${id} has no <label for>`);
+  }
+  assert.equal(els.find((e) => e.attrs.id === "email").attrs.type, "email");
+  assert.equal(els.find((e) => e.attrs.id === "note").attrs.maxlength, "500");
+  for (const id of ["types", "days", "times"]) {
+    const box = els.find((e) => e.attrs.id === id);
+    assert.ok(box, `no #${id}`);
+    let n = box.parent; while (n && n.tag !== "fieldset") n = n.parent;
+    assert.ok(n && n.children.some((c) => c.tag === "legend"), `#${id} is not inside a fieldset with a legend`);
+  }
+  const status = els.find((e) => e.attrs.id === "status");
+  assert.equal(status?.attrs["aria-live"], "polite");
+  assert.ok(els.some((e) => e.tag === "button" && e.attrs.type === "submit"));
+});
