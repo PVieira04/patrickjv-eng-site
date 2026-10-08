@@ -108,7 +108,7 @@ Checked 2026-10-08 against Google's own documentation unless marked otherwise.
 
 Apex MX and SPF unchanged (Cloudflare Email Routing, `-all`). The zone has no DNSSEC trust chain yet (DS record not at the registrar), so there's nothing that could make lookups fail.
 
-**Status:** **verified** on 2026-10-08, the same afternoon, about 1–2 hours after the records went live (one `POST /domains/{id}/verify` re-trigger along the way). A send-only API key, `patrickjv-booking / patrickjv-mcp / send-only`, was created for the booking Worker.
+**Status:** **verified** on 2026-10-08, the same afternoon, within a few hours of the records going live. A send-only API key, `patrickjv-booking / patrickjv-mcp / send-only`, was created for the booking Worker.
 
 ## S11: Live Google spike (pending)
 
