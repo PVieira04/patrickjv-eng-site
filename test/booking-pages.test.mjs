@@ -66,9 +66,10 @@ test("/privacy is in the sitemap and has exactly one CSP rule per path", () => {
 
 test("the homepage privacy line links to /privacy, and removing that link fails the page check", () => {
   const page = read("public/index.html");
-  const line = all(page).find((e) => e.tag === "p" && /(^|\s)privacy(\s|$)/.test(e.attrs.class ?? ""));
+  const els = all(page);
+  const line = els.find((e) => e.tag === "p" && /(^|\s)privacy(\s|$)/.test(e.attrs.class ?? ""));
   assert.ok(line, "no privacy line");
-  assert.ok(all(page).some((e) => e.tag === "a" && e.attrs.href === "/privacy" && e.parent === line), "privacy line has no link to /privacy");
+  assert.ok(els.some((e) => e.tag === "a" && e.attrs.href === "/privacy" && e.parent === line), "privacy line has no link to /privacy");
   assert.deepEqual(checkPage(page, content), []);
   const unlinked = page.replace(/<a href="\/privacy">([^<]*)<\/a>/, "$1");
   assert.notEqual(unlinked, page);

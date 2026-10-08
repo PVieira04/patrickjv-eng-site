@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Patrick Vieira</title>
+<meta name="description" content="What patrickjv.com stores about you, for how long, and who processes it on my behalf.">
+<link rel="canonical" href="https://patrickjv.com/privacy">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+:root { --bg: #f4f3ee; --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --code: #e9e7e0; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0c0e11; --ink: #e7e9ec; --muted: #9aa3ae; --line: #262b33; --signal: #ffb547; --code: #1a1e24; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.0625rem; line-height: 1.65; }
+.wrap { box-sizing: border-box; max-width: 44rem; margin: 0 auto; padding: 24px 16px 64px; }
+.bar { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 0.875rem; margin-bottom: 40px; }
+a { color: var(--signal); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 2em 0 0.5em; font-weight: 600; }
+.meta { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); margin: 0 0 32px; }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--code); padding: 0.1em 0.3em; border-radius: 3px; }
+pre { background: var(--code); padding: 12px 16px; overflow-x: auto; border-radius: 4px; }
+pre code { padding: 0; background: none; }
+li { margin: 0.35em 0; }
+.posts { list-style: none; padding: 0; }
+.posts li { margin: 0 0 28px; }
+.posts a { font-size: 1.2rem; font-weight: 600; }
+.posts p { margin: 4px 0 0; color: var(--muted); }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 0.875rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a></nav>
+<main>
+<h1>Privacy</h1>
+<p class="meta">Last updated 8 October 2026</p>
+<p>This is my personal website, and I am responsible for any personal data it handles. Two parts of it collect personal data: introductions, and booking a meeting with me. This page explains what each one keeps and for how long.</p>
+<p>If anything here is unclear, email me at <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a>.</p>
+<h2>Reading the site</h2>
+<p>The site sets no cookies and has no analytics or tracking scripts. Everything a page loads comes from patrickjv.com itself.</p>
+<p>Cloudflare hosts the site, so it handles your IP address and browser details in order to serve the pages. If Cloudflare's security checks ever challenge your browser, Cloudflare may set its own cookie to remember that you passed.</p>
+<h2>Introductions</h2>
+<p>You, or an AI agent acting for you, can send me an introduction through the site's MCP server or its in-browser agent tools. The message contains your name and email address, your reason for writing and the message itself, and optionally your organisation and the name of the agent.</p>
+<p>The site emails it to my personal mailbox, which is Gmail, and keeps no copy. The email stays in my mailbox like any other.</p>
+<h2>Booking a meeting</h2>
+<p>When you book a meeting, on the booking page or through an AI agent, the site stores your name, your email address, the meeting type and time, and your note if you add one.</p>
+<p>Nothing is booked until you click the confirmation link I email you. The site deletes its record 30 days after the meeting. If the booking is never confirmed, it deletes the record 30 days after the two-hour hold ends.</p>
+<p>Once you confirm, the meeting goes into my Google Calendar with you as a guest, and Google sends you the invitation and any cancellation. A meeting that takes place stays in my calendar as a past event.</p>
+<p>To find free times, the site asks Google only whether my calendars are free or busy at a given time. It never reads the titles or details of anything in them.</p>
+<h2>Limits and logs</h2>
+<p>To stop abuse, the site counts introductions and booking requests per day for each IP address and each email address. It stores a keyed hash of each address, never the address itself. Introduction counts are deleted at midnight UTC and booking counts within two days.</p>
+<p>Cloudflare keeps 30 days of recovery history for this storage, so I could restore a deleted record for up to 30 days after it was deleted.</p>
+<p>The site's logs record that something failed and in which part of the system. They never contain names, email addresses, IP addresses or message text.</p>
+<h2>Who processes your data</h2>
+<ul>
+<li>Cloudflare hosts the site and the booking service, stores booking records and the daily counts, and forwards email sent to <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a>.</li>
+<li>Google holds booked meetings in Google Calendar and sends the invitations. Introductions and email to <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a> arrive in my Gmail mailbox.</li>
+<li>Resend sends the booking emails: the confirmation link, the booked message and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules.</li>
+</ul>
+<h2>Your data</h2>
+<p>To cancel a meeting, use the link in your booking email. To see what I hold about you, or to have it deleted, email me at <a href="mailto:hello@patrickjv.com">hello@patrickjv.com</a>.</p>
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="/privacy">Privacy</a></footer>
+</div>
+</body>
+</html>

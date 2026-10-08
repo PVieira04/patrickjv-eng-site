@@ -224,8 +224,10 @@ export function checkPage(html, c) {
   list("Quick answers answers", faq.map((q) => texts(within(q, byTag("p")))[0]), c.faq.map((f) => f.a), (k) => `faq.${k}.a`);
 
   const footer = visible.find(byTag("footer"));
-  list("footer links", hrefs(footer), [L.linkedin, L.github], LINK_PATHS);
-  one("footer privacy note", texts(within(footer, byClass("privacy")))[0], c.privacy, "privacy");
+  list("footer links", hrefs(footer), [L.linkedin, L.github, PRIVACY_PATH], (k) => (k < 2 ? LINK_PATHS(k) : "privacy_link"));
+  const privacyLine = within(footer, byClass("privacy"))[0];
+  one("footer privacy note", privacyLine && textOf(privacyLine), `${c.privacy} ${c.privacy_link}`, "privacy");
+  list("footer privacy link", texts(within(privacyLine, (el) => el.tag === "a" && el.attrs.href === PRIVACY_PATH)), [c.privacy_link], () => "privacy_link");
 
   // Every link to a contact channel anywhere on the page must use the exact approved target.
   for (const a of elements(doc, { visible: false }).filter(byTag("a"))) {
@@ -238,6 +240,7 @@ export function checkPage(html, c) {
   const unchecked = [];
   (function walk(o, path) {
     if (path.split(".").at(-1) === "_status") return;
+    if (path === "pages") return; // copy for pages the build generates (/privacy, /book), not the hand-written page
     if (typeof o === "string") { if (!used.has(path)) unchecked.push(`${path}: ${o.slice(0, 80)}`); }
     else if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) walk(v, path ? `${path}.${k}` : k);
   })(c, "");
@@ -472,7 +475,7 @@ ${safeJson(jsonld, 2)}
 <main>
 ${main}
 </main>
-<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a></footer>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="${PRIVACY_PATH}">Privacy</a></footer>
 </div>
 </body>
 </html>
@@ -499,6 +502,53 @@ export function renderWriting(posts) {
     main: `<h1>Writing</h1>\n<ul class="posts">\n${sorted.map((p) => `<li><a href="/writing/${p.slug}">${attr(p.title)}</a><p>${attr(p.date)} · ${attr(p.description)}</p></li>`).join("\n")}\n</ul>`,
   });
   return { files, sorted };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Standalone pages (/privacy, /book): copy from content.json "pages", same look as /writing/.
+// ---------------------------------------------------------------------------------------------
+export const PRIVACY_PATH = "/privacy";
+
+function sitePage({ title, description, path, noindex = false, style = WRITING_STYLE, main, script }) {
+  return `<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${attr(title)}</title>
+<meta name="description" content="${attr(description)}">
+${noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="canonical" href="${SITE}${path.slice(1)}">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>${style}</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a></nav>
+<main>
+${main}
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="${PRIVACY_PATH}">Privacy</a></footer>
+</div>
+${script ? `<script>${script}</script>\n` : ""}</body>
+</html>
+`;
+}
+
+// Plain text with the contact address made a mailto link.
+const linkEmail = (text, email) => attr(text).split(attr(email)).join(`<a href="mailto:${attr(email)}">${attr(email)}</a>`);
+
+export function renderPrivacy(c) {
+  const p = c.pages.privacy, email = c.person.links.email;
+  const para = (t) => `<p>${linkEmail(t, email)}</p>`;
+  const sections = p.sections.map((s) => [
+    `<h2>${attr(s.heading)}</h2>`,
+    ...(s.paragraphs ?? []).map(para),
+    ...(s.items ? [`<ul>\n${s.items.map((i) => `<li>${linkEmail(i, email)}</li>`).join("\n")}\n</ul>`] : []),
+  ].join("\n")).join("\n");
+  return sitePage({
+    title: `${p.title} — ${c.person.name}`, description: p.description, path: PRIVACY_PATH,
+    main: `<h1>${attr(p.title)}</h1>\n<p class="meta">Last updated ${attr(p.updated)}</p>\n${p.intro.map(para).join("\n")}\n${sections}`,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -575,7 +625,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
   html = splice(html, /var d = \{.*\};/, () => `var d = ${safeJson(webmcp)};`, "WebMCP data");
 
   // ---- index.md ----
-  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, "", c.privacy, ""];
+  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
   const md = [
     `# ${c.person.name}`, "",
     `Platform engineer in London (not the footballer of the same name). Canonical page: ${SITE}`, "",
@@ -616,6 +666,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
   <url><loc>${SITE}</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}cv</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}writing/</loc><lastmod>${date}</lastmod></url>
+  <url><loc>${SITE}privacy</loc><lastmod>${date}</lastmod></url>
 ${writing.sorted.map((p) => `  <url><loc>${SITE}writing/${p.slug}</loc><lastmod>${p.date}</lastmod></url>`).join("\n")}
 </urlset>
 `;
@@ -648,6 +699,12 @@ Sitemap: ${SITE}sitemap.xml
   const writingMd = () => writing.sorted.map((p) => `/writing/${p.slug}.md\n  Content-Type: text/markdown; charset=utf-8\n  Content-Security-Policy: ${baseCsp}`).join("\n\n");
   const cvCsp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${cvPage.styles.map(cspHash).join(" ")}`,
+    "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
+  ].join("; ");
+  const privacyHtml = renderPrivacy(c);
+  const privacyPage = inlineCode(privacyHtml, { styles: 1, scripts: 0 });
+  const privacyCsp = [
+    "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${privacyPage.styles.map(cspHash).join(" ")}`,
     "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
   ].join("; ");
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
@@ -699,6 +756,13 @@ Sitemap: ${SITE}sitemap.xml
 /cv.html
   Content-Security-Policy: ${cvCsp}
 
+# Privacy: served at /privacy (and /privacy.html, which the asset server redirects to /privacy).
+${PRIVACY_PATH}
+  Content-Security-Policy: ${privacyCsp}
+
+${PRIVACY_PATH}.html
+  Content-Security-Policy: ${privacyCsp}
+
 # Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
 ${writingRules}
 
@@ -729,8 +793,8 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
     : html404.replace(/<meta charset="utf-8">/, `<meta charset="utf-8">\n${cspMeta}`);
 
   return {
-    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, ...writing.files },
-    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
+    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, ...writing.files },
+    inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...privacyPage.errors.map((e) => "privacy.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
     md, llms,
   };
 }
@@ -743,7 +807,7 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html"];
+const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html"];
 
 // Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
 // over the original. This is NOT transactional: a failure part-way through the renames leaves some
@@ -799,7 +863,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   errors.push(...inlineErrors);
   errors.push(...checkPage(files["public/index.html"], c).map((e) => "index.html: " + e));
   const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
-  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
+  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
   const nf = parseHtml(html404);
   if (elements(nf, { visible: false }).filter((e) => e.tag === "h1").length !== 1) errors.push("404.html must have exactly one <h1>");
   if (!elements(nf, { visible: false }).some((e) => e.tag === "meta" && e.attrs.name === "robots" && /noindex/.test(e.attrs.content ?? ""))) errors.push("404.html must carry <meta name=\"robots\" content=\"noindex\">");
