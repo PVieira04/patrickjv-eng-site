@@ -380,3 +380,43 @@ test("booking tools: failures are tool errors naming the error and asking agents
   }
   assert.equal(fresh.storeCalls(), 0);
 });
+
+// ---- Kill switch: BOOKING_ENABLED ----
+
+test("BOOKING_ENABLED not \"true\": every write path is 503 booking_disabled; types and status still work", async () => {
+  for (const value of ["false", undefined, "TRUE", "1"]) {
+    const h = harness({ env: { BOOKING_ENABLED: value } });
+    const res = await h.post(booking());
+    assert.equal(res.status, 503, String(value));
+    assert.deepEqual(await res.json(), { error: "booking_disabled", message: "Booking isn't open yet." });
+    const viaTool = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
+    assert.equal(viaTool.isError, true);
+    assert.equal(viaTool.structuredContent.error, "booking_disabled");
+    assert.equal((await tool(h, "cancel_booking", { booking_id: "a".repeat(32) })).structuredContent.error, "booking_disabled");
+    const cancel = await h.call("/api/booking/cancel", { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: { booking_id: "a".repeat(32) } });
+    assert.equal(cancel.status, 503);
+    assert.equal((await h.call("/api/booking/types")).status, 200);
+    assert.equal((await tool(h, "list_meeting_types")).isError, undefined);
+    assert.equal(h.f.mails().length, 0);
+  }
+});
+
+test("kill switch: availability works while configured, and is 503 when not configured", async () => {
+  const off = harness({ enabled: false });
+  assert.equal((await off.call("/api/booking/availability?type=consultation")).status, 200);
+  const unconfigured = harness({ enabled: false, env: { GOOGLE_REFRESH_TOKEN: undefined } });
+  const res = await unconfigured.call("/api/booking/availability?type=consultation");
+  assert.equal(res.status, 503);
+  assert.equal((await res.json()).error, "unavailable");
+  assert.equal((await tool(unconfigured, "get_availability", { type: "consultation" })).structuredContent.error, "unavailable");
+});
+
+test("kill switch: links for holds made before it was turned off still work", async () => {
+  const h = harness();
+  const { booking_id } = await (await h.post(booking())).json();
+  h.env.BOOKING_ENABLED = "false";
+  assert.equal((await h.call(`/api/booking/act?t=${confirmToken(h)}`)).status, 200);
+  assert.equal((await h.actPost(confirmToken(h))).status, 200);
+  assert.equal(h.svc.status(booking_id).status, "confirmed");
+  assert.equal((await h.post(booking({ email: "new@example.com", start: "2026-10-22T10:00:00+01:00" }), { ip: "198.51.100.9" })).status, 503);
+});
