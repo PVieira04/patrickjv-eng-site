@@ -170,7 +170,7 @@
           "heading": "Limits and logs",
           "paragraphs": [
             "To stop abuse, the site counts introductions and booking requests per day for each IP address and each email address. It stores a keyed hash of each address, never the address itself. Introduction counts are deleted at midnight UTC and booking counts within two days.",
-            "Cloudflare keeps 30 days of recovery history for this storage, so I could restore a deleted record for up to 30 days after it was deleted.",
+            "Cloudflare keeps 30 days of recovery history for booking records and the daily counts, so I could restore a deleted record for up to 30 days after it was deleted.",
             "The site's logs record that something failed and in which part of the system. They never contain names, email addresses, IP addresses or message text."
           ]
         },
@@ -179,7 +179,7 @@
           "items": [
             "Cloudflare hosts the site and the booking service, stores booking records and the daily counts, and forwards email sent to hello@patrickjv.com.",
             "Google holds booked meetings in Google Calendar and sends the invitations. Introductions and email to hello@patrickjv.com arrive in my Gmail mailbox.",
-            "Resend sends the booking emails: the confirmation link, the booked message and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules."
+            "Resend sends the booking emails: the confirmation link, the booking confirmation and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules."
           ]
         },
         {
