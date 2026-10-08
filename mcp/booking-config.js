@@ -57,6 +57,32 @@ export function candidateSlots(cfg, typeId, fromDay, toDay) {
   return out;
 }
 
+const HOUR = 3600000, DAY = 24 * HOUR;
+
+// Whether `start` (any ISO 8601 form) can be booked now for a meeting type.
+export function checkSlot({ cfg, typeId, start, now, busy, bookings, ignoreNotice = false, excludeId }) {
+  if (!cfg.meetingTypes.some((t) => t.id === typeId)) return { ok: false, reason: "unknown_type" };
+  const ms = typeof start === "string" ? Date.parse(start) : NaN;
+  if (Number.isNaN(ms)) return { ok: false, reason: "not_a_slot" };
+  const day = localDay(new Date(ms).toISOString(), cfg.timezone);
+  const slot = candidateSlots(cfg, typeId, day, day).find((s) => Date.parse(s.start) === ms);
+  if (!slot) return { ok: false, reason: "not_a_slot" };
+  if (!ignoreNotice && ms < now.getTime() + cfg.minNoticeHours * HOUR) return { ok: false, reason: "notice" };
+  if (ms > now.getTime() + cfg.horizonDays * DAY) return { ok: false, reason: "horizon" };
+  return { ok: true };
+}
+
+// Slots that pass checkSlot, on London days from..to ("YYYY-MM-DD", optional), clamped to today
+// through the horizon. The caller validates the format of from and to.
+export function availableSlots({ cfg, typeId, now, from, to, busy, bookings }) {
+  const today = localDay(now.toISOString(), cfg.timezone);
+  const last = localDay(new Date(now.getTime() + cfg.horizonDays * DAY).toISOString(), cfg.timezone);
+  const first = from && from > today ? from : today;
+  const end = to && to < last ? to : last;
+  return candidateSlots(cfg, typeId, first, end)
+    .filter((s) => checkSlot({ cfg, typeId, start: s.start, now, busy, bookings }).ok);
+}
+
 // Agent-facing form of a stored UTC time: local wall time in tz with its offset, to the second.
 export function withOffset(iso, tz) {
   const ms = Date.parse(iso);
