@@ -111,7 +111,12 @@ test("migrate is idempotent", () => {
 // ---- Caps -----------------------------------------------------------------------------------
 
 const DAY = "2026-10-19";
-const reserve = (sql, ipKey, emailKey, day = DAY) => store.reserveBookingQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+// A request that got as far as sending its hold email: per-IP and per-email counts, then global.
+const reserve = (sql, ipKey, emailKey, day = DAY) => {
+  const r = store.reserveBookingQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+  return r.ok ? store.reserveGlobalQuota(sql, { day, caps: cfg.caps }) : r;
+};
+const quotaRows = (sql) => sql.exec("SELECT kind, key, n FROM quota ORDER BY kind, key").toArray();
 
 test("caps: 4 requests per IP a day, then refused as ip", () => {
   const { sql } = setup();
@@ -144,6 +149,16 @@ test("caps: a refused request reserves nothing; reservations are never refunded;
   assert.equal(sql.exec("SELECT n FROM quota WHERE day = ? AND kind = 'global'", DAY).one().n, 4);
   assert.equal(sql.exec("SELECT count(*) c FROM quota WHERE key = 'e9'").one().c, 0);
   assert.equal(reserve(sql, "ipA", "e0", "2026-10-20").ok, true);
+});
+
+test("caps: per-IP and per-email counts never touch the global count; a closed day refuses them without writing", () => {
+  const { sql } = setup();
+  assert.deepEqual(store.reserveBookingQuota(sql, { day: DAY, ipKey: "i", emailKey: "e", caps: cfg.caps }), { ok: true });
+  assert.deepEqual(quotaRows(sql).map((r) => r.kind), ["email", "ip"]);
+  for (let i = 0; i < 10; i++) store.reserveGlobalQuota(sql, { day: DAY, caps: cfg.caps });
+  assert.deepEqual(store.reserveGlobalQuota(sql, { day: DAY, caps: cfg.caps }), { ok: false, which: "global" });
+  assert.deepEqual(store.reserveBookingQuota(sql, { day: DAY, ipKey: "j", emailKey: "f", caps: cfg.caps }), { ok: false, which: "global" });
+  assert.equal(sql.exec("SELECT count(*) c FROM quota WHERE key IN ('j', 'f')").one().c, 0);
 });
 
 // ---- Requests make holds --------------------------------------------------------------------
@@ -222,6 +237,46 @@ test("request: free/busy failing returns unavailable and holds nothing", async (
   t.deps.freeBusy = async () => { await tick(); throw new Error("google down"); };
   assert.deepEqual(await request(t), { error: "unavailable" });
   assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
+});
+
+test("request: 10 invalid-slot requests write no quota and don't close booking for the day", async () => {
+  const t = setup();
+  for (let i = 0; i < 10; i++) assert.equal((await request(t, { start: "2026-10-19T15:00:00.000Z" })).error, "invalid_slot");
+  assert.deepEqual(quotaRows(t.sql), []);
+  assert.equal((await request(t)).status, "pending_confirmation");
+});
+
+test("request: hold_pending is refused before any quota is written", async () => {
+  const t = setup();
+  await request(t, {}, { ipKey: "ipA", emailKey: "a" });
+  const before = quotaRows(t.sql);
+  assert.deepEqual(await request(t, { start: "2026-10-22T10:00:00.000Z" }, { ipKey: "ipB", emailKey: "a" }), { error: "hold_pending" });
+  assert.deepEqual(quotaRows(t.sql), before);
+});
+
+test("request: a hold withdrawn by the agent can be re-requested at once", async () => {
+  const t = setup();
+  const first = await request(t, {}, { ipKey: "ipA", emailKey: "a" });
+  assert.deepEqual(await store.cancelByAgent(t.sql, { bookingId: first.booking_id, now: NOW, deps: t.deps }), { status: "cancelled" });
+  assert.equal((await request(t, {}, { ipKey: "ipA", emailKey: "a" })).status, "pending_confirmation");
+});
+
+test("request: a slot lost at the claim uses the person's IP and email counts but not the global one", async () => {
+  const t = setup({ busy: [{ start: SLOT, end: "2026-10-21T11:00:00.000Z" }] });
+  assert.equal((await request(t, {}, { ipKey: "ipA", emailKey: "a" })).error, "slot_taken");
+  assert.deepEqual(quotaRows(t.sql), [{ kind: "email", key: "a", n: 1 }, { kind: "ip", key: "ipA", n: 1 }]);
+});
+
+test("request: the global count is taken just before the hold email, and a day that closed meanwhile holds nothing", async () => {
+  const t = setup();
+  const fb = t.deps.freeBusy;
+  t.deps.freeBusy = async (...a) => {
+    for (let i = 0; i < 10; i++) store.reserveGlobalQuota(t.sql, { day: DAY, caps: cfg.caps }); // others used up the day
+    return fb(...a);
+  };
+  assert.deepEqual(await request(t), { error: "rate_limited", reason: "global" });
+  assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
+  assert.equal(t.calls.emails.length, 0);
 });
 
 // Captures console output, to check what is (and is not) logged.
