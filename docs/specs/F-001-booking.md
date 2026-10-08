@@ -17,6 +17,7 @@
 | Created | 2026-10-08 |
 | Last updated | 2026-10-08 |
 | Target release | TBD |
+| Evidence | [Spikes S1–S11](F-001-spikes/README.md) (S10, S11 pending) |
 | Depends on | A Google account for `hello@patrickjv.com` (setup below); the existing `patrickjv-mcp` Worker |
 
 ---
@@ -179,7 +180,7 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 - **`/book` page:** static, built by `build.mjs` like the rest of the site. Calls the booking API with `fetch`.
 - **Booking API and MCP tools:** the existing `patrickjv-mcp` Worker, with a second route `patrickjv.com/api/booking*`. Reusing it keeps one place for rate limits, salted quota keys, security headers and health. The static site stays code-free for ordinary page views.
 - **State:** a new SQLite Durable Object class `BookingStore`, one instance (`idFromName("booking")`). It holds bookings, tokens and booking quotas, and handles every write. An alarm expires holds and prunes old records.
-- **The race rule (proven by spike, 2026-10-08):** a Durable Object only serialises code up to the first `await` on anything outside its own storage. While it waits on Google, other requests run. In a local spike, 20 concurrent bookings that checked the slot, awaited a simulated Google call, then wrote, produced **13** confirmed bookings for one slot. So every booking and confirm must **claim before it awaits**: check the slot and write a `holding`/`confirming` row in the same synchronous block, with no `await` between them, and only then call Google. Afterwards, it settles or rolls back. The same spike with claim-first produced exactly **1**. A test fires concurrent requests at one slot and asserts one winner.
+- **The race rule (proven by spike S2, [evidence](F-001-spikes/README.md#s2-race-for-one-slot-in-a-durable-object)):** a Durable Object only serialises code up to the first `await` on anything outside its own storage. While it waits on Google, other requests run. In a local spike, 20 concurrent bookings that checked the slot, awaited a simulated Google call, then wrote, produced **13**, then **5**, confirmed bookings for one slot. So every booking and confirm must **claim before it awaits**: check the slot and write a `holding`/`confirming` row in the same synchronous block, with no `await` between them, and only then call Google. Afterwards, it settles or rolls back. The same spike with claim-first produced exactly **1**. A test fires concurrent requests at one slot and asserts one winner.
 - **Email:** Cloudflare's `send_email` can only deliver to verified addresses, so it can't reach guests. Guest emails go out from `hello@patrickjv.com` through **Resend's free tier** (decided 2026-10-08, to keep the site on free plans), called with `fetch` from the Worker.
   - **Reuse the existing Resend account.** It already sends for the marine-weather forecasts from `marineweather.patrickjv.com` (Amazon SES eu-west-1, DKIM `resend._domainkey.marineweather`, MAIL FROM `send.marineweather`). The free plan allows 3 domains, so `patrickjv.com` is added as a second domain. No new vendor or account.
   - **Domain is the apex, `patrickjv.com`**, so the From address is `hello@patrickjv.com` and DKIM aligns with the apex DMARC policy. Resend's records don't clash with Email Routing: a DKIM TXT record at `resend._domainkey`, and two CNAMEs to Resend's own mail servers, `send` → `send.forge.rmta.net` and `rsend` → `rsend-euw1.forge.rmta.net`, which supply the bounce MX and SPF. The apex MX and SPF stay unchanged. (Domain added 2026-10-08, eu-west-1, open and click tracking off.)
@@ -352,13 +353,14 @@ Add a work calendar as a blocking calendar through its published free/busy-only 
 - **Page bookings:** confirm by email like agent bookings; one path for both.
 - **Caps as a denial of service:** holds don't count toward 3-a-day; one live hold per IP and per email; Patrick alerted when the global cap is hit.
 - **Per-IP cap:** 4, matching `request_intro`.
-- **Spikes (2026-10-08):** Europe/London slot generation using only `Intl` passes both clock changes (23/26/27 Oct 2026, 26/29 Mar 2027). Race: claim-before-await is required (13 winners without it, 1 with it). Scopes, the service-account limit and event-ID rules confirmed from Google's API reference.
+- **Spikes (2026-10-08):** Europe/London slot generation using only `Intl` passes both clock changes (23/26/27 Oct 2026, 26/29 Mar 2027). Race: claim-before-await is required (13 and 5 winners without it, 1 with it). Full evidence: [F-001-spikes](F-001-spikes/README.md). Scopes, the service-account limit and event-ID rules confirmed from Google's API reference.
 - **Single token:** re-auth runbook, plus `bookingReady` in the 6-hourly monitor.
 
 ---
 
 ## References
 
+- Spike evidence for this spec: [`F-001-spikes/`](F-001-spikes/README.md)
 - Existing pattern: `mcp/handler.js` (`request_intro`, `IntroQuota`, `patrickjv/health`), `mcp/wrangler.jsonc`
 - [`../04-mcp-and-webmcp.md`](../04-mcp-and-webmcp.md), [`../06-operations.md`](../06-operations.md)
 - Google Calendar API: freebusy.query, events.insert (`conferenceData`, `sendUpdates=all`)
