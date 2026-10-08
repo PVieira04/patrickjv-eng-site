@@ -105,11 +105,9 @@ test("hold email: says when an AI agent asked on the person's behalf", () => {
   assert.match(e.text, /on your behalf/);
 });
 
-test("hold email: the note is quoted line by line, and left out when empty", () => {
+test("hold email: never carries the note (whoever asked for the hold wrote it, not the inbox's owner)", () => {
   const e = hold({ note: "Platform team, 40 engineers.\nKeen to talk about agents." });
-  assert.ok(e.text.includes("> Platform team, 40 engineers.\n> Keen to talk about agents."), e.text);
-  assert.doesNotMatch(hold({ note: "" }).text, /note/i);
-  assert.doesNotMatch(hold({ note: undefined }).text, /note/i);
+  assert.doesNotMatch(e.text, /Platform team|Keen to talk|note/i);
 });
 
 test("booked email: booked, Google invite on its way, Meet link if known, cancel link; no note", () => {
