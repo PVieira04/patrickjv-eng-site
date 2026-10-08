@@ -43,3 +43,19 @@ export async function newToken() {
   const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return { token, hash: await hashToken(token) };
 }
+
+// Daily caps, reserved before any Google call or email and never refunded (fail closed), like
+// request_intro's. Synchronous, so atomic inside the Durable Object. Global is checked first, and
+// a refused request writes nothing, so refusals never eat into anyone's allowance. The request
+// that uses up the global cap says so, once a day, so Patrick can be alerted.
+export function reserveQuota(sql, { day, ipKey, emailKey, caps }) {
+  const count = (kind, key) => sql.exec("SELECT n FROM quota WHERE day = ? AND kind = ? AND key = ?", day, kind, key).toArray()[0]?.n ?? 0;
+  const g = count("global", "");
+  if (g >= caps.globalPerDay) return { ok: false, which: "global" };
+  if (count("ip", ipKey) >= caps.perIpPerDay) return { ok: false, which: "ip" };
+  if (count("email", emailKey) >= caps.perEmailPerDay) return { ok: false, which: "email" };
+  for (const [kind, key] of [["global", ""], ["ip", ipKey], ["email", emailKey]]) {
+    sql.exec("INSERT INTO quota (day, kind, key, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, kind, key) DO UPDATE SET n = n + 1", day, kind, key);
+  }
+  return g + 1 === caps.globalPerDay ? { ok: true, globalJustExhausted: true } : { ok: true };
+}
