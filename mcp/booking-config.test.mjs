@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { validateConfig, localToUtc, localDay, withOffset, candidateSlots } from "./booking-config.js";
+import { validateConfig, localToUtc, localDay, withOffset, candidateSlots, checkSlot, availableSlots } from "./booking-config.js";
 
 const TZ = "Europe/London";
 
@@ -113,4 +113,49 @@ test("clocks change (S1): slots on 23, 26, 27 Oct 2026 and 26, 29 Mar 2027", () 
   // Across the weekend of the change: Fri 23 and Mon 26 only, each 10:00–17:00 London.
   const span = candidateSlots(cfg, "consultation", "2026-10-23", "2026-10-26");
   assert.deepEqual([...new Set(span.map((s) => localDay(s.start, TZ)))], ["2026-10-23", "2026-10-26"]);
+});
+
+// Mon 2 Nov 2026, 12:00 GMT: notice runs to Tue 3 Nov 12:00, the horizon to Mon 30 Nov 12:00.
+const NOW = new Date("2026-11-02T12:00:00.000Z");
+const check = (start, over = {}) => checkSlot({ cfg: realConfig(), typeId: "consultation", start, now: NOW, busy: [], bookings: [], ...over });
+
+test("checkSlot: unknown type, and starts that aren't offered slots", () => {
+  assert.deepEqual(check("2026-11-04T10:00:00.000Z", { typeId: "nope" }), { ok: false, reason: "unknown_type" });
+  for (const bad of [
+    "2026-11-04T10:05:00.000Z", // not on the step
+    "2026-11-04T09:45:00.000Z", // before opening
+    "2026-11-04T16:45:00.000Z", // a 30-minute meeting would end after 17:00
+    "2026-11-07T10:00:00.000Z", // Saturday
+    "2026-11-04T10:00:30.000Z", // seconds
+    "not a date", "", null,
+  ]) assert.deepEqual(check(bad), { ok: false, reason: "not_a_slot" }, String(bad));
+  // The same instant written with an offset is the same slot.
+  assert.deepEqual(check("2026-11-04T10:00:00+00:00"), { ok: true });
+  assert.deepEqual(check("2026-11-04T16:45:00.000Z", { typeId: "recruiter-intro" }), { ok: true });
+});
+
+test("checkSlot: 24 hours' notice and a 4-week horizon", () => {
+  assert.deepEqual(check("2026-11-03T12:00:00.000Z"), { ok: true }); // exactly 24 h
+  assert.deepEqual(check("2026-11-03T11:45:00.000Z"), { ok: false, reason: "notice" });
+  assert.deepEqual(check("2026-11-02T14:00:00.000Z"), { ok: false, reason: "notice" });
+  assert.deepEqual(check("2026-11-30T12:00:00.000Z"), { ok: true }); // exactly 28 days
+  assert.deepEqual(check("2026-11-30T12:15:00.000Z"), { ok: false, reason: "horizon" });
+  // Confirm doesn't re-apply notice (spec: a hold made with 25 h confirmed 1 h 59 later).
+  assert.deepEqual(check("2026-11-02T14:00:00.000Z", { ignoreNotice: true }), { ok: true });
+});
+
+test("availableSlots: from now + 24 h to now + 28 days, from/to clamped to that window", () => {
+  const cfg = realConfig();
+  const all = availableSlots({ cfg, typeId: "consultation", now: NOW, busy: [], bookings: [] });
+  assert.equal(all[0].start, "2026-11-03T12:00:00.000Z");
+  assert.equal(all.at(-1).start, "2026-11-30T12:00:00.000Z");
+  for (const s of all) assert.deepEqual(check(s.start), { ok: true });
+  // 18 full weekdays (Wed 4 to Fri 27 Nov), Tue 3 Nov from 12:00 (19) and Mon 30 Nov to 12:00 (9).
+  assert.equal(all.length, 18 * 27 + 19 + 9);
+  assert.deepEqual(availableSlots({ cfg, typeId: "consultation", now: NOW, from: "2026-01-01", to: "2027-12-31", busy: [], bookings: [] }), all);
+  const one = availableSlots({ cfg, typeId: "consultation", now: NOW, from: "2026-11-05", to: "2026-11-05", busy: [], bookings: [] });
+  assert.equal(one.length, 27);
+  assert.ok(one.every((s) => localDay(s.start, TZ) === "2026-11-05"));
+  assert.deepEqual(availableSlots({ cfg, typeId: "consultation", now: NOW, from: "2026-12-01", busy: [], bookings: [] }), []);
+  assert.deepEqual(availableSlots({ cfg, typeId: "consultation", now: NOW, to: "2026-11-02", busy: [], bookings: [] }), []);
 });
