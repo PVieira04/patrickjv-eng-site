@@ -22,7 +22,7 @@ Three kinds of evidence, in falling order of strength:
 | S7 | What blocks time in free/busy? | Docs | ⚠️ Timed Busy tasks **do** block; Free events probably don't | Spec corrected; live check in S11 |
 | S8 | Can `hello@` send guest emails through Gmail? | Docs (secondary) | ❌ Account has no Gmail | Use a mail service |
 | S9 | Which mail service, on free plans? | Docs + account | ✅ Existing Resend account, second domain | Resend setup section |
-| S10 | Resend domain `patrickjv.com` verified | Run (DNS) | ⏳ DNS correct; Resend still `pending` | — |
+| S10 | Resend domain `patrickjv.com` verified | Run (DNS) + account | ✅ Verified 2026-10-08 | — |
 | S11 | Live Google behaviour end to end | Pending | ⏳ Needs the `hello@` account | — |
 
 ---
@@ -108,7 +108,7 @@ Checked 2026-10-08 against Google's own documentation unless marked otherwise.
 
 Apex MX and SPF unchanged (Cloudflare Email Routing, `-all`). The zone has no DNSSEC trust chain yet (DS record not at the registrar), so there's nothing that could make lookups fail.
 
-**Status:** waiting on Resend. Next: trigger the check again once with `POST /domains/{id}/verify`, then contact support if it's still pending.
+**Status:** **verified** on 2026-10-08, the same afternoon, about 1–2 hours after the records went live (one `POST /domains/{id}/verify` re-trigger along the way). A send-only API key, `patrickjv-booking / patrickjv-mcp / send-only`, was created for the booking Worker.
 
 ## S11: Live Google spike (pending)
 

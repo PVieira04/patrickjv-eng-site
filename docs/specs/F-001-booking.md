@@ -17,7 +17,7 @@
 | Created | 2026-10-08 |
 | Last updated | 2026-10-08 |
 | Target release | TBD |
-| Evidence | [Spikes S1–S11](F-001-spikes/README.md) (S10, S11 pending) |
+| Evidence | [Spikes S1–S11](F-001-spikes/README.md) (S11 pending) |
 | Depends on | A Google account for `hello@patrickjv.com` (setup below); the existing `patrickjv-mcp` Worker |
 
 ---
