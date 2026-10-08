@@ -4,7 +4,7 @@
 
 - **Endpoint:** `https://patrickjv.com/mcp` — MCP **Streamable HTTP**, stateless, JSON responses only (no SSE), no auth. Protocol versions `2025-11-25` and `2025-06-18`.
 - **Worker:** `patrickjv-mcp` (`mcp/`), on the routes `patrickjv.com/mcp*` and `patrickjv.com/api/booking*` ([booking](#booking)) only.
-- **Server info:** name `patrickjv.com`, version imported from `mcp/server.json` (currently `1.2.0` — one source, so the server and the Registry entry cannot disagree), `websiteUrl`, and **icons** (the pjv favicon) on the server and every tool.
+- **Server info:** name `patrickjv.com`, version imported from `mcp/server.json` (currently `1.1.0`; bumped to `1.2.0` at booking launch — one source, so the server and the Registry entry cannot disagree), `websiteUrl`, and **icons** (the pjv favicon) on the server and every tool.
 
 | Tool | Kind | Returns / does |
 |---|---|---|

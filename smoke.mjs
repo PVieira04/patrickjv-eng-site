@@ -234,10 +234,21 @@ if (flags.has("--mcp")) {
     const res = await mcp({ jsonrpc: "2.0", method: "notifications/initialized" });
     return expect(res.status === 202, `status ${res.status}`);
   });
+  // Readiness, not delivery: request_intro's secret, email binding, quota Durable Object and rate
+  // limits are configured; and if booking is switched on, bookingReady (its secrets set, a Google
+  // token refresh works, the BookingStore answers). Booking switched off passes. Read-only and
+  // sends nothing; delivery itself is never exercised here. Runs before tools/list, which expects
+  // the booking tools only when this reports bookingEnabled.
+  let bookingOn = false;
+  await check("mcp patrickjv/health -> introReady, and bookingReady if booking is enabled", async () => {
+    const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
+    if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
+    bookingOn = res.json.result?.bookingEnabled === true;
+    const v = healthVerdict(res.json.result);
+    return expect(v.ok, v.detail);
+  });
   await check(`mcp tools/list = {${TOOLS.join(", ")}}, plus the booking tools if booking is enabled, each with icons`, async () => {
-    const health = await mcp({ jsonrpc: "2.0", id: 5, method: "patrickjv/health" });
-    if (!envelope(health, 5)) return FAIL(`patrickjv/health status ${health.status}`);
-    const want = health.json.result?.bookingEnabled === true ? [...TOOLS, ...BOOKING_TOOLS] : TOOLS;
+    const want = bookingOn ? [...TOOLS, ...BOOKING_TOOLS] : TOOLS;
     const res = await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     if (!envelope(res, 2)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     const tools = res.json.result?.tools ?? [];
@@ -253,16 +264,6 @@ if (flags.has("--mcp")) {
     const items = result?.structuredContent?.items;
     const same = isDeepStrictEqual(items, faq);
     return expect(result?.isError !== true && same, `${items?.length ?? 0} items${same ? "" : ", differ from content.json"}${result?.isError ? ", isError" : ""}`);
-  });
-  // Readiness, not delivery: request_intro's secret, email binding, quota Durable Object and rate
-  // limits are configured; and if booking is switched on, bookingReady (its secrets set, a Google
-  // token refresh works, the BookingStore answers). Booking switched off passes. Read-only and
-  // sends nothing; delivery itself is never exercised here.
-  await check("mcp patrickjv/health -> introReady, and bookingReady if booking is enabled", async () => {
-    const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
-    if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
-    const v = healthVerdict(res.json.result);
-    return expect(v.ok, v.detail);
   });
 }
 
