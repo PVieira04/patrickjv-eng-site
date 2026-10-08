@@ -30,3 +30,6 @@ export function createMailer({ apiKey, from, fetch }) {
   }
   return { send };
 }
+
+const todo = () => { throw new Error("not implemented"); };
+export const holdEmail = todo, bookedEmail = todo, cancelRequestEmail = todo, capAlertEmail = todo;
