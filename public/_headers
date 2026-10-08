@@ -33,7 +33,7 @@
 /privacy.html
   Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-e+27bssYecnBnhkvnsftQ1VPFDMqVdDPfQ7tIF6s/TE='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
-# Booking (F-001, ships dark: noindex and unlinked until launch).
+# Booking (F-001).
 /book
   Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UsgWugZVeUdyYPRgdKPM06QQRxMBO6FUCTlbyCS2OQs='; script-src 'sha256-EJYRrTCHeTJOJEP6Nbdo+j2aTpK2D1wdSNTDH/jQF9w='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
