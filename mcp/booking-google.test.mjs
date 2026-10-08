@@ -1,7 +1,7 @@
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createGoogle, GoogleError } from "./booking-google.js";
+import { createGoogle, GoogleError, assertNoErrors } from "./booking-google.js";
 
 const API = "https://www.googleapis.com/calendar/v3";
 
@@ -81,4 +81,62 @@ test("ping (health): true when a refresh succeeds, false when it fails; always r
   assert.equal(await bad.g.ping(), false);
   const down = client([["POST", /oauth2/, () => { throw new TypeError("network down"); }]]);
   assert.equal(await down.g.ping(), false);
+});
+
+test("freeBusy: one freebusy.query for all calendars; busy merged and sorted as UTC ISO; bearer token sent", async () => {
+  const { g, fetch } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /\/calendar\/v3\/freeBusy$/, { body: { calendars: {
+      "a@example.com": { busy: [{ start: "2026-10-26T13:00:00Z", end: "2026-10-26T14:00:00Z" }, { start: "2026-10-26T10:00:00Z", end: "2026-10-26T10:30:00Z" }] },
+      primary: { busy: [{ start: "2026-10-26T10:15:00Z", end: "2026-10-26T11:00:00Z" }, { start: "2026-10-26T14:00:00Z", end: "2026-10-26T14:30:00Z" }] },
+    } } }],
+  ]);
+  const r = await g.freeBusy(["a@example.com", "primary"], "2026-10-26T00:00:00.000Z", "2026-10-27T00:00:00.000Z");
+  assert.deepEqual(r, {
+    busy: [
+      { start: "2026-10-26T10:00:00.000Z", end: "2026-10-26T11:00:00.000Z" }, // overlapping blocks merged
+      { start: "2026-10-26T13:00:00.000Z", end: "2026-10-26T14:30:00.000Z" }, // touching blocks merged
+    ],
+    errors: [],
+  });
+  const q = fetch.calls[1];
+  assert.equal(q.url, `${API}/freeBusy`);
+  assert.equal(q.headers.authorization, "Bearer at-1");
+  assert.deepEqual(JSON.parse(q.body), { timeMin: "2026-10-26T00:00:00.000Z", timeMax: "2026-10-27T00:00:00.000Z", items: [{ id: "a@example.com" }, { id: "primary" }] });
+});
+
+test("freeBusy: a calendar error (or a missing calendar) is reported, and assertNoErrors refuses the result", async () => {
+  const { g } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /freeBusy$/, { body: { calendars: {
+      "a@example.com": { errors: [{ domain: "global", reason: "notFound" }], busy: [] },
+      primary: { busy: [{ start: "2026-10-26T10:00:00Z", end: "2026-10-26T10:30:00Z" }] },
+    } } }],
+  ]);
+  const r = await g.freeBusy(["a@example.com", "primary", "b@example.com"], "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z");
+  assert.deepEqual(r.errors, [{ calendar: "a@example.com", reason: "notFound" }, { calendar: "b@example.com", reason: "missing" }]);
+  assert.equal(r.busy.length, 1);
+  const e = (() => { try { assertNoErrors(r); } catch (x) { return x; } })();
+  assert.ok(e instanceof GoogleError);
+  assert.equal(e.reason, "notFound");
+  // Calendar IDs of personal calendars are email addresses (secrets): never in the message.
+  assert.doesNotMatch(e.message, /@/);
+  assert.doesNotThrow(() => assertNoErrors({ busy: [], errors: [] }));
+});
+
+test("freeBusy: an HTTP error throws GoogleError with Google's reason", async () => {
+  const { g } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /freeBusy$/, { status: 403, body: { error: { code: 403, message: "Forbidden", errors: [{ reason: "insufficientPermissions" }] } } }],
+  ]);
+  const e = await g.freeBusy(["primary"], "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z").catch((x) => x);
+  assert.ok(e instanceof GoogleError);
+  assert.deepEqual([e.status, e.reason], [403, "insufficientPermissions"]);
+});
+
+test("free/busy only: the client has no method that lists or reads events", () => {
+  const { g } = client([]);
+  const allowed = ["accessToken", "freeBusy", "insertEvent", "deleteEvent", "ping"];
+  assert.equal(typeof g.freeBusy, "function");
+  for (const k of Object.keys(g)) assert.ok(allowed.includes(k), `unexpected method ${k}`);
 });

@@ -15,6 +15,8 @@ export class GoogleError extends Error {
   }
 }
 
+export function assertNoErrors() { throw new Error("not implemented"); }
+
 const readJson = async (res) => { try { return await res.json(); } catch { return null; } };
 
 export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now = () => new Date(), sleep }) {
