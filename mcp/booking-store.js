@@ -93,14 +93,13 @@ function settle(sql, id, status, reason, nowIso) {
   sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND used_at IS NULL", nowIso, id);
 }
 
-// One live hold at a time per IP and per email, so fake holds cost an attacker many of both.
-function holdPending(sql, { now, ipKey, emailKey, cfg }) {
-  const limit = cfg.caps.liveHoldsPerKey ?? 1;
-  const live = (col, key) => sql.exec(
-    `SELECT count(*) AS c FROM bookings WHERE status = 'pending_confirmation' AND hold_expires > ? AND ${col} = ?`,
-    now.toISOString(), key,
-  ).one().c;
-  return live("ip_key", ipKey) >= limit || live("email_key", emailKey) >= limit;
+// One live hold at a time per email, so a guest's inbox can't be flooded with holds. Not per IP:
+// people share connections, and the per-IP daily cap already limits one source.
+function holdPending(sql, { now, emailKey, cfg }) {
+  return sql.exec(
+    "SELECT count(*) AS c FROM bookings WHERE status = 'pending_confirmation' AND hold_expires > ? AND email_key = ?",
+    now.toISOString(), emailKey,
+  ).one().c >= (cfg.caps.liveHoldsPerEmail ?? 1);
 }
 
 export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, deps }) {
@@ -108,7 +107,7 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
   const quota = reserveBookingQuota(sql, { day: deps.day(nowIso), ipKey, emailKey, caps: cfg.caps });
   if (!quota.ok) return { error: "rate_limited", reason: quota.which };
   const flag = quota.globalJustExhausted ? { globalJustExhausted: true } : {};
-  if (holdPending(sql, { now, ipKey, emailKey, cfg })) return { error: "hold_pending", ...flag };
+  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending", ...flag };
   const type = cfg.meetingTypes.find((t) => t.id === input.type);
   const slot = { cfg, typeId: input.type, start: input.start, now };
   // Cheap pre-check, so an invalid or already-taken slot never reaches Google.
@@ -130,7 +129,7 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
 
   // ---- Claim: synchronous from here to the inserts. No await. ----
   // Both rules again: other requests ran while free/busy was awaited.
-  if (holdPending(sql, { now, ipKey, emailKey, cfg })) return { error: "hold_pending", ...flag };
+  if (holdPending(sql, { now, emailKey, cfg })) return { error: "hold_pending", ...flag };
   const check = deps.checkSlot({ ...slot, busy, bookings: liveBookings(sql, now) });
   if (!check.ok) return { ...slotError(check.reason), ...flag };
   sql.exec(

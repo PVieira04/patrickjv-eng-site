@@ -366,9 +366,9 @@ test("cancel_booking: withdraws a hold; on a confirmed meeting only emails a con
 test("booking tools: failures are tool errors naming the error and asking agents not to retry; bad arguments reach nothing", async () => {
   const h = harness();
   await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
-  const taken = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Bob", email: "bob@example.com" });
+  const taken = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
   assert.equal(taken.isError, true);
-  assert.equal(taken.structuredContent.error, "hold_pending", "same IP, one live hold");
+  assert.equal(taken.structuredContent.error, "hold_pending", "same email, one live hold");
   assert.match(taken.content[0].text, /Do not retry/);
   const missing = await tool(h, "get_booking_status", { booking_id: "f".repeat(32) });
   assert.equal(missing.isError, true);

@@ -27,7 +27,7 @@ export function validateConfig(cfg) {
   for (const k of ["slotStepMinutes", "minNoticeHours", "horizonDays", "bufferMinutes", "maxPerDay", "holdHours", "retentionDays"])
     if (!posInt(cfg[k])) fail(k, "must be a positive integer");
   if (!isObject(cfg.caps)) fail("caps", "must be an object");
-  for (const k of ["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerKey"])
+  for (const k of ["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerEmail"])
     if (!posInt(cfg.caps[k])) fail(`caps.${k}`, "must be a positive integer");
 
   if (!Array.isArray(cfg.meetingTypes) || !cfg.meetingTypes.length) fail("meetingTypes", "must be a non-empty array");
