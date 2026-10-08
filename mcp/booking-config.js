@@ -1,7 +1,61 @@
 // Booking rules from booking.json (repo root): config validation, Europe/London time, slots and
 // availability. Pure functions, no I/O: callers pass the clock, free/busy and live bookings.
 
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const TYPE_ID = /^[a-z0-9-]+$/;
+const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+const isObject = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+const isText = (x) => typeof x === "string" && x.trim() !== "";
+const posInt = (x) => Number.isInteger(x) && x > 0;
+
+// Checks booking.json and returns it unchanged; throws naming the first bad field. npm test runs
+// this on the real file, so a bad edit fails the build before it can deploy.
 export function validateConfig(cfg) {
+  const fail = (field, problem) => { throw new Error(`booking.json: ${field} ${problem}`); };
+  if (!isObject(cfg)) fail("config", "must be an object");
+  if (typeof cfg.timezone !== "string") fail("timezone", "must be an IANA time zone");
+  try { new Intl.DateTimeFormat("en-GB", { timeZone: cfg.timezone }); } catch { fail("timezone", "must be an IANA time zone"); }
+
+  const h = cfg.hours;
+  if (!isObject(h)) fail("hours", "must be an object");
+  if (!Array.isArray(h.days) || !h.days.length || new Set(h.days).size !== h.days.length || !h.days.every((d) => DAY_NAMES.includes(d)))
+    fail("hours.days", `must be distinct day names from: ${DAY_NAMES.join(", ")}`);
+  if (!HHMM.test(h.start)) fail("hours.start", "must be HH:MM (24-hour)");
+  if (!HHMM.test(h.end)) fail("hours.end", "must be HH:MM (24-hour)");
+  if (h.end <= h.start) fail("hours.end", "must be after hours.start");
+
+  for (const k of ["slotStepMinutes", "minNoticeHours", "horizonDays", "bufferMinutes", "maxPerDay", "holdHours", "retentionDays"])
+    if (!posInt(cfg[k])) fail(k, "must be a positive integer");
+  if (!isObject(cfg.caps)) fail("caps", "must be an object");
+  for (const k of ["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerKey"])
+    if (!posInt(cfg.caps[k])) fail(`caps.${k}`, "must be a positive integer");
+
+  if (!Array.isArray(cfg.meetingTypes) || !cfg.meetingTypes.length) fail("meetingTypes", "must be a non-empty array");
+  const ids = new Set();
+  cfg.meetingTypes.forEach((t, i) => {
+    const at = `meetingTypes[${i}]`;
+    if (!isObject(t)) fail(at, "must be an object");
+    if (typeof t.id !== "string" || !TYPE_ID.test(t.id)) fail(`${at}.id`, "must match /^[a-z0-9-]+$/");
+    if (ids.has(t.id)) fail(`${at}.id`, `duplicates "${t.id}"`);
+    ids.add(t.id);
+    if (!isText(t.title)) fail(`${at}.title`, "must be non-empty text");
+    if (typeof t.description !== "string") fail(`${at}.description`, "must be text");
+    if (!posInt(t.minutes) || t.minutes % cfg.slotStepMinutes) fail(`${at}.minutes`, `must be a positive multiple of slotStepMinutes (${cfg.slotStepMinutes})`);
+  });
+
+  if (!Array.isArray(cfg.calendars)) fail("calendars", "must be an array");
+  cfg.calendars.forEach((c, i) => {
+    const at = `calendars[${i}]`;
+    if (!isObject(c)) fail(at, "must be an object");
+    if (!isText(c.account)) fail(`${at}.account`, "must be non-empty text");
+    if (!isText(c.label)) fail(`${at}.label`, "must be non-empty text");
+    if (typeof c.blocks !== "boolean") fail(`${at}.blocks`, "must be true or false");
+    // Blocking calendars are queried, so need exactly one ID source; others may have none.
+    const sources = ("id" in c) + ("idSecret" in c);
+    if (sources > 1 || (c.blocks && sources !== 1)) fail(at, c.blocks ? "must have exactly one of id or idSecret" : "may have at most one of id or idSecret");
+    if ("id" in c && (!isText(c.id) || c.id.includes("@"))) fail(`${at}.id`, "must be non-empty and not an email address (put those in a Worker secret named by idSecret)");
+    if ("idSecret" in c && !SECRET_NAME.test(c.idSecret)) fail(`${at}.idSecret`, "must name a Worker secret (UPPER_SNAKE_CASE)");
+  });
   return cfg;
 }
 
