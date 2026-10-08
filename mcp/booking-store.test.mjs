@@ -81,7 +81,7 @@ const input = (over = {}) => ({ type: "consultation", start: SLOT, name: "Jane S
 // A request from a distinct IP and email unless told otherwise.
 const request = (t, over = {}, keys = {}) => {
   n++;
-  return store.requestBooking(t.sql, { cfg, now: keys.now ?? NOW, input: input(over), ipKey: keys.ipKey ?? `ip${n}`, emailKey: keys.emailKey ?? `em${n}`, deps: t.deps });
+  return store.requestBooking(t.sql, { cfg: keys.cfg ?? cfg, now: keys.now ?? NOW, input: input(over), ipKey: keys.ipKey ?? `ip${n}`, emailKey: keys.emailKey ?? `em${n}`, deps: t.deps });
 };
 const row = (t, id) => t.sql.exec("SELECT * FROM bookings WHERE id = ?", id).one();
 
@@ -221,4 +221,21 @@ test("request: free/busy failing returns unavailable and holds nothing", async (
   t.deps.freeBusy = async () => { await tick(); throw new Error("google down"); };
   assert.deepEqual(await request(t), { error: "unavailable" });
   assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 0);
+});
+
+// ---- Races: exactly one winner --------------------------------------------------------------
+
+// Caps high enough that only the slot rules decide.
+const OPEN = { ...cfg, caps: { perIpPerDay: 1000, perEmailPerDay: 1000, globalPerDay: 1000, liveHoldsPerKey: 1 } };
+const PARALLEL = 25;
+
+test("race: 25 parallel requests for one slot (and slots overlapping it) produce exactly one hold", async () => {
+  const t = setup();
+  const starts = ["2026-10-21T10:00:00.000Z", "2026-10-21T10:15:00.000Z", "2026-10-21T09:45:00.000Z"];
+  const results = await Promise.all(Array.from({ length: PARALLEL }, (_, i) => request(t, { start: starts[i % 3] }, { cfg: OPEN })));
+  const won = results.filter((r) => r.status === "pending_confirmation");
+  assert.equal(won.length, 1, `winners: ${won.length}`);
+  assert.ok(results.filter((r) => !r.status).every((r) => r.error === "slot_taken"));
+  assert.equal(t.sql.exec("SELECT count(*) c FROM bookings").one().c, 1);
+  assert.equal(t.calls.emails.length, 1);
 });
