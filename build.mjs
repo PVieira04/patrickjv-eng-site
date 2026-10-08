@@ -27,6 +27,8 @@ const BANNED = /altimist|the company|fintech|\bceo\b|wimbledon/i;
 // The page's WebMCP read tools serve these agentData() keys; the MCP server's tools() supplies
 // their names, descriptions and schemas, so the two surfaces cannot drift.
 const TOOL_DATA = { get_profile: "profile", list_work: "work", list_skills: "skills", list_faq: "faq" };
+// Booking tools (F-001): the page script implements each by calling the same-origin booking API.
+const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 const DAY = 864e5;
 
 const sha256 = (s) => createHash("sha256").update(s).digest();
@@ -758,6 +760,9 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
     const out = { name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: !!t.annotations?.readOnlyHint } };
     if (TOOL_DATA[t.name]) out.data = TOOL_DATA[t.name];
     else if (t.name === "request_intro") out.description += " In this browser, the person is also asked to confirm the exact message before anything is sent.";
+    else if (BOOKING_TOOLS.includes(t.name)) {
+      if (!new RegExp(`\\b${t.name}: async function`).test(html0)) throw new Error(`MCP tool ${t.name} has no implementation in the page's WebMCP script`);
+    }
     else throw new Error(`MCP tool ${t.name} has no WebMCP counterpart: add it to TOOL_DATA or the page script`);
     if (out.data && !out.annotations.readOnlyHint) throw new Error(`MCP tool ${t.name} serves page data but is not readOnlyHint`);
     return out;

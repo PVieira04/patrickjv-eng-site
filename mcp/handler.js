@@ -90,8 +90,69 @@ export function tools() {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       icons: ICONS,
     },
+    // Booking (F-001). The operations are bookingOps below, shared with the HTTP API.
+    { name: "list_meeting_types", title: "Meeting types", description: "The kinds of meeting you can book with Patrick Vieira: id, title, length in minutes and what each is for.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    {
+      name: "get_availability",
+      title: "Free times",
+      description: "Free start times for a meeting type, from Patrick's live calendar: weekdays 10:00–17:00 London time, at least 24 hours ahead and up to four weeks out. Times are ISO 8601 with the Europe/London offset. Optional from and to (YYYY-MM-DD, London days) narrow the range.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type"],
+        properties: {
+          type: { type: "string", enum: BOOKING_TYPE_IDS, description: "A meeting type id from list_meeting_types." },
+          from: { type: "string", pattern: DAY_PATTERN, description: "Optional first day, YYYY-MM-DD." },
+          to: { type: "string", pattern: DAY_PATTERN, description: "Optional last day, YYYY-MM-DD." },
+        },
+      },
+      annotations: READ_ONLY,
+      icons: ICONS,
+    },
+    {
+      name: "book_meeting",
+      title: "Book a meeting",
+      description:
+        "Hold a time with Patrick Vieira for a person. Nothing is booked and no invite is sent until that person clicks the confirmation link this emails them; the hold lapses after 2 hours. Only use this when the person has asked for this meeting at this time and given you their name and email address. One pending hold per person at a time, and a few requests a day. Do not retry on error. Use get_booking_status to see whether they confirmed. Privacy: the site keeps the name, email address, time and note until 30 days after the meeting (or after an unconfirmed hold lapses); rate-limit counters are hashed. See https://patrickjv.com/privacy.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["type", "start", "name", "email"],
+        properties: {
+          type: { type: "string", enum: BOOKING_TYPE_IDS, description: "A meeting type id from list_meeting_types." },
+          start: { type: "string", maxLength: 40, description: "Start time exactly as given by get_availability (ISO 8601 with offset)." },
+          name: { type: "string", minLength: 1, maxLength: 100, description: "The person's full name." },
+          email: { type: "string", maxLength: 254, description: "The person's email address (ASCII). The confirmation link goes here." },
+          note: { type: "string", maxLength: 500, description: "Optional: what the meeting is about, in plain text." },
+        },
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      icons: ICONS,
+    },
+    {
+      name: "get_booking_status",
+      title: "Booking status",
+      description: "The state of a booking by its ID: pending_confirmation, confirmed, declined, expired or cancelled, with a reason where there is one, the time and the meeting type. Never returns the guest's details.",
+      inputSchema: BOOKING_ID_SCHEMA,
+      annotations: READ_ONLY,
+      icons: ICONS,
+    },
+    {
+      name: "cancel_booking",
+      title: "Cancel a booking",
+      description: "Withdraw a booking. A hold that hasn't been confirmed is withdrawn at once. A confirmed meeting is not cancelled by this call: the guest is emailed a link, and only that link cancels it. Only use this when the person has asked to cancel. Do not retry on error.",
+      inputSchema: BOOKING_ID_SCHEMA,
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      icons: ICONS,
+    },
   ];
 }
+const BOOKING_TYPE_IDS = BOOKING_CONFIG.meetingTypes.map((t) => t.id);
+const DAY_PATTERN = "^\\d{4}-\\d{2}-\\d{2}$";
+const BOOKING_ID_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["booking_id"],
+  properties: { booking_id: { type: "string", pattern: "^[0-9a-f]{32}$", description: "The booking_id book_meeting returned." } },
+};
 
 // Single-line text: no control characters (prevents header injection; also tidies the body), and
 // no bidi or zero-width characters, which could make the Subject display differently from what it
@@ -397,10 +458,24 @@ async function callTool(name, args, ctx) {
       }
       return { content: [{ type: "text", text: "Thanks — your introduction has been sent to Patrick. He replies personally when he can; there is no automated follow-up." }] };
     }
+    case "list_meeting_types": return result(meetingTypes());
+    case "get_availability": return bookingResult(await bookingOps.availability(ctx, args));
+    case "book_meeting": return bookingResult(await bookingOps.book(ctx, args, "mcp"));
+    case "get_booking_status": return bookingResult(await bookingOps.status(ctx, args));
+    case "cancel_booking": return bookingResult(await bookingOps.cancel(ctx, args));
     default:
       return null;
   }
 }
+
+// A booking operation's {status, body} as a tool result: the body as structuredContent, and on
+// failure a tool error that names the error and asks agents not to retry.
+function bookingResult(r) {
+  if (r.status < 300) return { content: [{ type: "text", text: JSON.stringify(r.body) }], structuredContent: r.body };
+  return { content: [{ type: "text", text: `${r.body.message} (${r.body.error}) Do not retry automatically.` }], structuredContent: r.body, isError: true };
+}
+// Tools that take no arguments: a non-empty arguments object is a protocol error.
+const NO_ARGUMENTS = new Set(["get_profile", "list_work", "list_skills", "list_faq", "list_meeting_types"]);
 
 // ---------------------------------------------------------------------------------------------
 // Booking (F-001). Every booking operation runs in the BookingStore Durable Object (deps.booking()
@@ -671,7 +746,15 @@ async function doLink(ctx, token) {
 
 // The HTTP API. The same rejection order as /mcp: path, Origin, method, media type, declared size,
 // rate limits, then the capped body read.
-const BOOKING_ROUTES = { "/api/booking": ["POST"], "/api/booking/types": ["GET"], "/api/booking/availability": ["GET"], "/api/booking/act": ["GET", "POST"] };
+const BOOKING_ROUTES = {
+  "/api/booking": ["POST"], "/api/booking/types": ["GET"], "/api/booking/availability": ["GET"], "/api/booking/act": ["GET", "POST"],
+  // For the page's WebMCP tools (the MCP server has get_booking_status and cancel_booking).
+  "/api/booking/status": ["GET"], "/api/booking/cancel": ["POST"],
+};
+// The channel a request arrived on, as the browser reports it: "page" (the /book form, the
+// default) or "webmcp" (the page's WebMCP tools). Self-reported, so it only picks the hold email's
+// wording; consent always comes from the emailed confirmation link.
+const HTTP_SOURCES = ["page", "webmcp"];
 
 async function handleBookingHttp(request, env, deps, url) {
   const json = (status, body, extra = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...SECURITY_HEADERS, ...extra } });
@@ -711,7 +794,15 @@ async function handleBookingHttp(request, env, deps, url) {
     const args = { type: url.searchParams.get("type") ?? "" };
     for (const k of ["from", "to"]) if (url.searchParams.has(k)) args[k] = url.searchParams.get(k);
     r = await bookingOps.availability(ctx, args);
-  } else r = await bookingOps.book(ctx, body, "page");
+  } else if (url.pathname === "/api/booking/status") {
+    r = await bookingOps.status(ctx, { booking_id: url.searchParams.get("booking_id") ?? "" });
+  } else if (url.pathname === "/api/booking/cancel") {
+    r = await bookingOps.cancel(ctx, body);
+  } else {
+    let args = body, source = "page";
+    if (isPlainObject(body)) ({ source = "page", ...args } = body);
+    r = HTTP_SOURCES.includes(source) ? await bookingOps.book(ctx, args, source) : invalid(`source must be one of: ${HTTP_SOURCES.join(", ")}`);
+  }
   return json(r.status, r.body);
 }
 
@@ -803,9 +894,9 @@ export async function handle(request, env, deps) {
         if (typeof params.name !== "string") return rpcError(msg.id, -32602, "tools/call requires params.name");
         const args = "arguments" in params ? params.arguments : {};
         if (!isPlainObject(args)) return rpcError(msg.id, -32602, "arguments must be an object");
-        if (params.name !== "request_intro" && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
+        if (NO_ARGUMENTS.has(params.name) && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
         const result = await callTool(params.name, args, {
-          env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve,
+          env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve, booking: deps.booking,
         });
         if (!result) return rpcError(msg.id, -32602, `Unknown tool: ${params.name}`);
         return ok(result);

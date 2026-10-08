@@ -13,7 +13,8 @@ import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, health
 // The frozen did.json (also enforced by build.mjs). Production AND the repo copy must match it.
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
 const ALIASES = ["www.patrickjv.com", "pvieira.co.uk", "www.pvieira.co.uk"];
-const TOOLS = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"];
+const TOOLS = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
+  "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 
 // ---- arguments ----
 const FLAGS = new Set(["--aliases", "--mcp", "--registry", "--strict-https", "--dns"]);
