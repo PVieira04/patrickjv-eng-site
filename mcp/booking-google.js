@@ -126,5 +126,13 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
     return { created, meetLink: meetStatus(ev) === "success" && ev.hangoutLink ? ev.hangoutLink : null };
   }
 
-  return { accessToken, freeBusy, insertEvent, ping };
+  // Google emails the attendees the cancellation. Already gone (404/410) isn't an error.
+  async function deleteEvent(id) {
+    const r = await api(`${eventPath(id)}?sendUpdates=all`, { method: "DELETE" });
+    if (r.status === 404 || r.status === 410) return { deleted: false };
+    if (!r.ok) throw fail("events.delete", r);
+    return { deleted: true };
+  }
+
+  return { accessToken, freeBusy, insertEvent, deleteEvent, ping };
 }
