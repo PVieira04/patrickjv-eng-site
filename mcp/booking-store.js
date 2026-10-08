@@ -185,7 +185,28 @@ export async function act(sql, { token, now, cfg, deps }) {
     settle(sql, b.id, "declined", "guest_declined", now.toISOString());
     return { result: "declined" };
   }
+  if (tok.action === "cancel" || tok.action === "confirm_cancel") return cancelMeeting(sql, found, { now, deps });
   return { error: "unknown" };
+}
+
+async function cancelMeeting(sql, { tok, booking: b }, { now, deps }) {
+  const nowIso = now.toISOString();
+  if (b.status !== "confirmed") return { error: "used" };
+  // ---- Claim: synchronous, no await. ----
+  sql.exec("UPDATE bookings SET status = 'cancelling' WHERE id = ?", b.id);
+  sql.exec("UPDATE tokens SET used_at = ? WHERE hash = ?", nowIso, tok.hash);
+  // ---- End of claim. ----
+  try {
+    // Google emails the attendees; an event already gone (404/410) is fine.
+    await deps.deleteEvent(b.event_id ?? b.id);
+  } catch {
+    logFailure("google_delete");
+    sql.exec("UPDATE bookings SET status = 'confirmed' WHERE id = ? AND status = 'cancelling'", b.id);
+    sql.exec("UPDATE tokens SET used_at = NULL WHERE hash = ?", tok.hash);
+    return { error: "unavailable" };
+  }
+  settle(sql, b.id, "cancelled", "guest_cancelled", nowIso);
+  return { result: "cancelled" };
 }
 
 // What a link would do, for the GET page (which must never change state). Async only because
