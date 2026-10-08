@@ -120,6 +120,12 @@ test("service: the alarm expires lapsed holds and schedules the next run", async
   assert.equal(storage.at(), Date.parse("2026-10-20T00:00:00.000Z"), "next UTC midnight");
 });
 
+test("service: a request that writes quota but holds nothing still sets the alarm, so its counters get pruned", async () => {
+  const { svc, storage } = service({ fetchOpts: { busy: [{ start: SLOT, end: "2026-10-21T10:00:00.000Z" }] } });
+  assert.equal((await svc.request(guest(), "ip1", "em1")).error, "slot_taken");
+  assert.equal(storage.at(), Date.parse("2026-10-20T00:00:00.000Z"), "next UTC midnight");
+});
+
 test("service: health pings Google with a fresh token refresh", async () => {
   assert.deepEqual(await service().svc.health(), { google: true });
   assert.deepEqual(await service({ fetchOpts: { fail: { token: true } } }).svc.health(), { google: false });
