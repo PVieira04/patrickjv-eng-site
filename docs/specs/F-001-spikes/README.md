@@ -119,6 +119,8 @@ Apex MX and SPF unchanged (Cloudflare Email Routing, `-all`). The zone has no DN
 
 **Method:**
 
+Both scripts read the OAuth client from the JSON downloaded from Google Cloud (`GOOGLE_CLIENT_FILE`, via [`google/client.mjs`](google/client.mjs)), so the client secret is never typed, pasted or printed.
+
 1. [`google/get-token.mjs`](google/get-token.mjs) runs the consent once as `hello@` and prints the granted scopes and a refresh token. Run in a private terminal; the token is a secret.
 2. [`google/spike.mjs`](google/spike.mjs) checks:
    - token refresh

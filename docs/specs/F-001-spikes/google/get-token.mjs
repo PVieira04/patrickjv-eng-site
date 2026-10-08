@@ -1,10 +1,9 @@
 // One-off: authorise hello@patrickjv.com and print a refresh token.
-// Usage: GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... node get-token.mjs
+// Usage: GOOGLE_CLIENT_FILE=<downloaded client_secret_….json> node get-token.mjs
 // The OAuth client (type "Web application") must list http://localhost:8765/callback as a redirect URI.
 import http from "node:http";
-const { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret } = process.env;
-if (!id || !secret) throw new Error("Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET");
-const redirect = "http://localhost:8765/callback";
+import { loadClient, REDIRECT as redirect } from "./client.mjs";
+const { id, secret } = loadClient();
 const scopes = ["https://www.googleapis.com/auth/calendar.freebusy", "https://www.googleapis.com/auth/calendar.events.owned"];
 const url = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
   client_id: id, redirect_uri: redirect, response_type: "code", scope: scopes.join(" "),

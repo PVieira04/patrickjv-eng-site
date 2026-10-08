@@ -1,11 +1,13 @@
 // Live Google spike for F-001. Throwaway; nothing here goes in the repo.
-// Env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN,
+// Env: GOOGLE_CLIENT_FILE (downloaded client JSON), GOOGLE_REFRESH_TOKEN,
 //      SHARED_CAL_ID (a personal calendar shared with hello@ as "See only free/busy"),
 //      GUEST_EMAIL (an outside address you can check), TEST_DAY (YYYY-MM-DD with the test items below).
 // Before running, put these on SHARED_CAL_ID on TEST_DAY (London time):
 //   10:00–10:30 normal event (Busy)  |  12:00–12:30 event set to "Free"  |  14:00 task with a time, set to Busy
+import { loadClient } from "./client.mjs";
 const env = process.env;
-for (const k of ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "SHARED_CAL_ID", "GUEST_EMAIL", "TEST_DAY"])
+const client = loadClient();
+for (const k of ["GOOGLE_REFRESH_TOKEN", "SHARED_CAL_ID", "GUEST_EMAIL", "TEST_DAY"])
   if (!env[k]) throw new Error(`Set ${k}`);
 const results = [];
 const note = (name, ok, detail) => { results.push([name, ok]); console.log(`${ok === null ? "INFO" : ok ? "PASS" : "FAIL"} ${name}${detail ? ": " + detail : ""}`); };
@@ -13,7 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 1. Refresh token -> access token
 const tok = await (await fetch("https://oauth2.googleapis.com/token", { method: "POST", body: new URLSearchParams({
-  client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: env.GOOGLE_REFRESH_TOKEN, grant_type: "refresh_token" }) })).json();
+  client_id: client.id, client_secret: client.secret, refresh_token: env.GOOGLE_REFRESH_TOKEN, grant_type: "refresh_token" }) })).json();
 note("token refresh", !!tok.access_token, tok.access_token ? `scopes: ${tok.scope}` : JSON.stringify(tok));
 if (!tok.access_token) process.exit(1);
 const api = (path, opts = {}) => fetch("https://www.googleapis.com/calendar/v3" + path, { ...opts,
