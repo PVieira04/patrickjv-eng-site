@@ -12,6 +12,7 @@ import { agentData } from "../lib/agent-data.mjs";
 import serverJson from "./server.json" with { type: "json" };
 import bookingJson from "../booking.json" with { type: "json" };
 import { validateConfig, withOffset } from "./booking-config.js";
+import { capAlertEmail } from "./booking-email.js";
 
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18"];
 export const ALLOWED_ORIGIN = "https://patrickjv.com";
@@ -653,8 +654,33 @@ async function bookingReadiness(env, deps) {
   return { bookingEnabled: bookingEnabled(env), bookingReady: ready };
 }
 
-// Patrick's alert when the global cap is first reached (the store reports that once a day).
-async function sendCapAlert(ctx) {}
+// Patrick's alert when the global cap is first reached (the store reports that once a day): to
+// INTRO_TO_ADDRESS through the send_email binding, like introductions. Failure is logged, never
+// passed on: the request that hit the cap still gets its own answer.
+export function buildAlertMime({ subject, text }, { from, to, messageId, date }) {
+  const wrapped = b64(new TextEncoder().encode(text.replace(/\r?\n/g, "\r\n"))).replace(/.{1,76}/g, "$&\r\n");
+  return [
+    `From: "patrickjv.com booking" <${from}>`,
+    `To: <${to}>`,
+    `Subject: ${encodeHeaderText(subject)}`,
+    `Date: ${date.toUTCString()}`,
+    `Message-ID: <${messageId}>`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrapped,
+  ].join("\r\n");
+}
+async function sendCapAlert(ctx) {
+  try {
+    const { INTRO_FROM: from, INTRO_TO_ADDRESS: to } = ctx.env;
+    const raw = buildAlertMime(capAlertEmail({ day: ctx.now.toISOString().slice(0, 10) }), { from, to, messageId: `${crypto.randomUUID()}@patrickjv.com`, date: ctx.now });
+    await ctx.sendEmail(from, to, raw);
+  } catch {
+    logFailure("alert_email");
+  }
+}
 
 // ---- Act pages: what an emailed link does. GET shows it with a button; only POST acts. ----
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
