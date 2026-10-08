@@ -475,6 +475,11 @@ function bookingResult(r) {
   if (r.status < 300) return { content: [{ type: "text", text: JSON.stringify(r.body) }], structuredContent: r.body };
   return { content: [{ type: "text", text: `${r.body.message} (${r.body.error}) Do not retry automatically.` }], structuredContent: r.body, isError: true };
 }
+// Booking is hidden from MCP clients until launch (BOOKING_ENABLED): not listed, not described in
+// the instructions, and a call names the kill switch rather than "unknown tool".
+const BOOKING_TOOL_NAMES = new Set(["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
+const INSTRUCTIONS = "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.";
+const BOOKING_INSTRUCTIONS = " To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it from their own inbox.";
 // Tools that take no arguments: a non-empty arguments object is a protocol error.
 const NO_ARGUMENTS = new Set(["get_profile", "list_work", "list_skills", "list_faq", "list_meeting_types"]);
 
@@ -916,8 +921,7 @@ export async function handle(request, env, deps) {
           protocolVersion: PROTOCOL_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "patrickjv.com", title: "Patrick Vieira — platform engineer", version: SERVER_VERSION, websiteUrl: "https://patrickjv.com/", icons: ICONS },
-          instructions:
-            "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message. To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it from their own inbox.",
+          instructions: INSTRUCTIONS + (bookingEnabled(env) ? BOOKING_INSTRUCTIONS : ""),
         });
       }
       case "ping":
@@ -927,11 +931,12 @@ export async function handle(request, env, deps) {
       case "patrickjv/health":
         return ok({ ...introReadiness(env), ...(await bookingReadiness(env, deps)) });
       case "tools/list":
-        return ok({ tools: tools() });
+        return ok({ tools: bookingEnabled(env) ? tools() : tools().filter((t) => !BOOKING_TOOL_NAMES.has(t.name)) });
       case "tools/call": {
         if (typeof params.name !== "string") return rpcError(msg.id, -32602, "tools/call requires params.name");
         const args = "arguments" in params ? params.arguments : {};
         if (!isPlainObject(args)) return rpcError(msg.id, -32602, "arguments must be an object");
+        if (BOOKING_TOOL_NAMES.has(params.name) && !bookingEnabled(env)) return ok(bookingResult(failed("booking_disabled")));
         if (NO_ARGUMENTS.has(params.name) && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
         const result = await callTool(params.name, args, {
           env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve, booking: deps.booking,

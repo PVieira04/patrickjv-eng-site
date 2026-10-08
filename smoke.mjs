@@ -13,8 +13,9 @@ import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, health
 // The frozen did.json (also enforced by build.mjs). Production AND the repo copy must match it.
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
 const ALIASES = ["www.patrickjv.com", "pvieira.co.uk", "www.pvieira.co.uk"];
-const TOOLS = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
-  "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
+const TOOLS = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"];
+// Listed only while booking is switched on (BOOKING_ENABLED, as patrickjv/health reports it).
+const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 
 // ---- arguments ----
 const FLAGS = new Set(["--aliases", "--mcp", "--registry", "--strict-https", "--dns"]);
@@ -233,12 +234,15 @@ if (flags.has("--mcp")) {
     const res = await mcp({ jsonrpc: "2.0", method: "notifications/initialized" });
     return expect(res.status === 202, `status ${res.status}`);
   });
-  await check(`mcp tools/list = {${TOOLS.join(", ")}}, each with icons`, async () => {
+  await check(`mcp tools/list = {${TOOLS.join(", ")}}, plus the booking tools if booking is enabled, each with icons`, async () => {
+    const health = await mcp({ jsonrpc: "2.0", id: 5, method: "patrickjv/health" });
+    if (!envelope(health, 5)) return FAIL(`patrickjv/health status ${health.status}`);
+    const want = health.json.result?.bookingEnabled === true ? [...TOOLS, ...BOOKING_TOOLS] : TOOLS;
     const res = await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     if (!envelope(res, 2)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     const tools = res.json.result?.tools ?? [];
     const names = tools.map((t) => t.name);
-    const exact = names.length === TOOLS.length && new Set(names).size === names.length && TOOLS.every((n) => names.includes(n));
+    const exact = names.length === want.length && new Set(names).size === names.length && want.every((n) => names.includes(n));
     const icons = tools.every((t) => Array.isArray(t.icons) && t.icons.length > 0);
     return expect(exact && icons, `${names.join(", ")}${icons ? "" : " (missing icons)"}`);
   });

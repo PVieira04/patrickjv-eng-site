@@ -461,7 +461,7 @@ test("MCP-Protocol-Version: unsupported (or empty) is 400; absent is accepted", 
   for (const v of ["2025-11-25", "2025-06-18"]) assert.equal((await call(rpc("tools/list"), { headers: { "mcp-protocol-version": v } })).status, 200, v);
   const absent = await call(rpc("tools/list"));
   assert.equal(absent.status, 200);
-  assert.equal((await absent.json()).result.tools.length, 10);
+  assert.equal((await absent.json()).result.tools.length, 5); // booking off: no booking tools
 });
 
 test("security headers on every response branch", async () => {
