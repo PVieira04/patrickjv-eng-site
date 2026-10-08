@@ -115,7 +115,7 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 
 1. Agent calls `list_meeting_types`, then `get_availability`.
 2. Agent calls `book_meeting` with its person's name, email and a slot. Server reserves quota and holds the slot for 2 hours. It returns `pending_confirmation` and a booking ID.
-3. Site emails the person: who it's with, the time in Europe/London and UTC, the note, and **Confirm** and **Decline** links.
+3. Site emails the person: who it's with, the time in Europe/London and UTC, and **Confirm** and **Decline** links. The note is **not** quoted: the address isn't verified yet, so the email mustn't carry a stranger's text. It reaches Patrick's calendar, HTML-escaped, once confirmed.
 4. Person clicks Confirm. Server re-checks the slot against live free/busy, other bookings and the 3-a-day limit, then creates the event. The confirm page says "Booked" (or "That slot was taken — book another" if the re-check fails). Site sends a "Booked" email with the cancel link.
 5. Agent polls `get_booking_status` and sees `confirmed`, `declined` or `expired`.
 
@@ -155,12 +155,12 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 - [x] **(US-9)** `cancel_booking` on a pending hold withdraws it; on a confirmed booking it only sends a confirm-cancellation email.
 - [x] **(US-9)** `cancel_booking` and `get_booking_status` need the booking ID; booking IDs are random (128-bit), not sequential.
 - [x] **(US-7)** Meeting types, hours, rules and calendars come only from `booking.json`; the build validates it and fails on a bad file.
-- [x] **(US-8)** Daily caps: 4 booking requests per IP (same as `request_intro`, because hosted MCP clients share egress addresses), 2 per guest email, 10 in total, reserved atomically before any Google call or email, never refunded (fail closed).
-- [x] **(US-8)** One live hold at a time per IP and per guest email; a second request while one is pending gets 429 `hold_pending`, and the first can be withdrawn with `cancel_booking`.
+- [x] **(US-8)** Daily caps: 4 booking requests per IP (same as `request_intro`, because hosted MCP clients share egress addresses), 2 per guest email, 10 in total, reserved atomically before any Google call or email, never refunded (fail closed). Requests refused by cheap checks (invalid slot, `hold_pending`) don't use the allowance, and the global count is taken only when a hold email is about to be sent, so junk requests can't close booking for the day (review finding, 2026-10-08).
+- [x] **(US-8)** One live hold at a time per guest email (not per IP: people behind a shared egress address such as a hosted MCP client mustn't block each other; decided 2026-10-08); a second request while one is pending gets 429 `hold_pending`, and the first can be withdrawn with `cancel_booking`.
 - [x] **(US-8)** When the global cap is reached, the page and tools say "Booking is closed for today" and Patrick gets one alert email (to `INTRO_TO_ADDRESS`, via the existing `send_email` binding) that day, so a cap exhausted by abuse doesn't go unnoticed.
 - [ ] **(US-8)** The WAF flood rule covers the booking API path as well as `/mcp`.
 - [x] **(US-8)** `BOOKING_ENABLED=false` makes every booking-write path refuse and the page say booking is closed; read tools still work.
-- [x] **(US-8)** Ships dark: `BOOKING_ENABLED` is `"false"` in `mcp/wrangler.jsonc` until the launch steps are done. `/book` is not in the nav or sitemap until launch. Health reports `bookingEnabled` and `bookingReady` separately, and the smoke check passes when booking is disabled, failing only when it's enabled but not ready.
+- [x] **(US-8)** Ships dark: `BOOKING_ENABLED` is `"false"` in `mcp/wrangler.jsonc` until the launch steps are done. `/book` is not in the nav or sitemap until launch. The booking tools are hidden too: MCP `tools/list`, the `initialize` instructions and the homepage's WebMCP registration only include them when `BOOKING_ENABLED` is `"true"`, and `mcp/server.json` (version and description) changes only on launch day, so the MCP Registry never advertises booking before it works (decided 2026-10-08). Health reports `bookingEnabled` and `bookingReady` separately, and the smoke check passes when booking is disabled, failing only when it's enabled but not ready.
 
 ### Non-functional
 
@@ -181,7 +181,9 @@ As an **AI agent**, I want to **withdraw a pending hold, or ask to cancel a conf
 - **Kill switch:** all emailed links (confirm, decline, cancel) keep working while booking is off, not only confirms.
 - **Recovery** of a booking left in `confirming`/`cancelling` by an eviction: the store's alarm retries after 2 minutes with no call in progress (the schema has no status timestamp, so in-progress calls are tracked in memory, which is exactly what an eviction loses).
 - **Not yet verified live:** that the invite hides Patrick's address when he is an attendee (`guestsCanSeeOtherGuests: false`), and free/busy on `hello@`'s `primary` calendar alongside the shared ones. Both are in the launch checklist.
-- **Accessibility, performance and copy** criteria are left for the `/book` page's own check (package E).
+- **Accessibility, performance and copy:** checked by the pages build on a local server with a stub API: axe 0 violations (light and dark), Lighthouse 100 for performance, accessibility and best practices on `/book` and `/privacy`, a booking completed by keyboard alone. Public copy approved by Patrick 2026-10-08. To re-check on the live site at launch.
+- **Email cap key:** `email_key` uses the existing `senderQuotaKey` (lower-case, `+tags` and Gmail dots removed, googlemail.com folded), which is stricter than "lower-cased email".
+- **Review fixes (2026-10-08):** two independent reviews (spec and security) led to: an unknown-outcome Google insert stays `confirming` and recovery checks whether the event exists before anything else (no orphan meetings); recovery re-checks free/busy before inserting; final writes are conditional on status and outgoing calls have timeouts (no double "Booked" emails); the note is HTML-escaped in the event description; repeated email failures make `bookingReady` false; callers never see the internal `confirming`/`cancelling` states.
 
 ---
 
@@ -219,7 +221,7 @@ Flat files in `mcp/` so the existing `npm test` glob (`mcp/*.test.mjs`) picks th
   "maxPerDay": 3,
   "holdHours": 2,
   "retentionDays": 30,
-  "caps": { "perIpPerDay": 4, "perEmailPerDay": 2, "globalPerDay": 10, "liveHoldsPerKey": 1 },
+  "caps": { "perIpPerDay": 4, "perEmailPerDay": 2, "globalPerDay": 10, "liveHoldsPerEmail": 1 },
   "meetingTypes": [
     { "id": "consultation", "title": "Consultation", "minutes": 30, "description": "..." },
     { "id": "recruiter-intro", "title": "Recruiter intro", "minutes": 15, "description": "..." }
