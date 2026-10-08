@@ -114,12 +114,13 @@ export function createGoogle({ clientId, clientSecret, refreshToken, fetch, now 
     return r.body;
   }
 
-  async function insertEvent({ id, summary, description, start, end, attendees }) {
+  async function insertEvent({ id, summary, description, start, end, timeZone, attendees }) {
     const r = await api("/calendars/primary/events?conferenceDataVersion=1&sendUpdates=all", {
       method: "POST",
       body: {
         id, summary, description,
-        start: { dateTime: start }, end: { dateTime: end },
+        // The zone makes Google show invites in London time, not UTC (the instant is unchanged).
+        start: { dateTime: start, timeZone }, end: { dateTime: end, timeZone },
         attendees: attendees.map((email) => ({ email })),
         // Keeps Patrick's personal address out of the guest list the guest sees.
         guestsCanSeeOtherGuests: false,
