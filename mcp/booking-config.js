@@ -78,6 +78,9 @@ export function checkSlot({ cfg, typeId, start, now, busy, bookings, ignoreNotic
   if (busy.some((b) => overlaps(from, to, b))) return { ok: false, reason: "busy" };
   const others = bookings.filter((b) => LIVE.has(b.status) && b.id !== excludeId);
   if (others.some((b) => overlaps(from, to, b))) return { ok: false, reason: "taken" };
+  // The daily cap counts meetings, not holds, so fake holds can't fill a day.
+  const meetings = others.filter((b) => b.status !== "pending_confirmation" && localDay(b.start, cfg.timezone) === day);
+  if (meetings.length >= cfg.maxPerDay) return { ok: false, reason: "day_full" };
   return { ok: true };
 }
 
