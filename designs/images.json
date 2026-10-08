@@ -2,8 +2,7 @@
   "icons": {
     "inputs": {
       "designs/favicon/chosen.svg": "357bdab467d49440f00adfbbd565e408848db062b4b0a7836b90b157e58d65d6",
-      "designs/favicon/make-icons.cjs": "8554052cb04a37f579aa93a10e69f3446f6f252bb73fadaf5f8f8b48c9a84da3",
-      "sharp (package.json)": "da2434505f7d547fb009987a38af259392b5ae129950feea1ccbd1228633e7bd"
+      "designs/favicon/make-icons.cjs": "8554052cb04a37f579aa93a10e69f3446f6f252bb73fadaf5f8f8b48c9a84da3"
     },
     "outputs": {
       "public/favicon.svg": "357bdab467d49440f00adfbbd565e408848db062b4b0a7836b90b157e58d65d6",
@@ -23,8 +22,7 @@
       "designs/og/fonts/IBMPlexMono-Regular.ttf": "a7fdc993f9f0387caedba4e42521136fa97e4c0837ae6239bf0413ccf8af00c2",
       "designs/og/fonts/IBMPlexSans-Regular.ttf": "6dbe082463cf749cfa057d45c3048c90f4df031496498e5b5bdfd0b6babb9d16",
       "designs/og/fonts/IBMPlexSans-SemiBold.ttf": "5311c66fd6d04ae45671236f7eae667b671c06c1dc7e88d52c206e5fadd0fb21",
-      "designs/og/fonts/OFL.txt": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
-      "sharp (package.json)": "da2434505f7d547fb009987a38af259392b5ae129950feea1ccbd1228633e7bd"
+      "designs/og/fonts/OFL.txt": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da"
     },
     "outputs": {
       "public/og-card.jpg": "9df7d5ae5496d95a5ec7f96ca3f7c29ec66a401e6b878900e8fb66785ebf7df3"
@@ -36,8 +34,7 @@
       "designs/make-cv-pdf.mjs": "1af4358b0a34cb9e8e60df9ed2c5678b74a38eb56eb1b3f2533fe6f0f127593d",
       "public/fonts/ibm-plex-mono-latin-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
       "public/fonts/ibm-plex-mono-latin-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
-      "public/fonts/ibm-plex-sans-latin-var.woff2": "e2291e842cf5af167122a22881a740c7f2dda7716f1e8cd76680264f4a859470",
-      "playwright-core (package.json)": "135f3e7fabc10c4d2ff2bb4f1b5dbc3d32eb0e4ff7dd6b4b8c8a6e96f4824f9d"
+      "public/fonts/ibm-plex-sans-latin-var.woff2": "e2291e842cf5af167122a22881a740c7f2dda7716f1e8cd76680264f4a859470"
     },
     "outputs": {
       "public/cv.pdf": "a32b9fb8b57e3ce55cc17f87811b9bc9bde119eaec9474f5d44ec1dd17dbc919"
