@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkPage, checkHeaders, parseHtml } from "../build.mjs";
+import vm from "node:vm";
+import { checkPage, checkHeaders, parseHtml, inlineCode, decodeEntities } from "../build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const read = (f) => readFileSync(join(ROOT, f), "utf8");
@@ -128,4 +129,291 @@ test("/book form: native controls, every field labelled, a polite live status re
   const status = els.find((e) => e.attrs.id === "status");
   assert.equal(status?.attrs["aria-live"], "polite");
   assert.ok(els.some((e) => e.tag === "button" && e.attrs.type === "submit"));
+});
+
+// ---- /book script: run in a VM against a small fake DOM built from the generated page ----
+// Covers the type → day → time picker (native radios), the visitor's time zone named and used for
+// grouping, and every state the page can be in (loading, no slots, held, booking closed,
+// rate-limited, slot gone, unavailable, generic error).
+const bookCopy = content.pages.book;
+const M = bookCopy.messages;
+
+class El {
+  constructor(tag, attrs = {}) {
+    Object.assign(this, { tag, children: [], parent: null, listeners: {}, value: "", checked: false, disabled: false, hidden: false });
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "hidden") this.hidden = true;
+      else if (k === "class") this.className = v;
+      else if (k === "for") this.htmlFor = v;
+      else this[k] = v;
+    }
+  }
+  appendChild(c) { c.parent = this; this.children.push(c); return c; }
+  get textContent() { return this.children.map((c) => (typeof c === "string" ? c : c.textContent)).join(""); }
+  set textContent(t) { this.children = t === "" ? [] : [String(t)]; }
+  addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
+}
+function toFake(node) {
+  const el = new El(node.tag, { ...node.attrs });
+  for (const c of node.children) {
+    if (c.tag) el.appendChild(toFake(c));
+    else if (!["script", "style", "textarea", "title"].includes(node.tag)) el.children.push(decodeEntities(c.text));
+  }
+  return el;
+}
+const walk = (el, out = []) => { for (const c of el.children) if (typeof c !== "string") { out.push(c); walk(c, out); } return out; };
+const visible = (el) => (el.hidden ? "" : el.children.map((c) => (typeof c === "string" ? c : visible(c))).join("").replace(/\s+/g, " ").trim());
+const fire = (el, type) => {
+  const ev = { type, target: el, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  for (let n = el; n; n = n.parent) for (const fn of n.listeners[type] ?? []) fn(ev);
+  return ev;
+};
+const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+
+// A visitor in `zone` (null: the browser does not say). `routes` maps "GET /path" or "POST /path"
+// to {status, body}, a function returning one (or a promise of one), or an Error (network failure).
+function openBook({ zone = "Europe/Paris", routes }) {
+  const html = read("public/book.html");
+  const root = toFake(parseHtml(html));
+  const document = { getElementById: (id) => walk(root).find((e) => e.id === id) ?? null, createElement: (tag) => new El(tag) };
+  const requests = [];
+  const fetch = async (url, init = {}) => {
+    const method = init.method ?? "GET";
+    requests.push({ url, method, init, body: init.body ? JSON.parse(init.body) : undefined });
+    let r = routes[`${method} ${url.split("?")[0]}`];
+    if (typeof r === "function") r = await r(url, init);
+    if (r instanceof Error) throw r;
+    if (!r) throw new Error(`unexpected ${method} ${url}`);
+    return { status: r.status, ok: r.status >= 200 && r.status < 300, json: async () => r.body };
+  };
+  // The browser's zone comes from DateTimeFormat().resolvedOptions(); formatting uses en-GB here.
+  function DateTimeFormat(locale, opts) {
+    if (opts === undefined) return { resolvedOptions: () => (zone ? { timeZone: zone } : {}) };
+    return new Intl.DateTimeFormat(locale ?? "en-GB", opts);
+  }
+  const script = inlineCode(html, { styles: 1, scripts: 1 }).scripts[0];
+  vm.runInNewContext(script, { document, fetch, Intl: { DateTimeFormat }, JSON, Promise, Object, String, Date, encodeURIComponent });
+  const $ = document.getElementById;
+  const radios = (box) => walk($(box)).filter((e) => e.tag === "input" && e.type === "radio");
+  const labelFor = (input) => visible(walk(root).find((e) => e.tag === "label" && e.htmlFor === input.id));
+  const choose = async (box, i) => { const r = radios(box)[i]; r.checked = true; fire(r, "change"); await settle(); };
+  return { $, requests, radios, labelFor, choose, status: () => visible($("status")) };
+}
+
+const TYPES = { status: 200, body: { types: [
+  { id: "consultation", title: "Consultation", minutes: 30, description: "A free 30-minute call." },
+  { id: "recruiter-intro", title: "Recruiter intro", minutes: 15, description: "A short intro call." },
+] } };
+// Two London days. 10:00 GMT on 26 Oct is already 00:00 on 27 Oct in Kiritimati (+14).
+const SLOTS = { status: 200, body: { timezone: "Europe/London", slots: [
+  { start: "2026-10-26T09:00:00+00:00", end: "2026-10-26T09:30:00+00:00" },
+  { start: "2026-10-26T10:00:00+00:00", end: "2026-10-26T10:30:00+00:00" },
+  { start: "2026-10-27T10:15:00+00:00", end: "2026-10-27T10:45:00+00:00" },
+] } };
+const ready = (extra = {}) => ({ "GET /api/booking/types": TYPES, "GET /api/booking/availability": SLOTS, ...extra });
+
+async function toDetails(v) {
+  await settle();
+  await v.choose("types", 0);
+  await v.choose("days", 0);
+  await v.choose("times", 0);
+  v.$("name").value = "Ada Lovelace";
+  v.$("email").value = "ada@example.com";
+  return v;
+}
+const submit = async (v) => { const ev = fire(v.$("book"), "submit"); await settle(); return ev; };
+const button = (v) => walk(v.$("book")).find((e) => e.tag === "button");
+
+test("/book loading: the form stays hidden and the status says so until the types arrive", async () => {
+  let release;
+  const v = openBook({ routes: { "GET /api/booking/types": () => new Promise((r) => { release = r; }) } });
+  await settle();
+  assert.equal(v.status(), M.loadingTypes);
+  assert.equal(v.$("book").hidden, true);
+  release(TYPES);
+  await settle();
+  assert.equal(v.$("book").hidden, false);
+  assert.equal(v.status(), "");
+});
+
+test("/book meeting types are native radio inputs, each labelled with the type, its length and description", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  const r = v.radios("types");
+  assert.deepEqual(r.map((x) => [x.name, x.value]), [["type", "consultation"], ["type", "recruiter-intro"]]);
+  assert.equal(v.labelFor(r[0]), "Consultation · 30 minA free 30-minute call.");
+  assert.match(v.labelFor(r[1]), /^Recruiter intro · 15 min/);
+});
+
+test("/book choosing a type lists days, then times, in the visitor's zone, which is named", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  await v.choose("types", 1);
+  assert.equal(v.requests.at(-1).url, "/api/booking/availability?type=recruiter-intro");
+  assert.equal(v.status(), "");
+  assert.equal(visible(v.$("zone")), "Times shown in Europe/Paris.");
+  assert.equal(v.$("day-set").hidden, false);
+  assert.deepEqual(v.radios("days").map(v.labelFor), ["Monday 26 October", "Tuesday 27 October"]);
+  assert.equal(v.$("time-set").hidden, true);
+  await v.choose("days", 0);
+  // Paris is UTC+1 after 25 Oct: 09:00 and 10:00 UTC are 10:00 and 11:00.
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["10:00–10:30", "11:00–11:30"]);
+  assert.ok(v.radios("times").every((r) => r.name === "time"));
+  assert.equal(v.$("details").hidden, true);
+  await v.choose("times", 1);
+  assert.equal(v.$("details").hidden, false);
+});
+
+test("/book days are the visitor's days: in a +14:00 zone the 10:00 GMT slot moves to the next day", async () => {
+  const v = openBook({ zone: "Pacific/Kiritimati", routes: ready() });
+  await settle();
+  await v.choose("types", 0);
+  assert.equal(visible(v.$("zone")), "Times shown in Pacific/Kiritimati.");
+  assert.deepEqual(v.radios("days").map(v.labelFor), ["Monday 26 October", "Tuesday 27 October", "Wednesday 28 October"]);
+  await v.choose("days", 1);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["00:00–00:30"]);
+});
+
+test("/book an unknown time zone falls back to Europe/London and says so", async () => {
+  const v = openBook({ zone: null, routes: ready() });
+  await settle();
+  assert.equal(visible(v.$("zone")), bookCopy.zoneFallback);
+  await v.choose("types", 0);
+  await v.choose("days", 0);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["09:00–09:30", "10:00–10:30"]);
+});
+
+test("/book changing day or type clears the choices made after it", async () => {
+  const v = openBook({ routes: ready() });
+  await toDetails(v);
+  await v.choose("days", 1);
+  assert.equal(v.$("details").hidden, true);
+  assert.equal(v.radios("times").length, 1);
+  await v.choose("types", 1);
+  assert.equal(v.$("time-set").hidden, true);
+  assert.equal(v.radios("days").length, 2);
+});
+
+test("/book no free slots: says so and offers no days", async () => {
+  const v = openBook({ routes: ready({ "GET /api/booking/availability": { status: 200, body: { timezone: "Europe/London", slots: [] } } }) });
+  await settle();
+  await v.choose("types", 0);
+  assert.equal(v.status(), M.noSlots);
+  assert.equal(v.$("day-set").hidden, true);
+});
+
+test("/book the note counter counts towards 500", async () => {
+  const v = openBook({ routes: ready() });
+  await toDetails(v);
+  assert.equal(visible(v.$("note-count")), "0 of 500 characters");
+  v.$("note").value = "Hello there";
+  fire(v.$("note"), "input");
+  assert.equal(visible(v.$("note-count")), "11 of 500 characters");
+});
+
+test("/book held: posts exactly the chosen slot and details, then says to check the inbox", async () => {
+  const v = openBook({ routes: ready({ "POST /api/booking": { status: 202, body: { booking_id: "a".repeat(32), status: "pending_confirmation", hold_expires: "2026-10-20T12:00:00.000Z" } } }) });
+  await toDetails(v);
+  v.$("note").value = "About a platform role";
+  const ev = fire(v.$("book"), "submit");
+  assert.ok(ev.defaultPrevented, "the form must not submit natively (the CSP has form-action 'none')");
+  assert.equal(v.status(), M.sending);
+  assert.equal(button(v).disabled, true, "no double submit while sending");
+  await settle();
+  const post = v.requests.at(-1);
+  assert.equal(post.method, "POST");
+  assert.equal(post.url, "/api/booking");
+  assert.equal(post.init.headers["content-type"], "application/json");
+  assert.deepEqual(post.body, { type: "consultation", start: "2026-10-26T09:00:00+00:00", name: "Ada Lovelace", email: "ada@example.com", note: "About a platform role" });
+  assert.equal(v.status(), "Check your inbox to confirm. I'm holding this slot for 2 hours.");
+  assert.equal(v.$("book").hidden, true);
+});
+
+test("/book an empty note is left out of the request", async () => {
+  const v = openBook({ routes: ready({ "POST /api/booking": { status: 202, body: {} } }) });
+  await toDetails(v);
+  await submit(v);
+  assert.ok(!("note" in v.requests.at(-1).body));
+});
+
+test("/book booking closed (503 booking_disabled) on submit: says booking isn't open yet, links to the homepage contact", async () => {
+  const v = openBook({ routes: ready({ "POST /api/booking": { status: 503, body: { error: "booking_disabled", message: "Booking is disabled." } } }) });
+  await toDetails(v);
+  await submit(v);
+  assert.equal(v.status(), "Booking isn't open yet.");
+  assert.equal(v.$("book").hidden, true);
+  assert.equal(v.$("closed").hidden, false);
+  assert.equal(walk(v.$("closed")).find((e) => e.tag === "a").href, "/#contact");
+});
+
+test("/book booking closed is also shown when the first request is refused", async () => {
+  const v = openBook({ routes: { "GET /api/booking/types": { status: 503, body: { error: "booking_disabled" } } } });
+  await settle();
+  assert.equal(v.status(), M.closed);
+  assert.equal(v.$("closed").hidden, false);
+  assert.equal(v.$("book").hidden, true);
+});
+
+test("/book rate-limited (429): shows the server's reason, or a default, and keeps the form", async () => {
+  for (const [body, want] of [[{ error: "hold_pending", message: "You already have a booking waiting for confirmation." }, "You already have a booking waiting for confirmation."], [{}, M.rateLimited]]) {
+    const v = openBook({ routes: ready({ "POST /api/booking": { status: 429, body } }) });
+    await toDetails(v);
+    await submit(v);
+    assert.equal(v.status(), want);
+    assert.equal(v.$("book").hidden, false);
+    assert.equal(button(v).disabled, false);
+  }
+});
+
+test("/book slot gone (409): reloads the free times and says the slot was taken", async () => {
+  let calls = 0;
+  const v = openBook({ routes: ready({
+    "GET /api/booking/availability": () => (++calls === 1 ? SLOTS : { status: 200, body: { slots: SLOTS.body.slots.slice(2) } }),
+    "POST /api/booking": { status: 409, body: { error: "slot_taken" } },
+  }) });
+  await toDetails(v);
+  await submit(v);
+  assert.equal(calls, 2, "availability was fetched again");
+  assert.equal(v.status(), M.slotGone);
+  assert.equal(v.radios("days").length, 1);
+  assert.equal(v.$("details").hidden, true);
+  assert.equal(button(v).disabled, false);
+});
+
+test("/book unavailable (other 503), invalid input (400), server error and network failure each get a message", async () => {
+  for (const [resp, want] of [
+    [{ status: 503, body: { error: "unavailable" } }, M.unavailable],
+    [{ status: 400, body: { error: "invalid", message: "email: not a valid address" } }, "email: not a valid address"],
+    [{ status: 400, body: {} }, M.invalid],
+    [{ status: 500, body: null }, M.error],
+    [new Error("offline"), M.error],
+  ]) {
+    const v = openBook({ routes: ready({ "POST /api/booking": resp }) });
+    await toDetails(v);
+    await submit(v);
+    assert.equal(v.status(), want, JSON.stringify(resp));
+    assert.equal(button(v).disabled, false);
+  }
+  const down = openBook({ routes: ready({ "GET /api/booking/availability": { status: 503, body: { error: "unavailable" } } }) });
+  await settle();
+  await down.choose("types", 0);
+  assert.equal(down.status(), M.unavailable);
+});
+
+test("/book script talks only to /api/booking on this origin and names no external URL", async () => {
+  const script = inlineCode(read("public/book.html"), { styles: 1, scripts: 1 }).scripts[0];
+  assert.doesNotMatch(script, /https?:|\/\/[a-z0-9]/i);
+  const v = openBook({ routes: ready({ "POST /api/booking": { status: 202, body: {} } }) });
+  await toDetails(v);
+  await submit(v);
+  assert.equal(v.requests.length, 3);
+  for (const r of v.requests) assert.match(r.url, /^\/api\/booking(\/|\?|$)/);
+});
+
+test("/book CSP allows the page's own script by hash and same-origin fetch only", () => {
+  for (const p of ["/book", "/book.html"]) {
+    const [rule] = rulesFor(read("public/_headers"), p);
+    assert.match(rule, /script-src 'sha256-[A-Za-z0-9+/=]+'; connect-src 'self';/);
+    assert.match(rule, /form-action 'none'/);
+  }
 });
