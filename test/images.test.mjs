@@ -37,19 +37,29 @@ test("a changed card input (the tagline) is reported; an unrelated content.json 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("a changed icon source invalidates the icons; a font or sharp change invalidates the card", () => {
+test("a changed icon source invalidates the icons; a font change invalidates the card", () => {
   const dir = scratch();
   try {
     writeFileSync(join(dir, "designs/favicon/chosen.svg"), readFileSync(join(dir, "designs/favicon/chosen.svg"), "utf8") + "\n");
     writeFileSync(join(dir, "designs/og/fonts/IBMPlexSans-SemiBold.ttf"), "not a font");
-    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
-    pkg.devDependencies.sharp = "0.0.0";
-    writeFileSync(join(dir, "package.json"), JSON.stringify(pkg));
     const errors = imageDrift(recorded, currentHashes(dir)).join("\n");
     assert.match(errors, /icons: input designs\/favicon\/chosen\.svg changed/);
     assert.match(errors, /card: input designs\/og\/fonts\/IBMPlexSans-SemiBold\.ttf changed/);
-    assert.match(errors, /icons: input sharp \(package\.json\) changed/);
-    assert.match(errors, /card: input sharp \(package\.json\) changed/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Dependabot bumps sharp and playwright-core with no way to run `npm run images`. The committed
+// images stay correct after a tool bump (a sharp 0.35.4 → 0.35.5 regeneration was byte-identical),
+// so tool versions are not inputs: images are regenerated, with whatever tools are current, when
+// what they draw changes.
+test("a sharp or playwright-core bump alone invalidates nothing", () => {
+  const dir = scratch();
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    pkg.devDependencies.sharp = "0.0.0";
+    pkg.devDependencies["playwright-core"] = "0.0.0";
+    writeFileSync(join(dir, "package.json"), JSON.stringify(pkg));
+    assert.deepEqual(imageDrift(recorded, currentHashes(dir)), []);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
