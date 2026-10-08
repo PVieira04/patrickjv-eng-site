@@ -115,5 +115,6 @@ By email at hello@patrickjv.com, or through LinkedIn or GitHub.
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)
 - [GitHub](https://github.com/PVieira04)
 - [CV](https://patrickjv.com/cv): two-page CV, also as [PDF](https://patrickjv.com/cv.pdf)
+- [Privacy](https://patrickjv.com/privacy): what this site stores about you, for how long, and who processes it
 
 Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here.
