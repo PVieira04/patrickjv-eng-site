@@ -354,7 +354,7 @@ export function buildEvent(b, cfg, ownerEmail) {
   return {
     id: b.id, summary: `${title}: ${b.guest_name}`,
     description: [`${escapeHtml(title)}, booked on patrickjv.com.`, b.note ? `\nNote from the guest:\n${escapeHtml(b.note)}` : ""].join(""),
-    start: b.start_utc, end: b.end_utc, attendees: [b.guest_email, ownerEmail].filter(Boolean),
+    start: b.start_utc, end: b.end_utc, timeZone: cfg.timezone, attendees: [b.guest_email, ownerEmail].filter(Boolean),
   };
 }
 
