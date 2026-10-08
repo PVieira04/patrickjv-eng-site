@@ -4,55 +4,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { handle, SECURITY_HEADERS } from "./handler.js";
-import { openSql } from "./booking-sqlite.mjs";
-import { createBookingService } from "./booking-service.js";
-import { ENV, fakeFetch, alarmStorage, tokenIn } from "./booking-fakes.mjs";
+import { SECURITY_HEADERS } from "./handler.js";
+import { tokenIn } from "./booking-fakes.mjs";
+import { harness, quiet, NOW, ORIGIN } from "./booking-harness.mjs";
 
 const cfg = JSON.parse(readFileSync(new URL("../booking.json", import.meta.url), "utf8"));
-const content = JSON.parse(readFileSync(new URL("../content.json", import.meta.url), "utf8"));
-const SALT = "test-salt-0123456789abcdef0123456789";
-const NOW = new Date("2026-10-19T09:00:00.000Z"); // Monday, BST
 const SLOT = "2026-10-21T10:00:00+01:00"; // Wed 10:00 London = 09:00 UTC
-const ORIGIN = "https://patrickjv.com";
 
-const limiter = (limit) => {
-  const n = new Map();
-  return { calls: () => [...n.values()].reduce((a, b) => a + b, 0), limit: async ({ key }) => { n.set(key, (n.get(key) || 0) + 1); return { success: n.get(key) <= limit }; } };
-};
-const quiet = async (fn) => { const saved = [console.error, console.log]; console.error = console.log = () => {}; try { return await fn(); } finally { [console.error, console.log] = saved; } };
-
-export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 1e9, env: over = {}, storeDown = false } = {}) {
-  const f = fakeFetch(fetchOpts);
-  const clock = { now: NOW };
-  const svc = createBookingService({ sql: openSql(), storage: alarmStorage(), env: { ...ENV, ...over }, cfg, fetch: f.fetch, sleep: async () => {}, now: () => clock.now });
-  let storeCalls = 0;
-  // Like a Durable Object stub: every method is async and results are structured-cloned.
-  const stub = new Proxy(svc, { get: (o, k) => async (...a) => { storeCalls++; if (storeDown) throw new Error("DO unreachable"); return structuredClone(await o[k](...a)); } });
-  const alerts = [];
-  const rl = { minute: limiter(minute), burst: limiter(burst) };
-  const env = {
-    INTRO_FROM: "intro@patrickjv.com", INTRO_TO_ADDRESS: "owner@example.com", QUOTA_SALT: SALT,
-    RL_MCP: rl.minute, RL_BURST: rl.burst, RL_INTRO: limiter(1e9),
-    EMAIL: { send: async () => {} }, QUOTA: { idFromName: () => ({}), get: () => ({}) }, BOOKING: { idFromName: () => ({}), get: () => stub },
-    BOOKING_ENABLED: enabled ? "true" : "false", ...ENV, ...over,
-  };
-  for (const [k, v] of Object.entries(over)) if (v === undefined) delete env[k];
-  const deps = {
-    content, now: () => clock.now, reserve: async () => ({ ok: true }),
-    sendEmail: async (from, to, raw) => { alerts.push({ from, to, raw }); },
-    booking: () => stub,
-  };
-  const call = (path, { method = "GET", headers = {}, body, ip = "203.0.113.7" } = {}) => handle(new Request("https://patrickjv.com" + path, {
-    method, duplex: "half", headers: Object.fromEntries(Object.entries({ "cf-connecting-ip": ip, ...headers }).filter(([, v]) => v !== undefined)),
-    body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
-  }), env, deps);
-  const post = (body, opts = {}) => call("/api/booking", { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, ...opts.headers }, body, ip: opts.ip });
-  const actPost = (t, { form = true, headers = {} } = {}) => call("/api/booking/act", { method: "POST",
-    headers: { "content-type": form ? "application/x-www-form-urlencoded" : "application/json", origin: ORIGIN, ...headers },
-    body: form ? `t=${encodeURIComponent(t)}` : { t } });
-  return { call, post, actPost, f, svc, clock, env, alerts, rl, storeCalls: () => storeCalls };
-}
 const booking = (over = {}) => ({ type: "consultation", start: SLOT, name: "Jane Smith", email: "jane@example.com", note: "About platforms", ...over });
 const confirmToken = (h, i = 0) => tokenIn(h.f.mails()[i].text, "confirm");
 
@@ -293,4 +251,132 @@ test("act pages escape everything they show", async () => {
   const res = await h.call(`/api/booking/act?t=${encodeURIComponent('"><script>alert(1)</script>')}`);
   const html = await res.text();
   assert.ok(!html.includes("<script>alert"), html);
+});
+
+const rpc = (method, params, id = 1) => ({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
+const mcp = async (h, msg) => (await (await h.call("/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: msg })).json());
+const tool = (h, name, args = {}) => mcp(h, rpc("tools/call", { name, arguments: args })).then((r) => r.result);
+
+// ---- HTTP: status and cancel (used by the page's WebMCP tools) ----
+
+test("GET /api/booking/status and POST /api/booking/cancel: the same results as the MCP tools", async () => {
+  const h = harness();
+  const { booking_id } = await (await h.post(booking())).json();
+  const s = await h.call(`/api/booking/status?booking_id=${booking_id}`);
+  assert.equal(s.status, 200);
+  assert.deepEqual(await s.json(), { status: "pending_confirmation", start: SLOT, end: "2026-10-21T10:30:00+01:00", type: "consultation" });
+  assert.equal((await h.call("/api/booking/status?booking_id=nope")).status, 400);
+  assert.equal((await h.call(`/api/booking/status?booking_id=${"0".repeat(32)}`)).status, 404);
+  const c = await h.call("/api/booking/cancel", { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: { booking_id } });
+  assert.equal(c.status, 200);
+  assert.deepEqual(await c.json(), { status: "cancelled" });
+  assert.equal((await h.call("/api/booking/cancel")).status, 405);
+});
+
+test("POST /api/booking: optional source is exactly \"page\" (the default) or \"webmcp\"; anything else is 400", async () => {
+  const h = harness();
+  assert.equal((await h.post(booking({ source: "webmcp" }))).status, 202);
+  assert.match(h.f.mails()[0].text, /An AI agent asked to book/);
+  const page = harness();
+  assert.equal((await page.post(booking({ source: "page" }))).status, 202);
+  assert.match(page.f.mails()[0].text, /Someone used this email address on patrickjv\.com/);
+  for (const source of ["mcp", "PAGE", "", "agent"]) {
+    const res = await harness().post(booking({ source }));
+    assert.equal(res.status, 400, source);
+    assert.equal((await res.json()).error, "invalid_input", source);
+  }
+});
+
+test("book_meeting over MCP is always source mcp: a source argument is refused, nothing is held", async () => {
+  const h = harness();
+  const r = await mcp(h, rpc("tools/call", { name: "book_meeting", arguments: { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com", source: "page" } }));
+  assert.equal(r.result.isError, true);
+  assert.equal(h.storeCalls(), 0);
+  await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
+  assert.match(h.f.mails()[0].text, /An AI agent asked to book/);
+});
+
+// ---- MCP tools ----
+
+const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
+
+test("tools/list: the five booking tools, with schemas, limits, annotations and icons", async () => {
+  const { result } = await mcp(harness(), rpc("tools/list"));
+  const byName = Object.fromEntries(result.tools.map((t) => [t.name, t]));
+  assert.deepEqual(result.tools.map((t) => t.name).slice(-5), BOOKING_TOOLS);
+  for (const n of ["list_meeting_types", "get_availability", "get_booking_status"]) assert.equal(byName[n].annotations.readOnlyHint, true, n);
+  assert.deepEqual(byName.book_meeting.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true });
+  assert.deepEqual(byName.cancel_booking.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+  for (const n of BOOKING_TOOLS) {
+    assert.equal(byName[n].icons[0].src, "https://patrickjv.com/icon-192.png", n);
+    assert.equal(byName[n].inputSchema.additionalProperties, false, n);
+    assert.ok(byName[n].title && byName[n].description, n);
+  }
+  const b = byName.book_meeting;
+  assert.deepEqual(b.inputSchema.required, ["type", "start", "name", "email"]);
+  assert.deepEqual(b.inputSchema.properties.type.enum, ["consultation", "recruiter-intro"]);
+  assert.equal(b.inputSchema.properties.name.maxLength, 100);
+  assert.equal(b.inputSchema.properties.email.maxLength, 254);
+  assert.equal(b.inputSchema.properties.note.maxLength, 500);
+  assert.match(b.description, /Only use this when the person has asked/);
+  assert.match(b.description, /Do not retry on error/);
+  assert.match(b.description, /Privacy:/);
+  assert.match(byName.cancel_booking.description, /Do not retry on error/);
+  assert.equal(byName.get_booking_status.inputSchema.properties.booking_id.pattern, "^[0-9a-f]{32}$");
+  assert.equal(byName.get_availability.inputSchema.properties.from.pattern, "^\\d{4}-\\d{2}-\\d{2}$");
+});
+
+test("list_meeting_types and get_availability over MCP", async () => {
+  const h = harness();
+  const types = await tool(h, "list_meeting_types");
+  assert.deepEqual(types.structuredContent, { items: cfg.meetingTypes.map(({ id, title, minutes, description }) => ({ id, title, minutes, description })) });
+  const av = await tool(h, "get_availability", { type: "consultation", from: "2026-10-21", to: "2026-10-21" });
+  assert.equal(av.structuredContent.timezone, "Europe/London");
+  assert.deepEqual(av.structuredContent.slots[0], { start: SLOT, end: "2026-10-21T10:30:00+01:00" });
+  assert.deepEqual(JSON.parse(av.content[0].text), av.structuredContent);
+});
+
+test("book_meeting holds and emails the person as an agent booking; get_booking_status shows it without guest details", async () => {
+  const h = harness();
+  const r = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane Smith", email: "jane@example.com" });
+  assert.equal(r.isError, undefined, JSON.stringify(r));
+  const { booking_id, status, hold_expires } = r.structuredContent;
+  assert.equal(status, "pending_confirmation");
+  assert.equal(hold_expires, "2026-10-19T12:00:00+01:00");
+  assert.match(h.f.mails()[0].text, /An AI agent asked to book a Consultation/);
+  const s = await tool(h, "get_booking_status", { booking_id });
+  assert.deepEqual(s.structuredContent, { status: "pending_confirmation", start: SLOT, end: "2026-10-21T10:30:00+01:00", type: "consultation" });
+  assert.ok(!s.content[0].text.includes("jane"));
+});
+
+test("cancel_booking: withdraws a hold; on a confirmed meeting only emails a confirm-cancellation link", async () => {
+  const h = harness();
+  const { booking_id } = (await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" })).structuredContent;
+  assert.deepEqual((await tool(h, "cancel_booking", { booking_id })).structuredContent, { status: "cancelled" });
+  assert.deepEqual((await tool(h, "get_booking_status", { booking_id })).structuredContent.status_reason, "agent_withdrew");
+
+  const { booking_id: id2 } = (await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" })).structuredContent;
+  await h.actPost(tokenIn(h.f.mails().at(-1).text, "confirm"));
+  const c = await tool(h, "cancel_booking", { booking_id: id2 });
+  assert.deepEqual(c.structuredContent, { status: "confirmed", cancellation: "requested" });
+  assert.match(h.f.mails().at(-1).subject, /^Confirm cancellation/);
+  assert.equal((await tool(h, "get_booking_status", { booking_id: id2 })).structuredContent.status, "confirmed");
+});
+
+test("booking tools: failures are tool errors naming the error and asking agents not to retry; bad arguments reach nothing", async () => {
+  const h = harness();
+  await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
+  const taken = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Bob", email: "bob@example.com" });
+  assert.equal(taken.isError, true);
+  assert.equal(taken.structuredContent.error, "hold_pending", "same IP, one live hold");
+  assert.match(taken.content[0].text, /Do not retry/);
+  const missing = await tool(h, "get_booking_status", { booking_id: "f".repeat(32) });
+  assert.equal(missing.isError, true);
+  assert.equal(missing.structuredContent.error, "not_found");
+  const fresh = harness();
+  for (const [name, args] of [["book_meeting", { type: "consultation" }], ["get_availability", {}], ["get_booking_status", { booking_id: 1 }], ["cancel_booking", { booking_id: "x" }], ["list_meeting_types", { x: 1 }]]) {
+    const r = await mcp(fresh, rpc("tools/call", { name, arguments: args }));
+    assert.ok(r.error?.code === -32602 || r.result?.isError === true, `${name}: ${JSON.stringify(r)}`);
+  }
+  assert.equal(fresh.storeCalls(), 0);
 });

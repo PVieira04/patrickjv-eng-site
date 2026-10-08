@@ -35,9 +35,10 @@ const hostile = {
   message: "Hello Patrick,\r\nline two\rline three\u0001 and a long enough message.  ",
 };
 
-test("WebMCP registers all five tools", () => {
+test("WebMCP registers all ten tools, in the MCP server's order", () => {
   const { tools } = runPage({ respond: ok });
-  assert.deepEqual(tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+  assert.deepEqual(tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
+    "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
 });
 
 test("request_intro: normalised exactly as the server does, before the confirm dialog; sends what was shown", async () => {

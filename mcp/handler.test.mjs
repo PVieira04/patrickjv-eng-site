@@ -127,9 +127,10 @@ test("client JSON-RPC responses: exactly one of result/error, and a well-formed 
   }
 });
 
-test("tools/list: four read-only tools and request_intro", async () => {
+test("tools/list: four read-only tools, request_intro, then the five booking tools", async () => {
   const r = await (await harness().call(rpc("tools/list"))).json();
-  assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+  assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
+    "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
   for (const t of r.result.tools.slice(0, 4)) assert.equal(t.annotations.readOnlyHint, true);
   for (const t of r.result.tools) assert.equal(t.icons[0].src, "https://patrickjv.com/icon-192.png");
   assert.match(r.result.tools[4].description, /not stored by this site/);
@@ -456,7 +457,7 @@ test("MCP-Protocol-Version: unsupported (or empty) is 400; absent is accepted", 
   for (const v of ["2025-11-25", "2025-06-18"]) assert.equal((await call(rpc("tools/list"), { headers: { "mcp-protocol-version": v } })).status, 200, v);
   const absent = await call(rpc("tools/list"));
   assert.equal(absent.status, 200);
-  assert.equal((await absent.json()).result.tools.length, 5);
+  assert.equal((await absent.json()).result.tools.length, 10);
 });
 
 test("security headers on every response branch", async () => {
