@@ -7,7 +7,7 @@ import { createMailer, MailError, holdEmail, bookedEmail, cancelRequestEmail, ca
 function fakeFetch(status, body) {
   const calls = [];
   const f = async (url, init = {}) => {
-    calls.push({ url: String(url), method: init.method, headers: init.headers, body: init.body });
+    calls.push({ url: String(url), method: init.method, headers: init.headers, body: init.body, signal: init.signal });
     return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   };
   f.calls = calls;
@@ -52,6 +52,16 @@ test("Resend: 429 and 500 throw MailError with the status, naming no address or 
     assert.doesNotMatch(e.message, /jane|re_test_key/);
     assert.deepEqual(logs, []);
   }
+});
+
+test("Resend: the send times out after 15 s, so a hung call can't hold a booking open", async () => {
+  const fetch = fakeFetch(200, { id: "x" });
+  const mailer = createMailer({ apiKey: "k", from: "hello@patrickjv.com", fetch });
+  const seen = [], orig = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => { seen.push(ms); return orig.call(AbortSignal, ms); };
+  try { await mailer.send(MSG); } finally { AbortSignal.timeout = orig; }
+  assert.ok(fetch.calls[0].signal instanceof AbortSignal);
+  assert.deepEqual(seen, [15_000]);
 });
 
 // Sample bookings either side of the clocks going back on Sun 25 Oct 2026.

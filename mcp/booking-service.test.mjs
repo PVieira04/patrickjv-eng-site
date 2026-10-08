@@ -174,6 +174,24 @@ test("recovery: a booking stuck in cancelling is finished by retrying deleteEven
   assert.ok(fresh.f.calls.some((c) => c.method === "DELETE"));
 });
 
+test("race: recovery finishing a slow live confirm, then the confirm returning: one 'Booked' email, one cancel link", async () => {
+  let release, inserted;
+  const gate = new Promise((r) => { release = r; });
+  const made = new Promise((r) => { inserted = r; });
+  const s = service();
+  const { booking_id } = await s.svc.request(guest(), "ip1", "em1");
+  s.f.opts.afterInsert = () => { inserted(); return gate; }; // Google made the event; its answer is slow
+  const live = s.svc.act(tokenIn(s.f.mails()[0].text, "confirm"));
+  await made;
+  s.clock.now = new Date(NOW.getTime() + 3 * 60e3); // past STUCK_AFTER_MS: the alarm takes over
+  await s.svc.alarm();
+  release();
+  assert.deepEqual(await live, { result: "confirmed" });
+  assert.equal(s.svc.status(booking_id).status, "confirmed");
+  assert.equal(s.f.mails().filter((m) => /^Booked:/.test(m.subject)).length, 1);
+  assert.equal(s.sql.exec("SELECT count(*) c FROM tokens WHERE action = 'cancel'").one().c, 1);
+});
+
 test("recovery: a confirm still in progress in this instance (under 2 minutes) is left alone", async () => {
   let release;
   const gate = new Promise((r) => { release = r; });

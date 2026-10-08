@@ -12,7 +12,7 @@ function fakeFetch(routes) {
   const calls = [];
   const served = new Map();
   const f = async (url, init = {}) => {
-    const call = { url: String(url), method: init.method || "GET", headers: init.headers || {}, body: init.body };
+    const call = { url: String(url), method: init.method || "GET", headers: init.headers || {}, body: init.body, signal: init.signal };
     calls.push(call);
     const route = routes.find(([m, re]) => m === call.method && re.test(call.url));
     if (!route) throw new Error(`unexpected request: ${call.method} ${call.url}`);
@@ -220,6 +220,32 @@ test("insertEvent: any other error throws GoogleError (the caller rolls the clai
   const e = await g.insertEvent(EVENT).catch((x) => x);
   assert.ok(e instanceof GoogleError);
   assert.deepEqual([e.status, e.reason], [500, "backendError"]);
+});
+
+// Records the ms of every AbortSignal.timeout made while fn runs.
+async function timeouts(fn) {
+  const seen = [], orig = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => { seen.push(ms); return orig.call(AbortSignal, ms); };
+  try { await fn(); } finally { AbortSignal.timeout = orig; }
+  return seen;
+}
+
+test("every Google call (token, free/busy, events) times out after 20 s, so a hung call can't hold a booking open", async () => {
+  const { g, fetch } = client([
+    ["POST", /oauth2/, tokenOk()],
+    ["POST", /freeBusy$/, { body: { calendars: { primary: { busy: [] } } } }],
+    ["POST", /\/calendars\/primary\/events\?/, eventBody("pending")],
+    ["GET", EVENT_URL, eventBody("success", MEET)],
+    ["DELETE", /\/calendars\/primary\/events\//, { status: 204 }],
+  ]);
+  const seen = await timeouts(async () => {
+    await g.freeBusy(["primary"], "2026-10-26T00:00:00Z", "2026-10-27T00:00:00Z");
+    await g.insertEvent(EVENT);
+    await g.deleteEvent(ID);
+  });
+  assert.equal(fetch.calls.length, 5);
+  assert.ok(fetch.calls.every((c) => c.signal instanceof AbortSignal));
+  assert.deepEqual(seen, Array(5).fill(20_000));
 });
 
 test("deleteEvent: deletes from hello@'s primary calendar with attendees notified; 204 deleted, 404/410 not", async () => {

@@ -72,6 +72,7 @@ function setup({ busy = [], emailFails = false, insertFails = false, deleteFails
       return { created: true, meetLink: "https://meet.google.com/abc-defg-hij" };
     },
     deleteEvent: async (id) => { await tick(); if (deleteFails) throw new Error("google down"); calls.deleted.push(id); return { deleted: true }; },
+    ownerEmail: "owner@example.net",
   };
   return { sql, deps, calls };
 }
@@ -335,7 +336,7 @@ test("confirm: re-checks, creates the event (Meet, guest invited, type in the ti
   assert.equal(ev.summary, "Consultation: Jane Smith");
   assert.equal(ev.start, SLOT);
   assert.equal(ev.end, "2026-10-21T10:30:00.000Z");
-  assert.ok(ev.attendees.some((a) => a.email === "jane@example.com"));
+  assert.deepEqual(ev.attendees, ["jane@example.com", "owner@example.net"], "plain addresses, the guest and Patrick");
   assert.equal(t.calls.freeBusy, 2, "free/busy checked again at confirm");
   const b = row(t, h.id);
   assert.equal(b.status, "confirmed");
@@ -354,6 +355,20 @@ test("confirm: a 409 from Google (event already exists) still counts as created"
   const h = await hold(t);
   assert.deepEqual(await act(t, h.confirm), { result: "confirmed" });
   assert.equal(row(t, h.id).status, "confirmed");
+});
+
+test("confirm: if something else finished the booking meanwhile, the confirm writes nothing more and sends no 'Booked' email", async () => {
+  const t = setup();
+  const h = await hold(t);
+  const insert = t.deps.insertEvent;
+  t.deps.insertEvent = async (ev) => {
+    const r = await insert(ev);
+    t.sql.exec("UPDATE bookings SET status = 'confirmed', event_id = id WHERE id = ?", h.id); // e.g. the alarm's recovery
+    return r;
+  };
+  assert.deepEqual(await act(t, h.confirm), { result: "confirmed" });
+  assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 0);
+  assert.equal(sqlCount(t, "SELECT count(*) c FROM tokens WHERE action = 'cancel'"), 0, "no second cancel link");
 });
 
 test("confirm: the slot became busy in a calendar → declined, slot_taken, no event", async () => {
