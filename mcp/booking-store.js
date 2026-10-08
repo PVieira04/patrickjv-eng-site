@@ -48,7 +48,7 @@ export async function newToken() {
 // request_intro's. Synchronous, so atomic inside the Durable Object. Global is checked first, and
 // a refused request writes nothing, so refusals never eat into anyone's allowance. The request
 // that uses up the global cap says so, once a day, so Patrick can be alerted.
-export function reserveQuota(sql, { day, ipKey, emailKey, caps }) {
+export function reserveBookingQuota(sql, { day, ipKey, emailKey, caps }) {
   const count = (kind, key) => sql.exec("SELECT n FROM quota WHERE day = ? AND kind = ? AND key = ?", day, kind, key).toArray()[0]?.n ?? 0;
   const g = count("global", "");
   if (g >= caps.globalPerDay) return { ok: false, which: "global" };
@@ -105,7 +105,7 @@ function holdPending(sql, { now, ipKey, emailKey, cfg }) {
 
 export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, deps }) {
   const nowIso = now.toISOString();
-  const quota = reserveQuota(sql, { day: deps.day(nowIso), ipKey, emailKey, caps: cfg.caps });
+  const quota = reserveBookingQuota(sql, { day: deps.day(nowIso), ipKey, emailKey, caps: cfg.caps });
   if (!quota.ok) return { error: "rate_limited", reason: quota.which };
   const flag = quota.globalJustExhausted ? { globalJustExhausted: true } : {};
   if (holdPending(sql, { now, ipKey, emailKey, cfg })) return { error: "hold_pending", ...flag };
