@@ -457,7 +457,7 @@ test("confirm: an insert whose outcome is unknown (timeout, network, 5xx) is not
   const h = await hold(t);
   assert.deepEqual(await quietly(() => act(t, h.confirm)), { result: "confirming" });
   assert.equal(row(t, h.id).status, "confirming", "still occupying its slot");
-  assert.deepEqual(await act(t, h.confirm), { error: "used" }, "the link is spent: a retry can't race recovery");
+  assert.deepEqual(await act(t, h.confirm), { error: "used", confirming: true }, "the link is spent (a retry can't race recovery), and says why");
   assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 0);
   // The alarm's recovery finds the event Google made and settles the booking, without a second insert.
   assert.deepEqual(await store.recoverConfirm(t.sql, row(t, h.id), { now: later(HOUR + 5 * 60e3), cfg, deps: t.deps }), { result: "confirmed" });

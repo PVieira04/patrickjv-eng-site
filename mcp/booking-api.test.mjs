@@ -210,6 +210,19 @@ test("POST act: confirm books it (form or JSON); the link then reads 'already be
   assert.equal(h.svc.status(booking_id).status, "cancelled");
 });
 
+test("act: a confirm Google may have half-done says it's being finished (POST, a second POST and GET), not 'already used'", async () => {
+  const h = harness({ fetchOpts: { fail: { afterCreate: true } } });
+  await h.post(booking());
+  const t = confirmToken(h);
+  for (const res of [await quiet(() => h.actPost(t)), await h.actPost(t), await h.call(`/api/booking/act?t=${t}`)]) {
+    assert.equal(res.status, 202);
+    const page = await res.text();
+    assert.match(page, /being finished/);
+    assert.match(page, /check your email/i);
+    assert.doesNotMatch(page, /already been used|<form/);
+  }
+});
+
 test("POST act: decline; a taken slot is 409 'That slot was taken'; Google down is 503 and the link still works later", async () => {
   const d = harness();
   await d.post(booking());
