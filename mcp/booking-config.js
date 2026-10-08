@@ -34,3 +34,13 @@ export function localDay(iso, tz) {
   const p = wallClock(Date.parse(iso), tz);
   return `${p.year}-${p.month}-${p.day}`;
 }
+
+// Agent-facing form of a stored UTC time: local wall time in tz with its offset, to the second.
+export function withOffset(iso, tz) {
+  const ms = Date.parse(iso);
+  const off = offsetAt(ms, tz);
+  const a = Math.abs(off);
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = new Date(ms + off * 60000).toISOString().slice(0, 19);
+  return `${local}${off < 0 ? "-" : "+"}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+}
