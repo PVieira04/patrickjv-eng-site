@@ -5,7 +5,7 @@
 // run this against node:sqlite with a fake fetch.
 import { checkSlot, availableSlots } from "./booking-config.js";
 import {
-  migrate, requestBooking, act, cancelByAgent, peekToken, getStatus, liveBookings, expireHolds, prune, nextAlarmAt, recoverConfirm,
+  migrate, requestBooking, act, cancelByAgent, peekToken, getStatus, liveBookings, expireHolds, prune, nextAlarmAt, recoverConfirm, emailFailures,
 } from "./booking-store.js";
 import { createGoogle, assertNoErrors, meetLinkOf } from "./booking-google.js";
 import { createMailer, holdEmail, bookedEmail, cancelRequestEmail } from "./booking-email.js";
@@ -20,6 +20,8 @@ export const STUCK_AFTER_MS = 2 * MINUTE;
 // the Worker hammer Google. Booking and confirming always ask Google afresh.
 const AVAILABILITY_CACHE_MS = MINUTE;
 const PING_CACHE_MS = MINUTE;
+// Guest emails failed in a row before health says email is down (fewer could be a blip).
+const EMAIL_FAILURES_DOWN = 3;
 
 const logFailure = (subsystem) => console.error(JSON.stringify({ event: "booking_failure", subsystem }));
 
@@ -136,11 +138,12 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
       const slots = availableSlots({ cfg, typeId: type, now: t, from, to, busy: availabilityCache.busy, bookings: liveBookings(sql, t) });
       return { slots };
     },
-    // Health: a fresh token refresh (so a revoked token shows), at most once a minute.
+    // Health: a fresh token refresh (so a revoked token shows), at most once a minute; and whether
+    // guest email is failing (EMAIL_FAILURES_DOWN in a row).
     async health() {
       const t = now().getTime();
       if (!pingCache || t - pingCache.at >= PING_CACHE_MS) pingCache = { at: t, ok: await google.ping() };
-      return { google: pingCache.ok };
+      return { google: pingCache.ok, email: emailFailures(sql) < EMAIL_FAILURES_DOWN };
     },
     async alarm() {
       const t = now();

@@ -644,12 +644,16 @@ const bookingOps = {
 
 // Health for booking: bookingEnabled is the kill switch; bookingReady says booking would work if
 // switched on: every secret set (QUOTA_SALT included), and, only then, the BookingStore answers
-// and a fresh Google token refresh succeeds (cached in the store for a minute). Independent of
-// the flag, so readiness can be checked before launch. Booleans only.
+// and a fresh Google token refresh succeeds (cached in the store for a minute), and guest email
+// hasn't failed 3 times in a row. Independent of the flag, so readiness can be checked before
+// launch. Booleans only.
 async function bookingReadiness(env, deps) {
   let ready = false;
   if (bookingConfigured(env)) {
-    try { ready = (await deps.booking().health()).google === true; } catch { logFailure("booking_store"); }
+    try {
+      const h = await deps.booking().health();
+      ready = h.google === true && h.email === true;
+    } catch { logFailure("booking_store"); }
   }
   return { bookingEnabled: bookingEnabled(env), bookingReady: ready };
 }

@@ -20,6 +20,8 @@ const SCHEMA = [
     hash TEXT PRIMARY KEY, booking_id TEXT NOT NULL, action TEXT NOT NULL,
     expires_at TEXT NOT NULL, used_at TEXT)`,
   "CREATE TABLE IF NOT EXISTS quota (day TEXT, kind TEXT, key TEXT, n INTEGER, PRIMARY KEY (day, kind, key))",
+  // Counters the health check reads (email_failures: guest emails failed in a row).
+  "CREATE TABLE IF NOT EXISTS health (key TEXT PRIMARY KEY, n INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS bookings_status ON bookings (status)",
   "CREATE INDEX IF NOT EXISTS tokens_booking ON tokens (booking_id)",
 ];
@@ -72,6 +74,21 @@ export function reserveGlobalQuota(sql, { day, caps }) {
 
 // Redacted failure log, as handler.js's logFailure: an event name and the subsystem only.
 const logFailure = (subsystem) => console.error(JSON.stringify({ event: "booking_failure", subsystem }));
+
+// Every guest email goes through here, so health can see email failing: failures in a row are
+// counted, and one success resets the count. Throws as deps.sendEmail does.
+async function sendGuestEmail(sql, deps, ...args) {
+  try {
+    await deps.sendEmail(...args);
+  } catch (e) {
+    sql.exec("INSERT INTO health (key, n) VALUES ('email_failures', 1) ON CONFLICT (key) DO UPDATE SET n = n + 1");
+    throw e;
+  }
+  sql.exec("DELETE FROM health WHERE key = 'email_failures'");
+}
+
+// Guest emails failed in a row (0 after any success).
+export const emailFailures = (sql) => sql.exec("SELECT n FROM health WHERE key = 'email_failures'").toArray()[0]?.n ?? 0;
 
 const MINUTE = 60e3, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
 const plus = (iso, ms) => new Date(Date.parse(iso) + ms).toISOString();
@@ -160,7 +177,7 @@ export async function requestBooking(sql, { cfg, now, input, ipKey, emailKey, de
 
   const booking = sql.exec("SELECT * FROM bookings WHERE id = ?", id).one();
   try {
-    await deps.sendEmail("hold", forEmail(booking), { confirmUrl: deps.actUrl(confirm.token), declineUrl: deps.actUrl(decline.token) });
+    await sendGuestEmail(sql, deps, "hold", forEmail(booking), { confirmUrl: deps.actUrl(confirm.token), declineUrl: deps.actUrl(decline.token) });
   } catch {
     // Nobody can confirm a hold they never heard about: release it now rather than in 2 hours.
     logFailure("email");
@@ -244,7 +261,7 @@ export async function cancelByAgent(sql, { bookingId, now, deps }) {
   if (outstanding) return requested;
   sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'confirm_cancel', ?)", link.hash, b.id, b.start_utc);
   try {
-    await deps.sendEmail("cancel_request", forEmail(b), { confirmCancelUrl: deps.actUrl(link.token) });
+    await sendGuestEmail(sql, deps, "cancel_request", forEmail(b), { confirmCancelUrl: deps.actUrl(link.token) });
   } catch {
     logFailure("email");
     sql.exec("UPDATE tokens SET used_at = ? WHERE hash = ?", nowIso, link.hash);
@@ -363,7 +380,7 @@ async function settleConfirmed(sql, b, { now, cfg, deps, meetLink }) {
   sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel', ?)", cancel.hash, b.id, b.start_utc);
   // ---- End of the write. ----
   try {
-    await deps.sendEmail("booked", forEmail(b), { cancelUrl: deps.actUrl(cancel.token), meetLink });
+    await sendGuestEmail(sql, deps, "booked", forEmail(b), { cancelUrl: deps.actUrl(cancel.token), meetLink });
   } catch {
     logFailure("email"); // Google's invite still reaches the guest.
   }
