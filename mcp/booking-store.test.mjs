@@ -111,7 +111,7 @@ test("migrate is idempotent", () => {
 // ---- Caps -----------------------------------------------------------------------------------
 
 const DAY = "2026-10-19";
-const reserve = (sql, ipKey, emailKey, day = DAY) => store.reserveQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
+const reserve = (sql, ipKey, emailKey, day = DAY) => store.reserveBookingQuota(sql, { day, ipKey, emailKey, caps: cfg.caps });
 
 test("caps: 4 requests per IP a day, then refused as ip", () => {
   const { sql } = setup();
