@@ -570,6 +570,110 @@ button:disabled { opacity: 0.6; cursor: progress; }
 #status { min-height: 1.65em; font-weight: 600; }
 `;
 
+// The picker script. Copy is spliced in from content.json; it talks only to /api/booking on this
+// origin (HTTP API in docs/specs/F-001-booking.md). Times are shown, and grouped into days, in the
+// visitor's own time zone, which the page names; Europe/London if the browser does not say.
+const bookScript = (copy) => `
+(function () {
+  "use strict";
+  var t = ${safeJson(copy)};
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $("book"), n = 0, type = null, byDay = {}, start = null;
+  var zone = null;
+  try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { zone = null; }
+  $("zone").textContent = zone ? t.zone.replace("{zone}", zone) : t.zoneFallback;
+  zone = zone || "Europe/London";
+  var dayKey = new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
+  var dayName = new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: "long", day: "numeric", month: "long" });
+  var hhmm = new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: "2-digit", minute: "2-digit" });
+  var keyOf = function (iso) {
+    var p = {};
+    dayKey.formatToParts(new Date(iso)).forEach(function (x) { p[x.type] = x.value; });
+    return p.year + "-" + p.month + "-" + p.day;
+  };
+
+  function say(text) { $("status").textContent = text; }
+  function show(id, on) { $(id).hidden = !on; }
+  function choice(box, name, value, text, desc) {
+    var id = name + "-" + (++n);
+    var row = document.createElement("div"), input = document.createElement("input"), label = document.createElement("label");
+    row.className = "choice";
+    input.type = "radio"; input.name = name; input.id = id; input.value = value; input.required = true;
+    label.htmlFor = id; label.textContent = text;
+    if (desc) { var d = document.createElement("span"); d.className = "desc"; d.textContent = desc; label.appendChild(d); }
+    row.appendChild(input); row.appendChild(label); $(box).appendChild(row);
+  }
+
+  // Resolves to {status, ok, data}; rejects only if the request itself failed.
+  function call(path, body) {
+    var init = { headers: { accept: "application/json" } };
+    if (body) { init.method = "POST"; init.headers["content-type"] = "application/json"; init.body = JSON.stringify(body); }
+    return fetch(path, init).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (data) { return { status: res.status, ok: res.ok, data: data || {} }; });
+    });
+  }
+  function failed(r) {
+    var m = t.messages, server = typeof r.data.message === "string" ? r.data.message : "";
+    if (r.status === 503 && r.data.error === "booking_disabled") { form.hidden = true; show("closed", true); return say(m.closed); }
+    say(r.status === 429 ? server || m.rateLimited : r.status === 400 ? server || m.invalid : r.status === 503 ? m.unavailable : m.error);
+  }
+  function broken() { say(t.messages.error); }
+
+  function loadSlots(done) {
+    start = null; byDay = {};
+    show("day-set", false); show("time-set", false); show("details", false);
+    $("days").textContent = ""; $("times").textContent = "";
+    say(t.messages.loadingSlots);
+    var want = type;
+    return call("/api/booking/availability?type=" + encodeURIComponent(type)).then(function (r) {
+      if (want !== type) return; // a later choice of type has taken over
+      if (!r.ok) return failed(r);
+      (r.data.slots || []).forEach(function (s) { var k = keyOf(s.start); (byDay[k] = byDay[k] || []).push(s); });
+      var days = Object.keys(byDay).sort();
+      if (!days.length) return say(t.messages.noSlots);
+      days.forEach(function (k) {
+        byDay[k].sort(function (a, b) { return Date.parse(a.start) - Date.parse(b.start); });
+        choice("days", "day", k, dayName.format(new Date(byDay[k][0].start)));
+      });
+      show("day-set", true);
+      say(done || "");
+    }, broken);
+  }
+
+  $("types").addEventListener("change", function (e) { type = e.target.value; loadSlots(); });
+  $("days").addEventListener("change", function (e) {
+    start = null; show("details", false); $("times").textContent = "";
+    byDay[e.target.value].forEach(function (s) { choice("times", "time", s.start, hhmm.format(new Date(s.start)) + "–" + hhmm.format(new Date(s.end))); });
+    show("time-set", true);
+  });
+  $("times").addEventListener("change", function (e) { start = e.target.value; show("details", true); });
+  $("note").addEventListener("input", function () { $("note-count").textContent = t.labels.noteCount.replace("{n}", $("note").value.length); });
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!start) return;
+    var body = { type: type, start: start, name: $("name").value, email: $("email").value };
+    if ($("note").value) body.note = $("note").value;
+    $("send").disabled = true;
+    say(t.messages.sending);
+    call("/api/booking", body).then(function (r) {
+      $("send").disabled = false;
+      if (r.ok) { form.hidden = true; return say(t.messages.held); }
+      if (r.status === 409) return loadSlots(t.messages.slotGone);
+      failed(r);
+    }, function () { $("send").disabled = false; broken(); });
+  });
+
+  say(t.messages.loadingTypes);
+  call("/api/booking/types").then(function (r) {
+    if (!r.ok) return failed(r);
+    (r.data.types || []).forEach(function (m) { choice("types", "type", m.id, m.title + " · " + t.labels.minutes.replace("{n}", m.minutes), m.description); });
+    form.hidden = false;
+    say("");
+  }, broken);
+})();
+`;
+
 export function renderBook(c) {
   const b = c.pages.book, l = b.labels, email = c.person.links.email;
   const field = (id, label, control) => `<label class="field" for="${id}">${attr(label)}</label>\n${control}`;
@@ -588,11 +692,12 @@ ${field("name", l.name, '<input id="name" name="name" type="text" autocomplete="
 ${field("email", l.email, '<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">')}
 ${field("note", l.note, '<textarea id="note" name="note" rows="4" maxlength="500" aria-describedby="note-count"></textarea>')}
 <p id="note-count" class="meta">${attr(l.noteCount.replace("{n}", "0"))}</p>
-<button type="submit">${attr(l.submit)}</button>
+<button id="send" type="submit">${attr(l.submit)}</button>
 </div>
 </form>
 <p id="status" role="status" aria-live="polite"></p>
 <p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>`,
+    script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, labels: { minutes: l.minutes, noteCount: l.noteCount }, messages: b.messages }),
   });
 }
 
@@ -757,7 +862,7 @@ Sitemap: ${SITE}sitemap.xml
   const privacyPage = inlineCode(privacyHtml, { styles: 1, scripts: 0 });
   const privacyCsp = pageCsp(privacyPage);
   const bookHtml = renderBook(c);
-  const bookPage = inlineCode(bookHtml, { styles: 1, scripts: 0 });
+  const bookPage = inlineCode(bookHtml, { styles: 1, scripts: 1 });
   const bookCsp = pageCsp(bookPage);
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
