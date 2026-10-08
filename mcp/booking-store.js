@@ -334,6 +334,15 @@ export function expireHolds(sql, now) {
   ).toArray().length;
 }
 
+// Alarm work: delete records past their retention (with their links), and quota counters more
+// than two days old.
+export function prune(sql, now) {
+  const nowIso = now.toISOString();
+  sql.exec("DELETE FROM tokens WHERE booking_id IN (SELECT id FROM bookings WHERE delete_after <= ?)", nowIso);
+  sql.exec("DELETE FROM bookings WHERE delete_after <= ?", nowIso);
+  sql.exec("DELETE FROM quota WHERE day < ?", new Date(now.getTime() - 2 * DAY).toISOString().slice(0, 10));
+}
+
 // When the alarm should next run (ms): the earliest hold expiry, or the next UTC midnight for the
 // daily prune, whichever is sooner. An overdue hold means now.
 export function nextAlarmAt(sql, now) {
