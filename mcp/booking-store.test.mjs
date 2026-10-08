@@ -436,6 +436,32 @@ test("confirm: an insert whose outcome is unknown (timeout, network, 5xx) is not
   assert.equal(t.calls.emails.filter((e) => e.kind === "booked").length, 1);
 });
 
+// A hold whose confirm was cut off before Google made anything.
+async function cutOff(t) {
+  const h = await hold(t);
+  t.sql.exec("UPDATE bookings SET status = 'confirming' WHERE id = ?", h.id);
+  return { ...h, row: row(t, h.id) };
+}
+
+test("recovery: no event yet → the slot is checked again (free/busy and the rules) before inserting", async () => {
+  const t = setup();
+  const h = await cutOff(t);
+  const fb = t.calls.freeBusy;
+  assert.deepEqual(await store.recoverConfirm(t.sql, h.row, { now: later(HOUR), cfg, deps: t.deps }), { result: "confirmed" });
+  assert.equal(t.calls.freeBusy, fb + 1);
+  assert.equal(t.calls.inserted.length, 1);
+});
+
+test("recovery: no event and the slot has since gone busy → declined slot_taken, nothing made, no email", async () => {
+  const t = setup();
+  const h = await cutOff(t);
+  t.deps.freeBusy = async () => { await tick(); return { busy: [{ start: SLOT, end: "2026-10-21T11:00:00.000Z" }] }; };
+  assert.deepEqual(await store.recoverConfirm(t.sql, h.row, { now: later(HOUR), cfg, deps: t.deps }), { result: "declined", reason: "slot_taken" });
+  assert.equal(t.calls.inserted.length, 0);
+  assert.deepEqual([row(t, h.id).status, row(t, h.id).status_reason], ["declined", "slot_taken"]);
+  assert.equal(t.calls.emails.length, 1, "only the hold email: nothing new is sent");
+});
+
 test("confirm: if free/busy fails, the hold is rolled back", async () => {
   const t = setup();
   const h = await hold(t);
