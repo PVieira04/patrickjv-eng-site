@@ -114,7 +114,7 @@ As **a person with an agent**, I want **my agent to confirm a booking by signing
 
 ## Instructions for agents and people
 
-**One booking guide, published everywhere, readable without sign-in.** The guide is written once, in `content.json` (`booking_guide`), and the build and the Worker publish it in each place an agent might start:
+**One booking guide, published everywhere, readable without sign-in.** The guide is written once, in `content.json` (`booking_guide`), with `{hold_minutes}` and the meeting types filled in from `booking.json` when it's published, so the guide never states a timing or type the configuration doesn't have. and the build and the Worker publish it in each place an agent might start:
 
 - the MCP server's `initialize` instructions
 - a read-only tool, `get_booking_guide`, on MCP and WebMCP (some clients never show `instructions` to their model)
@@ -128,13 +128,13 @@ Draft text, to be approved as public copy:
 > 2. Call `get_availability` with a type. It lists free times in London working hours, each with its UTC offset. Steps 1 and 2 need no sign-in.
 > 3. Agree a time with your person.
 > 4. Call `book_meeting` with the type, the start time and an optional note. Don't send their name or email address: those come from their sign-in.
-> 5. Give your person the `confirm_url` from the result. They open it and sign in with Google within 10 minutes. That books the call in their name, and Google sends them the invite.
-> 6. Call `get_booking_status` to check it's confirmed. If the hold expired, start again from step 2.
+> 5. Give your person the `confirm_url` from the result. They open it and sign in with Google before `hold_expires` (within {hold_minutes} minutes). That books the call in their name, and Google sends them the invite.
+> 6. Call `get_booking_status` to check it's confirmed. If it says `pending_confirmation` or `confirming`, wait and check again; don't book again. If it says `expired` or `declined`, start again from step 2.
 >
 > To cancel a booked call, call `cancel_booking` and give your person the link it returns. People can also book at https://patrickjv.com/book.
 
 **Each tool says what to do next.** Tool descriptions carry the step they cover. Results include a `next_step` sentence:
-- `book_meeting`: "Give this link to the person you're booking for. They sign in with Google within 10 minutes to confirm. Then call get_booking_status."
+- `book_meeting`: "Give this link to the person you're booking for. They need to sign in with Google before <hold_expires> to confirm. Then call get_booking_status." (with the actual expiry time)
 - `get_booking_status`: one sentence for each status (`pending_confirmation`, `confirmed`, `expired`, `declined`, `cancelled`).
 - Errors say what to change, never only a code.
 
@@ -142,7 +142,11 @@ Draft text, to be approved as public copy:
 - The meeting type, day and time in their time zone, with London time as well.
 - "Sign in with Google to confirm this call. We use your name and email address from Google for the invite, and nothing else."
 - "This link works once and expires at <time>."
-- If it's expired or used, a short explanation, with "Ask your assistant to book again, or go to patrickjv.com/book."
+- A used or expired link shows the booking's current state, never a blanket "book again":
+  - **`confirming`:** "Your call is being finished. Check your email in a few minutes, and don't book again."
+  - **`confirmed`:** "This call is already booked. Your invite is in your email."
+  - **`declined`, `expired` or `cancelled`:** what happened, plus "Ask your assistant to book again, or go to patrickjv.com/book".
+  - **`pending_confirmation`** (the hold is live but this sign-in attempt was spent): the sign-in button again.
 
 The "Booked" email stays as in F-001.
 
@@ -197,24 +201,24 @@ Maps to: US-4
 - [ ] **(US-1, D6)** A successful sign-in calls `confirmHold(hold, person, grant)`. **In one synchronous block before any outside call** it checks the grant, upserts the identity, writes the guest onto the booking, takes the person caps and sets `confirming`, so the alarm's recovery has everything it needs if the Worker is evicted. Then it re-checks free/busy and creates the event with the person's address and display name (Google's `name` claim if present, otherwise the part of the email before `@`; never treated as verified), sets the booking `confirmed`, records `identity_id` and `proof`, and sends the "Booked" email to that address. Claim-before-await holds (tested): 20 concurrent sign-ins on one ticket, or on overlapping holds, give exactly one meeting; and one person confirming 5 different holds at once never exceeds their caps. Recovery of a booking cut off after the claim completes it using the stored guest, starting from a hold created with no guest details.
 - [ ] **(US-1)** Failures, deliberately different from F-001 because the hold is short and the agent can simply ask again (each tested):
   - **Google refuses the insert (4xx), or the re-check finds a clash:** the booking ends `declined` (`unavailable`, `slot_taken` or `day_full`), the slot frees, and the page says so.
-  - **Free/busy unreachable before the claim:** nothing is claimed, the hold stays `pending_confirmation`, and the person can retry the sign-in while the ticket lasts.
+  - **Free/busy unreachable after the claim, before any insert is attempted:** the booking goes back to `pending_confirmation` with its guest details cleared, the ticket becomes usable again until the hold's original expiry, and the person's daily confirmation count taken at the claim is released, since nothing was attempted at Google. The page says "Couldn't check the calendar just now — try again".
   - **Outcome unknown after the claim:** stays `confirming` for the alarm's recovery, and the page says it's being finished and to check email.
   - **Sign-in denied, or the code exchange fails:** that transaction is spent, the ticket isn't, and the person can try again until the hold expires.
-  - **Caps:** person caps taken at the claim aren't refunded. The daily counters are never refunded; the occupancy limits free up as bookings end.
+  - **Caps:** once an insert has been attempted, the person's daily count stays taken, whatever the outcome. The only release is the free/busy rollback above. The other daily counters are never refunded; the occupancy limits free up as bookings end.
 - [ ] **(US-1)** WebMCP's `book_meeting` returns the same result, and the homepage shows a "Sign in to confirm" prompt with the meeting details that opens Google sign-in in a popup on click. If the popup is blocked, it falls back to the `confirm_url` link (tested in headless Chromium). This test checks the mechanics only. Per the threat model, a popup doesn't prove a human acted.
 - [ ] **(US-4)** `cancel_booking` on a confirmed meeting returns a single-use `confirm_url`. Signing in as the booking's guest cancels it, and Google notifies attendees; signing in as anyone else changes nothing. A pending hold is withdrawn directly.
 - [ ] **(US-5, D7)** Limits behave as D7 defines (tested):
-  - Daily counters are taken atomically and never refunded: holds per IP a day and globally a day when the hold is created, confirmations per person a day at the claim.
+  - Daily counters are taken atomically: holds per IP a day and globally a day when the hold is created (never refunded); confirmations per person a day at the claim (released only by the free/busy rollback, before any insert).
   - Occupancy limits are counted from current bookings: live holds per IP, and upcoming meetings per person (`confirming`, `confirmed` or `cancelling` with a future start). They free up when a hold lapses or a meeting is cancelled.
   - A refused request changes no count.
   - Values come from `booking.json`.
 - [ ] **(US-1)** A forwarded link is handled as Edge Cases describe (tested): the first valid sign-in becomes the guest; later attempts on the same ticket get "already used"; cancellation recognises that guest.
 - [ ] **(D8)** `/book` offers sign-in confirmation and, until P3, F-001's email confirmation as a fallback. Converting a hold to email behaves as Flow 2 says: same booking, F-001's email caps taken then, 2-hour expiry, sign-in ticket spent, no double charge (tested). F-001's tests for the email path stay green.
 - [ ] **(D6)** `confirmHold` is the only code path that turns a hold into a meeting. The email path (D8) and the sign-in path both call it (tested). The email path's person is `{provider: "email", subject: <normalised address>, email, display_name: <typed>}` with grant `{proof: "email_link"}`, so person caps key on `provider` and `subject` for both.
-- [ ] **(US-7)** The booking guide comes from one source, `content.json` → `booking_guide`. It's published, readable with no sign-in, in the MCP `initialize` instructions, the `get_booking_guide` tool (MCP and WebMCP, read-only, identical), `llms.txt`, `index.md`, `/book.md` and the `/book` page. A test checks every place carries the same text, and the build fails if one drifts.
+- [ ] **(US-7)** The booking guide comes from one source, `content.json` → `booking_guide`. It's published, readable with no sign-in, in the MCP `initialize` instructions, the `get_booking_guide` tool (MCP and WebMCP, read-only, identical), `llms.txt`, `index.md`, `/book.md` and the `/book` page. A test checks every place carries the same text, and the build fails if one drifts. A test also changes `holdMinutes` and the meeting types in a copy of `booking.json` and checks the rendered guide, the `next_step` text and the confirm page all follow.
 - [ ] **(US-7)** Every booking tool's description names its step in the guide. `book_meeting` and `get_booking_status` results include a `next_step` sentence (one for each status), and every booking error includes a sentence saying what to do. Tested for each result and error code.
 - [ ] **(US-7)** An agent given only `https://patrickjv.com/` (reading `llms.txt` or the page, with no tools) can find the guide in one hop. Test: `llms.txt` links to `/book.md`, which contains the full guide.
-- [ ] **(US-8)** The confirm page shows the meeting in the visitor's time zone and in London time, says why sign-in is asked and what's shared, and gives the link's expiry. Expired and used links explain what happened and what to do. Public copy is approved by Patrick before release.
+- [ ] **(US-8)** The confirm page shows the meeting in the visitor's time zone and in London time, says why sign-in is asked and what's shared, and gives the link's expiry. A used or expired link shows the state-specific message for `confirming`, `confirmed`, `declined`, `expired`, `cancelled` and `pending_confirmation` (each tested). None of them suggests booking again while a booking is `confirming` or `confirmed`. Public copy is approved by Patrick before release.
 - [ ] **(US-1)** Manual check: a booking made through the Claude connector (link in chat → sign-in on a phone → "Booked"), and one through WebMCP in a browser.
 
 ### Non-functional
