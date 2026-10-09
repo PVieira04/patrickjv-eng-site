@@ -110,7 +110,10 @@ test("migrate is idempotent", () => {
   store.migrate(sql);
   store.migrate(sql);
   const tables = sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").toArray().map((r) => r.name);
-  assert.deepEqual(tables, ["bookings", "health", "quota", "tokens"]);
+  assert.deepEqual(tables, ["booking_requests", "bookings", "health", "identities", "quota", "signin_tx", "tokens"]);
+  // F-002's columns are added once, nullable, to a bookings table F-001 may already have filled.
+  const cols = sql.exec("PRAGMA table_info(bookings)").toArray().filter((c) => ["identity_id", "proof", "actor"].includes(c.name));
+  assert.deepEqual(cols.map((c) => [c.name, c.notnull]), [["identity_id", 0], ["proof", 0], ["actor", 0]]);
 });
 
 // ---- Caps -----------------------------------------------------------------------------------

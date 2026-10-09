@@ -24,10 +24,28 @@ const SCHEMA = [
   "CREATE TABLE IF NOT EXISTS health (key TEXT PRIMARY KEY, n INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS bookings_status ON bookings (status)",
   "CREATE INDEX IF NOT EXISTS tokens_booking ON tokens (booking_id)",
+  // F-002's sign-in path. A booking request reserves nothing; its booking row is made only when
+  // a verified person signs in (confirmRequest), reusing the request's id.
+  `CREATE TABLE IF NOT EXISTS booking_requests (
+    id TEXT PRIMARY KEY, ticket_hash TEXT NOT NULL UNIQUE, type TEXT NOT NULL, start_utc TEXT NOT NULL, end_utc TEXT NOT NULL,
+    note TEXT, source TEXT NOT NULL, ip_key TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+    state TEXT NOT NULL, reason TEXT, settled_at TEXT)`,
+  `CREATE TABLE IF NOT EXISTS identities (
+    id TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL,
+    email TEXT NOT NULL, display_name TEXT NOT NULL, created_at TEXT NOT NULL, delete_after TEXT NOT NULL,
+    UNIQUE (provider, subject))`,
+  `CREATE TABLE IF NOT EXISTS signin_tx (
+    state_hash TEXT PRIMARY KEY, ticket_hash TEXT NOT NULL, cookie_hash TEXT NOT NULL,
+    nonce TEXT NOT NULL, code_verifier TEXT NOT NULL, purpose TEXT NOT NULL, expires_at TEXT NOT NULL)`,
 ];
+// Columns F-002 adds to F-001's bookings table: nullable, so F-001 rows keep NULL (an email-form
+// booking). ALTER TABLE has no IF NOT EXISTS, so each is added only if missing.
+const BOOKING_COLUMNS = ["identity_id", "proof", "actor"];
 
 export function migrate(sql) {
   for (const s of SCHEMA) sql.exec(s);
+  const have = new Set(sql.exec("PRAGMA table_info(bookings)").toArray().map((c) => c.name));
+  for (const c of BOOKING_COLUMNS) if (!have.has(c)) sql.exec(`ALTER TABLE bookings ADD COLUMN ${c} TEXT`);
 }
 
 const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -248,7 +266,7 @@ export async function cancelByAgent(sql, { bookingId, now, deps }) {
   const nowIso = now.toISOString();
   const link = await newToken();
   const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
-  if (!b) return { error: "not_found" };
+  if (!b) return withdrawRequest(sql, bookingId, now);
   // Decided on the internal state: a hold being confirmed must not be withdrawn under the confirm.
   const status = internalStatus(sql, b.id, now).status;
   if (status === "pending_confirmation") {
@@ -419,7 +437,8 @@ export async function recoverConfirm(sql, b, { now, cfg, deps }) {
 // The in-between states are the store's own: callers see the state they know.
 export function getStatus(sql, bookingId, now) {
   const view = internalStatus(sql, bookingId, now);
-  return view && { ...view, status: callerStatus(view.status) };
+  if (view) return { ...view, status: callerStatus(view.status) };
+  return requestStatus(sql, bookingId, now);
 }
 
 // confirming is still a hold to the guest until it settles; cancelling is still a meeting.
@@ -461,4 +480,90 @@ export function nextAlarmAt(sql, now) {
   const next = sql.exec("SELECT min(hold_expires) AS t FROM bookings WHERE status = 'pending_confirmation'").one().t;
   if (!next) return midnight;
   return Math.max(now.getTime(), Math.min(Date.parse(next), midnight));
+}
+
+// ---------------------------------------------------------------------------------------------
+// F-002: booking requests. A request reserves nothing and sends nothing: it records which slot a
+// person may book by signing in on its link (the ticket) before it expires. The slot is claimed
+// only at sign-in, by confirmRequest, under the same race rule as F-001's confirm.
+// ---------------------------------------------------------------------------------------------
+
+// Request counters (D7), taken when a request is stored and never refunded. Global first, as F-001
+// checks a closed day first; a refusal writes nothing.
+export function reserveRequestQuota(sql, { day, ipKey, caps }) {
+  if (quotaCount(sql, day, "request_global", "") >= caps.requestsPerDay) return { ok: false, which: "global" };
+  if (quotaCount(sql, day, "request_ip", ipKey) >= caps.requestsPerIpPerDay) return { ok: false, which: "ip" };
+  quotaAdd(sql, day, "request_global", "");
+  quotaAdd(sql, day, "request_ip", ipKey);
+  return { ok: true };
+}
+
+// book_meeting (MCP, WebMCP) and /book's sign-in button. `busy` is the shared free/busy cache's
+// answer (the one get_availability uses), so however many requests arrive, Google is asked at most
+// once a minute. Order, as F-001's: the slot against local bookings, live holds, the day count and
+// that cache; then the counters; then the row. So a refused request takes no allowance.
+export async function createRequest(sql, { cfg, now, input, ipKey, busy, deps }) {
+  const ticket = await newToken();
+  const nowIso = now.toISOString();
+  // ---- Synchronous from here to the insert. No await. ----
+  const check = deps.checkSlot({ cfg, typeId: input.type, start: input.start, now, busy, bookings: liveBookings(sql, now) });
+  if (!check.ok) return slotError(check.reason);
+  const quota = reserveRequestQuota(sql, { day: deps.day(nowIso), ipKey, caps: cfg.caps });
+  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
+  const type = cfg.meetingTypes.find((t) => t.id === input.type);
+  const id = newId();
+  const expires = plus(nowIso, cfg.requestMinutes * MINUTE);
+  sql.exec(
+    `INSERT INTO booking_requests (id, ticket_hash, type, start_utc, end_utc, note, source, ip_key, created_at, expires_at, state)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
+    id, ticket.hash, input.type, input.start, plus(input.start, type.minutes * MINUTE), input.note ?? null, input.source, ipKey, nowIso, expires,
+  );
+  // ---- End of the write. ----
+  return { booking_id: id, status: "pending_confirmation", confirm_url: deps.confirmUrl(ticket.token), link_expires: expires };
+}
+
+const getRequest = (sql, id) => (typeof id === "string" && sql.exec("SELECT * FROM booking_requests WHERE id = ?", id).toArray()[0]) || null;
+// An open request past its link's expiry reads as expired; expiry isn't stored, it's the clock.
+const requestState = (r, now) => (r.state === "open" && r.expires_at <= now.toISOString() ? "expired" : r.state);
+
+function settleRequestRow(sql, id, state, reason, nowIso) {
+  sql.exec("UPDATE booking_requests SET state = ?, reason = ?, settled_at = ? WHERE id = ? AND state = 'open'", state, reason, nowIso, id);
+}
+
+// The first time the site finds an open request's slot no longer free (another booking or live
+// F-001 hold overlaps it, `busy` shows it busy, or the day is full), the request is settled
+// declined for good, so the link, the status and the guide agree and the old link can't book later.
+// Notice isn't re-applied (D3). Synchronous; returns the request's state afterwards (null if none).
+export function settleRequest(sql, id, { cfg, now, busy, deps }) {
+  const r = getRequest(sql, id);
+  if (!r) return null;
+  const state = requestState(r, now);
+  if (state !== "open") return state;
+  const check = deps.checkSlot({ cfg, typeId: r.type, start: r.start_utc, now, busy, bookings: liveBookings(sql, now), ignoreNotice: true });
+  if (check.ok || !TAKEN.has(check.reason)) return "open";
+  settleRequestRow(sql, id, "declined", check.reason === "day_full" ? "day_full" : "slot_taken", now.toISOString());
+  return "declined";
+}
+
+// A request's public status (Status for callers). A used request has its booking row, which
+// getStatus reads first.
+const REQUEST_STATUS = {
+  open: ["pending_confirmation", null], expired: ["expired", "request_expired"], cancelled: ["cancelled", "agent_withdrew"],
+};
+function requestStatus(sql, id, now) {
+  const r = getRequest(sql, id);
+  if (!r || r.state === "used") return null;
+  const state = now ? requestState(r, now) : r.state;
+  const [status, reason] = state === "declined" ? ["declined", r.reason] : REQUEST_STATUS[state];
+  return { status, status_reason: reason, start: r.start_utc, end: r.end_utc, type: r.type };
+}
+
+// cancel_booking on an ID that isn't a booking: an open request is withdrawn at once (its link
+// stops working); any other request isn't cancellable.
+function withdrawRequest(sql, id, now) {
+  const view = requestStatus(sql, id, now);
+  if (!view) return { error: "not_found" };
+  if (view.status !== "pending_confirmation") return { error: "not_cancellable", status: view.status };
+  settleRequestRow(sql, id, "cancelled", null, now.toISOString());
+  return { status: "cancelled" };
 }
