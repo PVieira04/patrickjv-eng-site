@@ -183,6 +183,8 @@ class El {
   get textContent() { return this.children.map((c) => (typeof c === "string" ? c : c.textContent)).join(""); }
   set textContent(t) { this.children = t === "" ? [] : [String(t)]; }
   addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this); this.parent = null; }
+  submit() { (this.doc.submitted ??= []).push({ method: this.method, action: this.action, target: this.target, fields: Object.fromEntries(walk(this).filter((e) => e.tag === "input").map((e) => [e.name, e.value])) }); }
 }
 function toFake(node) {
   const el = new El(node.tag, { ...node.attrs });
@@ -207,6 +209,7 @@ function openBook({ zone = "Europe/Paris", routes }) {
   const html = read("public/book.html");
   const root = toFake(parseHtml(html));
   const document = { activeElement: null, getElementById: (id) => walk(root).find((e) => e.id === id) ?? null, createElement: (tag) => Object.assign(new El(tag), { doc: document }) };
+  document.body = walk(root).find((e) => e.tag === "body");
   for (const e of walk(root)) e.doc = document;
   const requests = [];
   const fetch = async (url, init = {}) => {
@@ -224,7 +227,7 @@ function openBook({ zone = "Europe/Paris", routes }) {
     return new Intl.DateTimeFormat(locale ?? "en-GB", opts);
   }
   const script = inlineCode(html, { styles: 1, scripts: 1 }).scripts[0];
-  vm.runInNewContext(script, { document, fetch, Intl: { DateTimeFormat }, JSON, Promise, Object, String, Date, encodeURIComponent });
+  vm.runInNewContext(script, { document, fetch, Intl: { DateTimeFormat }, JSON, Promise, Object, String, Date, encodeURIComponent, URL });
   const $ = document.getElementById;
   const radios = (box) => walk($(box)).filter((e) => e.tag === "input" && e.type === "radio");
   const labelFor = (input) => visible(walk(root).find((e) => e.tag === "label" && e.htmlFor === input.id));
@@ -255,6 +258,7 @@ async function toDetails(v) {
   await v.choose("types", 0);
   await v.pickDay(0);
   await v.choose("times", 0);
+  fire(v.$("by-email"), "click"); // F-002 (D8): the email form is the fallback choice
   v.$("name").value = "Ada Lovelace";
   v.$("email").value = "ada@example.com";
   return v;
@@ -299,7 +303,8 @@ test("/book choosing a type shows a calendar of free days, then times, in the vi
   assert.ok(v.radios("times").every((r) => r.name === "time"));
   assert.equal(v.$("details").hidden, true);
   await v.choose("times", 1);
-  assert.equal(v.$("details").hidden, false);
+  assert.equal(v.$("how").hidden, false, "F-002: choosing a time offers the sign-in or the email form");
+  assert.equal(v.$("details").hidden, true);
 });
 
 test("/book days are the visitor's days: in a +14:00 zone the 10:00 GMT slot moves to the next day", async () => {
@@ -567,15 +572,79 @@ test("/book calendar across two months: month buttons, Page Down / arrows cross 
   assert.deepEqual(pressed(v), ["3"]);
 });
 
-test("/book calendar: the time chips are a required radio group; picking one is the hand-off to the details form", async () => {
+test("/book calendar: the time chips are a required radio group; picking one is the hand-off to the sign-in or email choice", async () => {
   const v = openBook({ routes: ready() });
   await settle();
   await v.choose("types", 0);
   await v.pickDay(0);
   assert.ok(v.radios("times").every((r) => r.name === "time" && r.required));
-  assert.equal(v.$("details").hidden, true);
+  assert.equal(v.$("how").hidden, true);
   await v.choose("times", 1);
+  assert.equal(v.$("how").hidden, false);
+  assert.equal(v.$("details").hidden, true);
+  fire(v.$("by-email"), "click");
   assert.equal(v.$("details").hidden, false);
+});
+
+// ---- F-002 (D8): sign in with Google first, the email form as the fallback ----
+
+test("F-002 /book: after a time is picked, 'Sign in with Google to book' is the main choice and 'Book with email instead' the other; nothing is created until one is chosen", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  await v.choose("types", 0);
+  await v.pickDay(0);
+  await v.choose("times", 0);
+  assert.equal(visible(v.$("by-signin")), bookCopy.labels.signin);
+  assert.equal(bookCopy.labels.signin, "Sign in with Google to book");
+  assert.equal(visible(v.$("by-email")), bookCopy.labels.byEmail);
+  assert.equal(bookCopy.labels.byEmail, "Book with email instead");
+  assert.equal(v.$("by-signin").type, "button");
+  assert.ok(v.requests.every((r) => r.method === "GET"), "no request made yet");
+});
+
+test("F-002 /book sign-in: makes a booking request (POST /api/booking/request, source page) and starts its sign-in straight away", async () => {
+  const confirm = "https://patrickjv.com/book/confirm?t=AbCdEfGhIjKlMnOpQrStUv";
+  const v = openBook({ routes: ready({ "POST /api/booking/request": { status: 202, body: { booking_id: "a".repeat(32), status: "pending_confirmation", confirm_url: confirm, link_expires: "2026-10-19T11:00:00+01:00", next_step: "x" } } }) });
+  await settle();
+  await v.choose("types", 0);
+  await v.pickDay(0);
+  await v.choose("times", 1);
+  fire(v.$("by-signin"), "click");
+  await settle();
+  const post = v.requests.at(-1);
+  assert.equal(post.url, "/api/booking/request");
+  assert.deepEqual(post.body, { type: "consultation", start: "2026-10-26T10:00:00+00:00", source: "page" });
+  assert.deepEqual(v.document.submitted, [{ method: "post", action: "/book/confirm/google", target: undefined, fields: { t: "AbCdEfGhIjKlMnOpQrStUv" } }]);
+  assert.equal(v.status(), bookCopy.messages.signingIn);
+  assert.ok(!v.requests.some((r) => r.url === "/api/booking"), "the email path isn't touched");
+});
+
+test("F-002 /book sign-in: a slot gone (409) reloads the times; booking closed says so; other errors are shown; nothing is submitted", async () => {
+  for (const [res, check] of [
+    [{ status: 409, body: { error: "slot_taken", message: "That time is no longer free." } }, (v) => assert.equal(v.status(), M.slotGone)],
+    [{ status: 503, body: { error: "booking_disabled", message: "x" } }, (v) => { assert.equal(v.status(), M.closed); assert.equal(v.$("closed").hidden, false); }],
+    [{ status: 429, body: { error: "rate_limited", message: "Too many booking requests today from this connection. Please try again tomorrow." } }, (v) => assert.match(v.status(), /try again tomorrow/)],
+  ]) {
+    const v = openBook({ routes: ready({ "POST /api/booking/request": res }) });
+    await settle();
+    await v.choose("types", 0);
+    await v.pickDay(0);
+    await v.choose("times", 0);
+    fire(v.$("by-signin"), "click");
+    await settle();
+    check(v);
+    assert.equal(v.document.submitted, undefined);
+  }
+});
+
+test("F-002 /book: no route turns a booking request into an email booking or the reverse", async () => {
+  const { BOOKING_ROUTES } = await import("../mcp/handler.js");
+  assert.deepEqual(Object.keys(BOOKING_ROUTES).sort(), ["/api/booking", "/api/booking/act", "/api/booking/availability", "/api/booking/cancel", "/api/booking/request", "/api/booking/status", "/api/booking/types"]);
+});
+
+test("F-002 /book: its CSP lets the sign-in POST go on to Google, and nothing else", () => {
+  const rules = rulesFor(read("public/_headers"), "/book");
+  assert.match(rules[0], /form-action 'self' https:\/\/accounts\.google\.com;/);
 });
 
 test("/book script: the picker hands off through one slotChosen(start) function", () => {

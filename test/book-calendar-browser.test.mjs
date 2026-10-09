@@ -55,8 +55,15 @@ test("Chromium /book: a booking made by keyboard alone, through the calendar, un
     assert.equal(await page.textContent("#time-legend"), "Time on Monday 2 November");
     await page.keyboard.press("Tab");
     await page.keyboard.press("ArrowRight"); // radio group: moves to and checks the second time
-    assert.equal(await page.isVisible("#details"), true);
+    // F-002 (D8): "Sign in with Google to book" first, then "Book with email instead".
+    assert.equal(await page.isVisible("#how"), true);
     await page.keyboard.press("Tab");
+    assert.equal(await focused(page), "by-signin");
+    await page.keyboard.press("Tab");
+    assert.equal(await focused(page), "by-email");
+    await page.keyboard.press("Enter");
+    assert.equal(await page.isVisible("#details"), true);
+    assert.equal(await focused(page), "name", "focus moves to the form");
     await page.keyboard.type("Ada Lovelace");
     await page.keyboard.press("Tab");
     await page.keyboard.type("ada@example.com");

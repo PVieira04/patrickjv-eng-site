@@ -56,6 +56,12 @@ test("F-002 guide: published, identical, in the MCP initialize instructions, get
   assert.ok(read("public/llms.txt").includes(GUIDE), "llms.txt");
   assert.ok(read("public/index.md").includes(GUIDE), "index.md");
   assert.equal(read("public/book.md"), GUIDE, "/book.md is the guide");
+  const bookPage = read("public/book.html");
+  const agents = bookPage.match(/<section id="for-agents"[\s\S]*?<\/section>/)?.[0] ?? "";
+  assert.match(agents, /<h2[^>]*>For AI agents<\/h2>/);
+  const pre = agents.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)?.[1] ?? "";
+  assert.equal(pre.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"), GUIDE, "the /book page's 'For AI agents' note");
+  assert.match(agents, /href="\/book\.md"/);
   assert.match(read("public/_headers"), /\/book\.md\n  Content-Type: text\/markdown; charset=utf-8/);
 });
 

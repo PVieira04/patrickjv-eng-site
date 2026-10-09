@@ -136,3 +136,21 @@ test("Chromium WebMCP book_meeting: with the popup blocked, the prompt falls bac
     assert.deepEqual(problems, []);
   } finally { await context.close(); }
 });
+
+test("Chromium /book (D8): after a time is picked, 'Sign in with Google to book' makes the request and signs in, in one step, and books the call", { skip }, async () => {
+  const h = harness();
+  const { context, problems } = await open(h, { timezoneId: "Europe/London" });
+  try {
+    const page = await context.newPage();
+    await page.goto("https://patrickjv.com/book");
+    await page.click("#types input");
+    await page.click("#days button:not([aria-disabled=true])");
+    await page.click("#times label");
+    await page.click("#by-signin");
+    await page.waitForSelector("h1:text('Booked')");
+    const [req] = h.rows("SELECT id, source, state FROM booking_requests");
+    assert.deepEqual([req.source, req.state], ["page", "used"]);
+    assert.equal(h.rows("SELECT status FROM bookings WHERE id = ?", req.id)[0].status, "confirmed");
+    assert.deepEqual(problems, []);
+  } finally { await context.close(); }
+});
