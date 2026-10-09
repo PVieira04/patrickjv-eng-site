@@ -294,8 +294,8 @@ test("F-002 confirmRequest race: 20 concurrent sign-ins on one ticket give exact
 
 test("F-002 confirmRequest race: 20 sign-ins on different requests for overlapping slots give exactly one meeting; the rest are declined slot_taken", async () => {
   const t = setup();
-  const starts = ["2026-10-21T08:45:00.000Z", SLOT, "2026-10-21T09:15:00.000Z", "2026-10-21T09:30:00.000Z"];
-  const reqs = await Promise.all(Array.from({ length: 20 }, (_, i) => ask(t, { start: starts[i % 4] })));
+  const starts = [SLOT, "2026-10-21T09:15:00.000Z", "2026-10-21T09:30:00.000Z"]; // all overlap, with the buffer
+  const reqs = await Promise.all(Array.from({ length: 20 }, (_, i) => ask(t, { start: starts[i % 3] })));
   const results = await Promise.all(reqs.map((r, i) => confirm(t, r, { ...JANE, subject: `s${i}` })));
   assert.equal(results.filter((x) => x.result === "confirmed").length, 1);
   assert.ok(results.filter((x) => x.result !== "confirmed").every((x) => x.result === "declined" && x.reason === "slot_taken"), JSON.stringify(results));
@@ -306,7 +306,8 @@ test("F-002 confirmRequest race: 20 sign-ins on different requests for overlappi
 
 // ---- Person caps (D7) ------------------------------------------------------------------------
 
-const DAYS = ["2026-10-21", "2026-10-22", "2026-10-23", "2026-10-26", "2026-10-27"].map((d) => `${d}T09:00:00.000Z`);
+// 10:00 London on five weekdays (BST, then GMT once the clocks go back on 25 October).
+const DAYS = ["2026-10-21T09:00:00.000Z", "2026-10-22T09:00:00.000Z", "2026-10-23T09:00:00.000Z", "2026-10-26T10:00:00.000Z", "2026-10-27T10:00:00.000Z"];
 
 test("F-002 person caps: one person confirming 5 requests at once never exceeds confirmationsPerPersonPerDay; the refused requests stay open for another account", async () => {
   const t = setup();
@@ -322,7 +323,7 @@ test("F-002 person caps: one person confirming 5 requests at once never exceeds 
 test("F-002 person caps: with one meeting already upcoming, 5 at once add only one more (upcomingPerPerson 2); cancelling frees an upcoming place, not the day's count", async () => {
   const t = setup();
   const c = { ...cfg, caps: { ...cfg.caps, confirmationsPerPersonPerDay: 10 } };
-  const first = await ask(t, { start: "2026-10-28T09:00:00.000Z" });
+  const first = await ask(t, { start: "2026-10-28T10:00:00.000Z" });
   assert.equal((await confirm(t, first, JANE, { c })).result, "confirmed");
   const reqs = await Promise.all(DAYS.map((start) => ask(t, { start })));
   const results = await Promise.all(reqs.map((r) => confirm(t, r, JANE, { c })));

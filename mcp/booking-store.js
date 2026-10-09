@@ -414,6 +414,10 @@ async function settleConfirmed(sql, b, { now, cfg, deps, meetLink }) {
 export async function recoverConfirm(sql, b, { now, cfg, deps }) {
   const existing = await deps.getEvent(b.id);
   if (existing) return settleConfirmed(sql, b, { now, cfg, deps, meetLink: existing.meetLink ?? null });
+  // F-002: a sign-in booking (proof set) settles as its live path does, rather than being retried
+  // forever: a meeting whose start has passed with no event, or an insert Google refuses, ends
+  // declined (unavailable). F-001's email bookings keep their rules.
+  if (b.proof && b.start_utc <= now.toISOString()) return declineUnavailable(sql, b.id, now.toISOString());
   // Nothing was made, and time has passed: check the slot again, as a live confirm does.
   const { busy } = await slotFreeBusy(b, cfg, deps);
   if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
@@ -428,7 +432,13 @@ export async function recoverConfirm(sql, b, { now, cfg, deps }) {
     // no meeting, no "Booked" email, and get_booking_status shows declined.
     return declineConfirm(sql, b.id, check.reason, now.toISOString());
   }
-  const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
+  let event;
+  try {
+    event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
+  } catch (e) {
+    if (b.proof && e?.status >= 400 && e.status < 500) return declineUnavailable(sql, b.id, now.toISOString());
+    throw e;
+  }
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
 
@@ -566,4 +576,114 @@ function withdrawRequest(sql, id, now) {
   if (view.status !== "pending_confirmation") return { error: "not_cancellable", status: view.status };
   settleRequestRow(sql, id, "cancelled", null, now.toISOString());
   return { status: "cancelled" };
+}
+
+// ---------------------------------------------------------------------------------------------
+// F-002: the booking core (D6). confirmRequest is the only way a booking request becomes a
+// meeting, and cancelMeeting the only way a sign-in booking ends. `person` is the guest
+// ({provider, subject, email, display_name}; the name is asserted, not verified); `grant` is the
+// authority to act ({proof, actor, scope, ticket_hash, expires_at}). Each proof's only job is to
+// produce those two. The grant is checked once, in the claim; after that the booking carries its
+// own authority, so the alarm's recovery finishes it with no grant and takes no cap again.
+// ---------------------------------------------------------------------------------------------
+
+// Which proofs may do what. Later proofs (P2, P4) add their checks here.
+const PROOFS = { book: ["signin:google"], cancel: ["signin:google", "booked_email_link"] };
+const grantAllows = (grant, scope, ticketHash, now) => grant?.scope === scope && PROOFS[scope].includes(grant.proof)
+  && grant.ticket_hash === ticketHash && typeof grant.expires_at === "string" && grant.expires_at > now.toISOString();
+
+// The person's row, keyed on (provider, subject); email and name follow their latest sign-in. Kept
+// until 30 days after the later of their last sign-in and the end of their last meeting.
+function upsertIdentity(sql, person, nowIso, deleteAfter) {
+  return sql.exec(
+    `INSERT INTO identities (id, provider, subject, email, display_name, created_at, delete_after) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (provider, subject) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, delete_after = max(delete_after, excluded.delete_after)
+     RETURNING id`,
+    newId(), person.provider, person.subject, person.email, person.display_name, nowIso, deleteAfter,
+  ).one().id;
+}
+
+// The person caps (D7): confirmations a UTC day (counted at the claim, never refunded), and
+// meetings still to come, counted from current bookings so they free up when one ends or is
+// cancelled. Returns which is reached, or null.
+function personCap(sql, identityId, { day, now, caps }) {
+  if (quotaCount(sql, day, "person_day", identityId) >= caps.confirmationsPerPersonPerDay) return "daily";
+  const upcoming = sql.exec(
+    "SELECT count(*) AS c FROM bookings WHERE identity_id = ? AND status IN ('confirming', 'confirmed', 'cancelling') AND end_utc > ?",
+    identityId, now.toISOString(),
+  ).one().c;
+  return upcoming >= caps.upcomingPerPerson ? "upcoming" : null;
+}
+
+export async function confirmRequest(sql, requestId, person, grant, { cfg, now, deps }) {
+  const nowIso = now.toISOString();
+  // F-001's email key, from the verified address: computed before the claim (it awaits).
+  const emailKey = await deps.emailKey(person.email);
+
+  // ---- Claim: synchronous from here to the inserts. No await. ----
+  const r = getRequest(sql, requestId);
+  if (!r) return { error: "unknown" };
+  if (!grantAllows(grant, "book", r.ticket_hash, now)) return { error: "forbidden" };
+  const state = requestState(r, now);
+  // A start already passed is refused too: config forbids it, this is the backstop.
+  if (state === "expired" || r.start_utc <= nowIso) return { error: "expired" };
+  if (state !== "open") return { error: "used" };
+  const retention = cfg.retentionDays * DAY;
+  const identityId = upsertIdentity(sql, person, nowIso, plus(nowIso, retention));
+  // Caps reached: nothing is booked and the request stays open (another account may use it).
+  const cap = personCap(sql, identityId, { day: deps.day(nowIso), now, caps: cfg.caps });
+  if (cap) return { error: "person_cap", which: cap };
+  // Notice isn't re-applied (D3): it was checked when the request was made.
+  const claim = deps.checkSlot({ cfg, typeId: r.type, start: r.start_utc, now, busy: [], bookings: liveBookings(sql, now), ignoreNotice: true });
+  if (!claim.ok) {
+    const why = claim.reason === "day_full" ? "day_full" : "slot_taken";
+    settleRequestRow(sql, r.id, "declined", why, nowIso);
+    return { result: "declined", reason: why };
+  }
+  quotaAdd(sql, deps.day(nowIso), "person_day", identityId);
+  // Everything the alarm's recovery needs, in case this instance is evicted from here on.
+  sql.exec(
+    `INSERT INTO bookings (id, type, start_utc, end_utc, status, source, guest_name, guest_email, ip_key, email_key, note, created_at, delete_after, identity_id, proof, actor)
+     VALUES (?, ?, ?, ?, 'confirming', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    r.id, r.type, r.start_utc, r.end_utc, r.source, person.display_name, person.email, r.ip_key, emailKey, r.note, nowIso,
+    plus(r.end_utc, retention), identityId, grant.proof, grant.actor ?? null,
+  );
+  sql.exec("UPDATE identities SET delete_after = max(delete_after, ?) WHERE id = ?", plus(r.end_utc, retention), identityId);
+  settleRequestRow(sql, r.id, "used", null, nowIso);
+  // ---- End of claim. ----
+
+  return finishSigninConfirm(sql, sql.exec("SELECT * FROM bookings WHERE id = ?", r.id).one(), { now, cfg, deps });
+}
+
+// A sign-in booking that Google can't make ends declined (unavailable), freeing its slot and the
+// person's upcoming place. Only while it is still confirming.
+function declineUnavailable(sql, id, nowIso) {
+  if (sql.exec("SELECT status FROM bookings WHERE id = ?", id).one().status !== "confirming") return outcome(sql, id);
+  settle(sql, id, "declined", "unavailable", nowIso);
+  return { result: "declined", reason: "unavailable" };
+}
+
+// After the claim: nothing is rolled back or refunded. Recovery either completes the booking or
+// settles it declined, so an unclear answer from Google leaves it confirming for the alarm.
+async function finishSigninConfirm(sql, b, { now, cfg, deps }) {
+  const nowIso = now.toISOString();
+  let busy;
+  try {
+    ({ busy } = await slotFreeBusy(b, cfg, deps));
+  } catch {
+    logFailure("google_freebusy");
+    return { result: "confirming" };
+  }
+  if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
+  const check = deps.checkSlot({ ...confirmSlot(b, cfg, now), busy, bookings: meetings(sql) });
+  if (!check.ok) return declineConfirm(sql, b.id, check.reason, nowIso);
+  let event;
+  try {
+    event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail));
+  } catch (e) {
+    if (e?.status >= 400 && e.status < 500) { logFailure("google_insert"); return declineUnavailable(sql, b.id, nowIso); }
+    logFailure("google_insert_unknown");
+    return { result: "confirming" };
+  }
+  return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
