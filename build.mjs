@@ -1001,7 +1001,9 @@ Sitemap: ${SITE}sitemap.xml
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${page.styles.map(cspHash).join(" ")}`,
-    `script-src ${page.scripts.map(cspHash).join(" ")}`, "connect-src 'self'", "base-uri 'none'", "form-action 'none'",
+    `script-src ${page.scripts.map(cspHash).join(" ")}`, "connect-src 'self'", "base-uri 'none'",
+    // F-002: WebMCP's "Sign in to book" prompt posts to /book/confirm/google, which redirects to Google.
+    "form-action 'self' https://accounts.google.com",
     "frame-ancestors 'none'", "upgrade-insecure-requests",
   ].join("; ");
   // Production lesson (6 Oct 2026): Workers static-asset _headers does NOT honour "! Header"

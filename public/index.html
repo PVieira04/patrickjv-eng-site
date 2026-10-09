@@ -549,6 +549,16 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
   *, *::before, *::after { transition: none !important; }
   @page { margin: 14mm; }
 }
+/* F-002: the WebMCP "Sign in to book" prompt, shown after an agent's book_meeting in this browser. */
+#signin-prompt {
+  position: fixed; z-index: 10; left: 16px; right: 16px; bottom: 16px; max-width: 28rem; margin-left: auto; box-sizing: border-box;
+  padding: 16px; background: var(--panel); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 4px; font-family: var(--sans);
+}
+#signin-prompt p { margin: 0 0 12px; }
+#signin-prompt .signin-title { font-weight: 600; }
+#signin-prompt button { font: inherit; font-weight: 600; padding: 10px 16px; border: 0; border-radius: 4px; background: var(--signal); color: var(--signal-ink); cursor: pointer; }
+#signin-prompt button:focus-visible, #signin-prompt a:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+#signin-prompt a:not([hidden]) { display: block; margin-top: 12px; color: var(--signal); }
 </style>
 </head>
 <body>
@@ -975,6 +985,46 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
     };
     var str = function (x) { return typeof x === "string" ? x : ""; };
     var netError = function () { return reply("Network error: please try again later.", true); };
+    // F-002: after book_meeting, the person in this browser is shown the meeting and a "Sign in with
+    // Google to book" button. A click opens the sign-in in a popup (the confirm page's own POST,
+    // aimed at the popup); if the popup is blocked, the confirm_url is offered as a link instead.
+    // This shows the mechanics only: a popup doesn't prove a person acted (the spec's threat model).
+    var typeTitles = {};
+    var signinPrompt = function (b, req) {
+      var old = document.getElementById("signin-prompt");
+      if (old) old.remove();
+      var el = function (tag, text) { var e = document.createElement(tag); if (text) e.textContent = text; return e; };
+      var box = el("aside");
+      box.id = "signin-prompt";
+      box.setAttribute("aria-label", "Sign in to book");
+      var when = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(req.start));
+      var title = el("p", "Sign in to book");
+      title.className = "signin-title";
+      var button = el("button", "Sign in with Google to book");
+      button.type = "button";
+      var link = el("a", "Open the sign-in page");
+      link.href = b.confirm_url;
+      link.hidden = true;
+      button.addEventListener("click", function () {
+        var w = window.open("", "pjv_signin", "popup,width=520,height=680");
+        if (!w) { link.hidden = false; link.focus(); return; }
+        var form = el("form"), t = el("input");
+        form.method = "post";
+        form.action = "/book/confirm/google";
+        form.target = "pjv_signin";
+        t.type = "hidden";
+        t.name = "t";
+        t.value = new URL(b.confirm_url).searchParams.get("t");
+        form.appendChild(t);
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+      });
+      [title, el("p", (typeTitles[req.type] || req.type) + " with Patrick Vieira, " + when + "."),
+        el("p", "Your assistant asked to book this call for you. Nothing is booked until you sign in with Google."), button, link]
+        .forEach(function (e) { box.appendChild(e); });
+      document.body.appendChild(box);
+    };
     var BOOKING = {
       // F-002: the booking guide embedded in the page by build.mjs, the same text the MCP tool returns.
       get_booking_guide: async function () { return reply(d.booking_guide); },
@@ -996,6 +1046,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
         var r;
         try { r = await api("/api/booking/request", body); } catch (e) { return unsure("Network error"); }
         if (!r.data) return unsure("No readable response (HTTP " + r.status + ")");
+        if (r.ok && typeof r.data.confirm_url === "string") { try { signinPrompt(r.data, body); } catch (e) {} }
         return answer(r);
       },
       get_booking_status: async function (input) {
@@ -1024,7 +1075,10 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
     // Booking stays hidden until launch: its tools are registered only once the booking API says
     // it is open (BOOKING_ENABLED). Any failure leaves them unregistered.
     api("/api/booking/types").then(function (r) {
-      if (r.ok && r.data && r.data.enabled === true) provide(booking, always.concat(booking));
+      if (r.ok && r.data && r.data.enabled === true) {
+        (r.data.types || []).forEach(function (m) { typeTitles[m.id] = m.title; });
+        provide(booking, always.concat(booking));
+      }
     }).catch(quiet);
   } catch (e) {}
 })();
