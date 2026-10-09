@@ -112,7 +112,10 @@ jobs:
     if: >-
       github.event_name == 'check_run' &&
       github.event.check_run.app.slug == 'cloudflare-workers-and-pages' &&
-      startsWith(github.event.check_run.name, 'Workers Builds: ')
+      startsWith(github.event.check_run.name, 'Workers Builds: ') &&
+      github.event.check_run.check_suite.head_branch == 'main'
+    # Only main deploys. Branch builds fail by design and update nothing, so alerting on them only
+    # sent an email for every feature-branch push (9 Oct 2026).
     # One run per check run: keyed by commit AND Worker, so one Worker's pending run can never
     # displace another's (GitHub keeps only one pending run per group).
     concurrency:
