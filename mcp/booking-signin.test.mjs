@@ -80,20 +80,18 @@ test("F-002 sign-in: each ID token check refuses on its own (iss, aud, exp, iat 
   for (const junk of ["", "a.b", "a.!!!.c", "x.eyJ9.y"]) assert.ok(signin.verifyIdToken(junk, { clientId: CLIENT, nonce: "n-1", now: NOW }).error, junk);
 });
 
-test("F-002 sign-in: only Google-authoritative addresses are accepted: @gmail.com, or an hd claim matching the address's domain", () => {
-  assert.ok(verify(claims({ email: "jane@gmail.com" })).person);
-  assert.ok(verify(claims({ email: "Jane@GMAIL.com" })).person);
-  assert.ok(verify(claims({ email: "omar@acme.example", hd: "acme.example" })).person);
-  assert.ok(verify(claims({ email: "omar@Acme.Example", hd: "acme.example" })).person);
+test("F-002 sign-in: any address Google has verified is accepted, whoever runs its mail; an unverified one isn't", () => {
   for (const c of [
-    claims({ email: "omar@acme.example" }), // verified, but Google can't vouch for who owns it now
-    claims({ email: "omar@acme.example", hd: "other.example" }),
-    claims({ email: "omar@sub.acme.example", hd: "acme.example" }),
+    claims({ email: "jane@gmail.com" }),
+    claims({ email: "Jane@GMAIL.com" }),
     claims({ email: "jane@googlemail.com" }),
-    claims({ email: "jane@gmail.com.evil.example" }),
+    claims({ email: "omar@acme.example", hd: "acme.example" }),
+    claims({ email: "omar@acme.example" }), // a Google account on a work address whose mail runs elsewhere
+    claims({ email: "omar@sub.acme.example", hd: "acme.example" }), // a Workspace user on a secondary domain
   ]) {
-    assert.deepEqual(verify(c), { error: "not_authoritative" }, c.email);
+    assert.equal(verify(c).person?.email, c.email, c.email);
   }
+  assert.deepEqual(verify(claims({ email: "omar@acme.example", email_verified: false })), { error: "email_verified" });
 });
 
 test("F-002 sign-in: ready() is Google's discovery document being reachable", async () => {
