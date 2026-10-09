@@ -12,7 +12,7 @@
 |---|---|
 | Spec ID | F-002 |
 | Status | Draft |
-| Phase | P1 specified in full; P2–P4 outlined |
+| Phase | P1 specified in full; P2–P3 outlined; P4 optional |
 | Owner | @PVieira04 |
 | Created | 2026-10-09 |
 | Last updated | 2026-10-09 (rewritten around confirm-by-sign-in) |
@@ -26,7 +26,7 @@ Today a booking is a 2-hour hold that becomes a meeting when the guest clicks a 
 
 Reading stays anonymous: an agent can look up meeting types and free times and relay them without anyone signing in. Only the act of booking (and cancelling a confirmed meeting) needs the person.
 
-The confirmation step is one core operation: **confirm this hold for this verified person**. P1 proves the person by an interactive sign-in. An agent may complete that sign-in itself, if its identity is set up for it: either it has access to its person's own account, or it has its own account that its person has authorised at the identity provider. That depends on how the identity is set up, not on anything the site builds (P3). The long-term aim is to retire anonymous booking and anonymous intro messages altogether (P4).
+The confirmation step is one core operation: **confirm this hold for this verified person**. P1 proves the person by an interactive sign-in. An agent may complete that sign-in itself, if its identity is set up for it: either it has access to its person's own account, or it has its own account that its person has authorised at the identity provider. That depends on how the identity is set up, not on anything the site builds (P4). The long-term aim is to retire anonymous booking and anonymous intro messages altogether (P3).
 
 ---
 
@@ -46,7 +46,7 @@ As **an AI agent researching for my person**, I want to **read Patrick's profile
 
 As **anyone**, I want **the site never to email an address an agent typed**, so that **nobody can use it to send me mail in my name**.
 
-**Why this matters:** On agent channels the guest is whoever signs in; there's no address to misuse. (`/book` keeps an email fallback until P4.)
+**Why this matters:** On agent channels the guest is whoever signs in; there's no address to misuse. (`/book` keeps an email fallback until P3.)
 
 ### US-4: The guest cancels with the same proof
 
@@ -56,7 +56,7 @@ As **a guest**, I want **my agent to ask to cancel and me to confirm it by signi
 
 As **Patrick**, I want **unconfirmed holds to be short and capped, and confirmed bookings capped per person**, so that **nobody can block my calendar or fill it**.
 
-### US-6 (P3): My agent signs in with an identity I've set up
+### US-6 (P4, optional): My agent signs in with an identity I've set up
 
 As **a person with an agent**, I want **my agent to confirm a booking by signing in with an identity I've set up for it**, so that **it can book for me without handing me a link each time**. That identity is either my own account, which my agent has access to, or the agent's own account, which I've authorised at the identity provider to act for me.
 
@@ -73,13 +73,13 @@ As **a person with an agent**, I want **my agent to confirm a booking by signing
 - Reading tools stay anonymous.
 - One confirmation core that accepts a sign-in by the person, or by an agent using an identity set up for it, without changing booking logic.
 - Cost stays at £0.
-- **P4:** retire anonymous booking (the email path on `/book`) and anonymous `request_intro`.
+- **P3:** retire anonymous booking (the email path on `/book`) and anonymous `request_intro`.
 
 **Non-Goals**
 
 - **Being an OAuth authorisation server in P1.** The site is a Google sign-in *client* only. Issuing tokens to agents was researched and rejected (D2).
-- **Issuing agent credentials or managing delegation ourselves.** No site-issued agent keys or API tokens, and no record here of who may act for whom. Whether an agent can act for a person is set up at the identity provider (P3).
-- **Booking for someone else.** The guest is whoever proves their identity, or the person an identity provider says the signed-in agent acts for (P3). The site never records delegation itself.
+- **Issuing agent credentials or managing delegation ourselves.** No site-issued agent keys or API tokens, and no record here of who may act for whom. Whether an agent can act for a person is set up at the identity provider (P4).
+- **Booking for someone else.** The guest is whoever proves their identity, or the person an identity provider says the signed-in agent acts for (P4). The site never records delegation itself.
 - **Keeping Google's tokens.** Only the verified claims are read, once, at sign-in.
 - **Rescheduling** (still F-001's planned v2).
 
@@ -96,9 +96,9 @@ As **a person with an agent**, I want **my agent to confirm a booking by signing
 | D5 | **The agent never supplies the guest's address.** `book_meeting` on agent channels takes the type, start and an optional note; name and address come from the sign-in. | Accepting an `email` and checking it against the sign-in: invites mismatches and gives agents a field to misuse. |
 | D6 | **One confirmation core with interchangeable proofs.** `confirmHold(hold, person, grant)` is the only way a hold becomes a meeting, and `cancelMeeting(booking, person, grant)` the only way a confirmed one ends. `person` is the guest: `provider` and `subject` (the stable key), `email`, and `display_name`, which is asserted, not verified. `grant` is the authority to act: `proof` (`signin:google`, `email_link`; later `signin:<provider>` for more providers), `actor` (the agent's identity, when the identity provider says an agent signed in for the person), `scopes` (`book`, `cancel`), `expires_at`, and optional `limits`. **The core checks the grant in the same synchronous block as the claim:** scope, expiry, revocation and limits, then the person caps, then the slot. So a grant's limits can't be overspent concurrently. Each proof's only job is to produce `person` and `grant`. P1's grant from a sign-in is one-shot: scope `book` (or `cancel`) for this ticket only. | Separate booking code per channel: drift, and every new proof would need its own copy of the rules. |
 | D7 | **Caps.** Holds awaiting sign-in: at most 2 live per IP, F-001's 4 per IP a day, and the global 10 a day (taken when the hold is created). Confirmed bookings: at most 2 per person a day and 2 upcoming per person, plus F-001's 3 a day. Two kinds of limit: **daily counters** (holds per IP a day, global a day, confirmations per person a day; UTC day; never refunded) and **occupancy limits** (live holds per IP, upcoming meetings per person; counted from current bookings in `confirming`, `confirmed` or `cancelling` with a future start, so they free up when a hold lapses or a meeting ends or is cancelled). All values live in `booking.json` as defaults Patrick can change without code. | Keying hold caps on email: there's no email until sign-in. |
-| D8 | **`/book` keeps the email path as a fallback until P4**, beside "Sign in with Google to confirm", for people without a Google account. Agent channels get no email path. | Removing it in P1: people without Google couldn't book until P2's providers arrive. |
+| D8 | **`/book` keeps the email path as a fallback until P3**, beside "Sign in with Google to confirm", for people without a Google account. Agent channels get no email path. | Removing it in P1: people without Google couldn't book until P2's providers arrive. |
 
-**Threat model for confirmation.** A sign-in proves that **whoever controls the Google account at that moment** approved the booking, not that a human clicked. An agent driving the person's own signed-in browser (WebDriver, or an in-browser agent such as Claude in Chrome) can complete the sign-in, and no website can tell the difference. The site treats that as the person's authority, because they let the agent act in their browser. The "Booked" email to the verified address is the backstop. The confirmation stops an agent from booking in the name of **someone else** (it can't sign in to an account it doesn't control), and from booking with an address it merely typed. It doesn't stop a person's own agent acting within that person's session. A person who wants that delegation explicit can give their agent its own account and authorise it at the identity provider (P3).
+**Threat model for confirmation.** A sign-in proves that **whoever controls the Google account at that moment** approved the booking, not that a human clicked. An agent driving the person's own signed-in browser (WebDriver, or an in-browser agent such as Claude in Chrome) can complete the sign-in, and no website can tell the difference. The site treats that as the person's authority, because they let the agent act in their browser. The "Booked" email to the verified address is the backstop. The confirmation stops an agent from booking in the name of **someone else** (it can't sign in to an account it doesn't control), and from booking with an address it merely typed. It doesn't stop a person's own agent acting within that person's session. A person who wants that delegation explicit can give their agent its own account and authorise it at the identity provider (P4).
 
 ---
 
@@ -121,7 +121,7 @@ Maps to: US-1, US-2, US-3
 
 Maps to: US-1, US-3
 
-Same as Flow 1 from step 3: picking a slot creates the hold and shows the confirm page, with "Sign in with Google to confirm" and, until P4, "Confirm by email instead". Choosing email converts the **same** hold. The person types a name and email (`POST /api/booking/{id}/email`), F-001's per-email cap and one-live-hold-per-email rule are taken then, the hold's expiry extends to F-001's 2 hours, the sign-in ticket is spent, and F-001's Confirm/Decline email is sent. No second booking is created, and the hold caps already taken aren't charged again.
+Same as Flow 1 from step 3: picking a slot creates the hold and shows the confirm page, with "Sign in with Google to confirm" and, until P3, "Confirm by email instead". Choosing email converts the **same** hold. The person types a name and email (`POST /api/booking/{id}/email`), F-001's per-email cap and one-live-hold-per-email rule are taken then, the hold's expiry extends to F-001's 2 hours, the sign-in ticket is spent, and F-001's Confirm/Decline email is sent. No second booking is created, and the hold caps already taken aren't charged again.
 
 ### Flow 3: Agent cancels a confirmed meeting
 
@@ -163,7 +163,7 @@ Maps to: US-4
   - A refused request changes no count.
   - Values come from `booking.json`.
 - [ ] **(US-1)** A forwarded link is handled as Edge Cases describe (tested): the first valid sign-in becomes the guest; later attempts on the same ticket get "already used"; cancellation recognises that guest.
-- [ ] **(D8)** `/book` offers sign-in confirmation and, until P4, F-001's email confirmation as a fallback. Converting a hold to email behaves as Flow 2 says: same booking, F-001's email caps taken then, 2-hour expiry, sign-in ticket spent, no double charge (tested). F-001's tests for the email path stay green.
+- [ ] **(D8)** `/book` offers sign-in confirmation and, until P3, F-001's email confirmation as a fallback. Converting a hold to email behaves as Flow 2 says: same booking, F-001's email caps taken then, 2-hour expiry, sign-in ticket spent, no double charge (tested). F-001's tests for the email path stay green.
 - [ ] **(D6)** `confirmHold` is the only code path that turns a hold into a meeting. The email path (D8) and the sign-in path both call it (tested). The email path's person is `{provider: "email", subject: <normalised address>, email, display_name: <typed>}` with grant `{proof: "email_link"}`, so person caps key on `provider` and `subject` for both.
 - [ ] **(US-1)** Manual check: a booking made through the Claude connector (link in chat → sign-in on a phone → "Booked"), and one through WebMCP in a browser.
 
@@ -205,7 +205,7 @@ CREATE TABLE signin_tx (                -- one per sign-in in progress; deleted 
 | GET | `/book/confirm?t=` | Confirm page for a hold or a cancellation (no state change) |
 | POST | `/book/confirm/google` | Start Google sign-in for that ticket (sets the `__Host-` cookie) |
 | GET | `/book/callback/google` | Google returns here; verify, then `confirmHold` (or cancel) |
-| POST | `/api/booking/{id}/email` | `/book` only, until P4: convert this hold to F-001's email confirmation (`{name, email}`) |
+| POST | `/api/booking/{id}/email` | `/book` only, until P3: convert this hold to F-001's email confirmation (`{name, email}`) |
 
 New route: `patrickjv.com/book/confirm*` and `/book/callback*` to the `patrickjv-mcp` Worker. MCP and WebMCP tool shapes change as in Functional above. `get_booking_status` is unchanged.
 
@@ -225,12 +225,14 @@ New route: `patrickjv.com/book/confirm*` and `/book/callback*` to the `patrickjv
 ## Phases after P1
 
 - **P2, more ways to sign in and better hand-off:** Microsoft (key on tenant plus object ID; email counted only when Microsoft marks it verified) and Altimist ID, as more buttons on the confirm page; MCP URL-mode elicitation on 2026-07-28 connections.
-- **P3, agents signing in with their own identity (US-6): nothing to build here.** Two set-ups work through the same confirm page:
-  - **The agent has access to its person's own account** (credentials or a signed-in session). It completes the sign-in itself, and the booking is the person's. P1 already handles this (threat model).
-  - **The agent has its own account, and its person has authorised that account at the identity provider to act for them.** When a provider's sign-in states the person the agent acts for (for example an `act` actor claim, as in OAuth token exchange, RFC 8693), the core books for that person and records the agent as `actor`. Accepting a provider's assertion is a per-provider check (D6), not a delegation feature of the site.
+- **P3, retire anonymous paths:** remove `/book`'s email confirmation and make `request_intro` require a sign-in. Reading stays anonymous.
+- **P4 (optional), identity providers with agent support (US-6).** Only if and when it's worth doing:
+  - **Add a new identity provider built for agents** as another sign-in on the confirm page, or
+  - **Update a provider already set up** (Google, Microsoft, Altimist ID) once it offers agent identities.
 
-  What P3 needs is watching: which identity providers offer agent identities with a verifiable "acts for" statement, and the MCP and IETF work on agents acting for users. When a provider the site already uses offers it, adding it is small and gets its own acceptance criteria. If MCP clients converge on OAuth sign-in instead, the [research](F-001-spikes/README.md#f-002-research-2026-10-09) records what that route needs.
-- **P4, retire anonymous paths:** remove `/book`'s email confirmation and make `request_intro` require a sign-in. Reading stays anonymous.
+  Either way, the agent's sign-in works through the existing confirm page and core. If the provider says the agent acts for a person (for example an `act` actor claim, as in OAuth token exchange, RFC 8693), the core books for that person and records the agent as `actor` (D6). That's a per-provider check, not a delegation feature of the site.
+
+  An agent that uses its person's own account needs nothing: P1 already handles it (threat model). Until P4 is taken up, watch which providers offer agent identities with a verifiable "acts for" statement, and the MCP and IETF work on agents acting for users. If MCP clients converge on OAuth sign-in instead, the [research](F-001-spikes/README.md#f-002-research-2026-10-09) records what that route needs.
 
 ---
 
