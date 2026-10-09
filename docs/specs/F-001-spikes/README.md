@@ -201,6 +201,18 @@ Two read-only investigations for [F-002](../F-002-signed-in-agent-booking.md), c
 - **Branding:** branding and publishing status are per project. Brand verification (needed to show a name or logo) is automated, and works for basic-scope-only apps.
 - **Decision (D4):** a separate project for visitor sign-in, to keep its branding and risk apart from the calendar token's project.
 
+**KV write spike** (read from the source of `@cloudflare/workers-oauth-provider` 1.2.3; Cloudflare pricing and limits pages):
+
+- **Free plan allowances:** 1,000 writes, 1,000 deletes and 1,000 lists a day, each counted separately, plus 100,000 reads. They reset at 00:00 UTC, with at most 1 write per second per key.
+- **Cost per operation:**
+  - full sign-in: about 5 writes, 2 deletes and 1 list
+  - each refresh: 2 writes, and the refresh token rotates
+  - each token check: 1 read
+  - Client ID Metadata Documents are cached in the Cache API, not in KV
+- **Gap: the consent page writes before the person acts.** Showing it creates a KV transaction, so anonymous GETs of `/oauth/authorize` could use up the day's writes. Fixed by D8.
+- **Gap: refresh tokens can be replayed.** After a refresh, the previous refresh token stays valid and reusing it re-arms it. Fixed by D7: no refresh tokens.
+- **No pluggable storage:** `OAUTH_KV` is hard-coded in the library.
+
 **ChatGPT spike:**
 
 - **Registration:** CIMD is supported (`client_id` `https://chatgpt.com/oauth/client.json`, redirect `https://chatgpt.com/connector_platform_oauth_redirect`). The authorisation server must advertise S256 and `none`, and copy `resource` into the token's audience.

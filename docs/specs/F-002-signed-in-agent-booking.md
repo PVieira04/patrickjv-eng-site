@@ -89,6 +89,8 @@ As **a visitor on patrickjv.com**, I want to **sign in once so `/book` and the h
 | D3 | **A signed-in owner cancels directly**; anonymous bookings keep the emailed confirm-cancellation link. | Email confirmation for every cancellation: safer against a rogue agent, but undoes much of the point. |
 | D4 | **A separate Google Cloud project** (`patrickjv-signin`) for visitor sign-in, scopes `openid email profile` only. | The same project as `hello@`'s calendar access. It would work: Google's 100-user cap counts only users granting unapproved sensitive scopes, and the warning screen follows the requested scopes. But branding and the cap are per project, a public sign-in would share risk with the project that holds the calendar token, and a basic-scope-only project can get brand verification (name and logo) cleanly. ([spike](F-001-spikes/README.md#f-002-research-2026-10-09)) |
 | D5 | **Per-request consent:** the agent host's own tool approval, the `booking` scope granted at connect time, and the "Booked" notification with one-click cancel. Where a client declares elicitation on MCP 2026-07-28, ask it to confirm the slot details (P3). | Short-lived tokens: refresh tokens defeat them and they cost KV writes. |
+| D7 | **No refresh tokens; one 24-hour access token** (`refreshTokenTTL: 0`, `accessTokenTTL: 86400`). When it expires, the client gets the 401 again and the person reconnects (one Google sign-in). | Rotating 30-day refresh tokens. The KV spike read the library's source: after a refresh, the *previous* refresh token stays valid and reusing it re-arms it, so a leaked refresh token could be replayed indefinitely, costing 2 KV writes each time. For occasional bookings, reconnecting daily is acceptable, and it also halves KV writes. |
+| D8 | **Guard the KV write allowance** (Free plan: 1,000 writes, 1,000 deletes and 1,000 lists a day, separate counts, reset 00:00 UTC). (a) The consent page is served without touching KV; the library's `beginConsent` runs only on the POST that approves. (b) Rate limits: GET `/oauth/authorize` 10 a minute per IP; POST `/oauth/authorize` and `/oauth/token` 6 a minute per IP. (c) A daily write budget in `BookingStore`: each OAuth step that writes reserves its count first; past **700**, `/oauth/*` returns 503 with `Retry-After` until midnight UTC, and anonymous paths keep working. (d) Health warns at 500. If real use ever reaches it, move to Workers Paid ($5 a month, 1M writes). | Moving token storage to the Durable Object: the library hard-codes `env.OAUTH_KV` with no pluggable storage, so a stand-in would be unsupported and fragile. |
 | D6 | **Build with `@cloudflare/workers-oauth-provider` 1.2.x** using its split authorisation-server API, and keep the existing stateless JSON MCP handler as the resource server. | The library's `OAuthProvider` wrapper: it would 401 every anonymous request to `/mcp`. Cloudflare `agents`/McpAgent: not needed for a stateless server. A hosted broker (WorkOS AuthKit): another US processor, and free-tier MCP support unverified. |
 
 **Residual risk, stated plainly:** sign-in proves *who* the person is, not that they approved *this* booking. A misbehaving or compromised agent, or one set to "always allow", can book in the person's name. It's bounded by the per-person caps (US-6), the immediate "Booked" email to the verified address, and one-click cancel.
@@ -142,10 +144,10 @@ Maps to: US-4
 
 ### Non-functional
 
-- [ ] **Security:** access tokens last 1 hour; refresh tokens rotate and expire after 30 days unused; tokens and grants are stored hashed or encrypted by the library; `redirect_uri` matched exactly (loopback: any port); the OAuth endpoints are covered by the WAF flood rule and `RL_MCP`.
+- [ ] **Security:** one access token lasting 24 hours and no refresh tokens (D7); the token endpoint refuses `refresh_token` grants; tokens and grants are stored hashed or encrypted by the library; `redirect_uri` matched exactly (loopback: any port); the OAuth endpoints are covered by the WAF flood rule and `RL_MCP`.
 - [ ] **Privacy:** `/privacy` lists the sign-in cookies (the library's short-lived consent cookies, strictly necessary), Google as the identity provider, what's kept about a signed-in person and for how long. An identity is deleted 30 days after its last booking or sign-in, with its grants revoked.
 - [ ] **Observability:** health gains `authReady` (KV bound, sign-in secrets set, Google discovery reachable); smoke checks the anonymous 401 and both metadata documents. Logs carry the subsystem only: never a token, `sub`, email or `client_id`.
-- [ ] **Cost:** Free plan only. KV writes stay well under 1,000 a day at this scale.
+- [ ] **Cost and KV budget (D8):** Free plan only. Loading the consent page writes nothing to KV (tested). Past 700 OAuth writes in a UTC day, `/oauth/*` returns 503 `Retry-After` while reads, `/book` and anonymous MCP keep working (tested). `/oauth/authorize` and `/oauth/token` are rate-limited per IP. Health reports the day's KV write count and warns at 500.
 
 ---
 
@@ -192,7 +194,8 @@ New Worker routes: `patrickjv.com/oauth/*` and `patrickjv.com/.well-known/oauth-
 
 - **Google returns `email_verified: false`:** no token; the consent flow ends with "We couldn't verify your email with Google."
 - **Person's Google address changes:** the identity is keyed on `sub`, so it's the same identity; the stored email updates at next sign-in.
-- **KV write allowance exhausted:** sign-in and token refresh fail closed; anonymous paths (reads, `/book`) keep working.
+- **KV write budget reached (D8):** sign-in fails closed with 503 and `Retry-After`; tokens already issued keep working (validation only reads); anonymous paths (reads, `/book`) keep working.
+- **Token expires mid-conversation:** the next booking write gets the 401 and the client shows Connect again (D7).
 - **Client not on the allowlist:** refused before consent, with a message naming `/book`.
 - **Token valid but identity deleted (retention):** treated as invalid; the client re-runs sign-in.
 - **Agent sends a different email:** `email_mismatch`; nothing booked.
