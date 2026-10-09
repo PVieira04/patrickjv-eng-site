@@ -489,7 +489,16 @@ export function prune(sql, now) {
   sql.exec("DELETE FROM tokens WHERE booking_id IN (SELECT id FROM bookings WHERE delete_after <= ?)", nowIso);
   sql.exec("DELETE FROM bookings WHERE delete_after <= ?", nowIso);
   sql.exec("DELETE FROM quota WHERE day < ?", new Date(now.getTime() - 2 * DAY).toISOString().slice(0, 10));
+  // F-002: sign-in transactions past their 10 minutes; booking requests 30 days after they were
+  // used, withdrawn or declined, or after an unused one expired (a used request's booking carries
+  // on under the retention above); identities once their delete_after has passed.
+  const cutoff = new Date(now.getTime() - REQUEST_RETENTION_DAYS * DAY).toISOString();
+  sql.exec("DELETE FROM signin_tx WHERE expires_at <= ?", nowIso);
+  sql.exec("DELETE FROM booking_requests WHERE (state = 'open' AND expires_at <= ?) OR (state != 'open' AND settled_at <= ?)", cutoff, cutoff);
+  sql.exec("DELETE FROM identities WHERE delete_after <= ?", nowIso);
 }
+// As the privacy notice says (and as retentionDays is for bookings).
+const REQUEST_RETENTION_DAYS = 30;
 
 // When the alarm should next run (ms): the earliest hold expiry, or the next UTC midnight for the
 // daily prune, whichever is sooner. An overdue hold means now.
@@ -730,4 +739,97 @@ export async function cancelMeeting(sql, bookingId, person, grant, { now, deps }
     if (!guest || guest.provider !== person?.provider || guest.subject !== person?.subject) return { error: "not_guest" };
   }
   return cancelByLink(sql, { tok, booking: b }, { now, deps });
+}
+
+// ---------------------------------------------------------------------------------------------
+// F-002: sign-in transactions. A ticket (a request's, or a sign-in cancel link's) starts a Google
+// sign-in; the transaction binds it to the browser's cookie, the OIDC nonce and the PKCE verifier,
+// and is consumed by the callback before any outside call.
+// ---------------------------------------------------------------------------------------------
+const SIGNIN_TX_MS = 10 * MINUTE;
+
+// What a ticket's hash refers to: a booking request (purpose book) or a sign-in cancel link
+// (purpose cancel). Synchronous.
+export function findTicket(sql, hash) {
+  const request = sql.exec("SELECT * FROM booking_requests WHERE ticket_hash = ?", hash).toArray()[0];
+  if (request) return { purpose: "book", request };
+  const tok = sql.exec("SELECT * FROM tokens WHERE hash = ? AND action = 'cancel_signin'", hash).toArray()[0];
+  const booking = tok && sql.exec("SELECT * FROM bookings WHERE id = ?", tok.booking_id).toArray()[0];
+  return booking ? { purpose: "cancel", tok, booking } : null;
+}
+// Sign-ins a ticket has started, counted under its expiry day so the count outlives the ticket.
+const attemptsKey = (hash, expiresAt) => [expiresAt.slice(0, 10), "signin", hash];
+const attempts = (sql, hash, expiresAt) => quotaCount(sql, ...attemptsKey(hash, expiresAt));
+
+// POST /book/confirm/google. A request ticket is first checked against the slot (settling it
+// declined if it's gone, as the confirm page does); `busy` is the shared cache's answer, or [] if
+// that can't be refreshed. Each ticket starts at most signinAttemptsPerTicket sign-ins, counted
+// here and never refunded. `tx` holds the hashed state and cookie, the nonce and the verifier.
+export async function startSignin(sql, { token, now, cfg, busy, tx, deps }) {
+  if (typeof token !== "string" || token === "") return { error: "unknown" };
+  const hash = await hashToken(token);
+  const nowIso = now.toISOString();
+  // ---- Synchronous from here to the insert. No await. ----
+  const found = findTicket(sql, hash);
+  if (!found) return { error: "unknown" };
+  let expiresAt;
+  if (found.purpose === "book") {
+    const state = settleRequest(sql, found.request.id, { cfg, now, busy, deps });
+    if (state !== "open") return { error: state };
+    expiresAt = found.request.expires_at;
+  } else {
+    const { tok, booking: b } = found;
+    if (tok.used_at || b.status !== "confirmed") return { error: "used" };
+    if (tok.expires_at <= nowIso || b.start_utc <= nowIso) return { error: "expired" };
+    expiresAt = tok.expires_at;
+  }
+  if (attempts(sql, hash, expiresAt) >= cfg.caps.signinAttemptsPerTicket) return { error: "too_many" };
+  quotaAdd(sql, ...attemptsKey(hash, expiresAt));
+  sql.exec(
+    "INSERT INTO signin_tx (state_hash, ticket_hash, cookie_hash, nonce, code_verifier, purpose, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    tx.stateHash, hash, tx.cookieHash, tx.nonce, tx.codeVerifier, found.purpose, plus(nowIso, SIGNIN_TX_MS),
+  );
+  return { purpose: found.purpose };
+}
+
+// GET /book/callback/google, before any outside call: the transaction is deleted whatever happens
+// next, so `state` is single-use even if the code exchange fails. It must come with this
+// transaction's cookie and within its 10 minutes (whether or not the alarm has pruned it yet).
+export function consumeSignin(sql, { stateHash, cookieHash, now }) {
+  const tx = typeof stateHash === "string" && sql.exec("DELETE FROM signin_tx WHERE state_hash = ? RETURNING *", stateHash).toArray()[0];
+  if (!tx) return { error: "state" };
+  if (typeof cookieHash !== "string" || tx.cookie_hash !== cookieHash) return { error: "cookie" };
+  if (tx.expires_at <= now.toISOString()) return { error: "expired" };
+  return { tx };
+}
+
+// What the confirm page shows for a ticket (GET: changes nothing; the caller settles a request
+// whose slot has gone first). No guest details.
+const BOOKING_PAGE_STATE = { confirming: "confirming", confirmed: "confirmed", cancelling: "confirmed", declined: "declined", cancelled: "cancelled" };
+export async function peekTicket(sql, token, { now, cfg }) {
+  if (typeof token !== "string" || token === "") return { state: "unknown" };
+  const hash = await hashToken(token);
+  const nowIso = now.toISOString();
+  const found = findTicket(sql, hash);
+  if (!found) return { state: "unknown" };
+  const view = (state, row, expiresAt, extra = {}) => ({ purpose: found.purpose, state, type: row.type, start: row.start_utc, end: row.end_utc, expires_at: expiresAt, ...extra });
+  if (found.purpose === "book") {
+    const r = found.request;
+    const state = requestState(r, now);
+    if (state === "declined") return view("declined", r, r.expires_at, { reason: r.reason });
+    if (state === "used") {
+      const b = sql.exec("SELECT status, status_reason FROM bookings WHERE id = ?", r.id).toArray()[0];
+      const shown = BOOKING_PAGE_STATE[b?.status] ?? "unknown";
+      return view(shown, r, r.expires_at, shown === "declined" ? { reason: b.status_reason } : {});
+    }
+    if (state === "open" && attempts(sql, hash, r.expires_at) >= cfg.caps.signinAttemptsPerTicket) return view("too_many", r, r.expires_at);
+    return view(state, r, r.expires_at);
+  }
+  const { tok, booking: b } = found;
+  if (b.status === "cancelled" || b.status === "cancelling") return view(b.status, b, tok.expires_at);
+  if (b.status !== "confirmed") return view("unknown", b, tok.expires_at);
+  if (b.start_utc <= nowIso) return view("started", b, tok.expires_at);
+  if (tok.used_at || tok.expires_at <= nowIso) return view("still_booked", b, tok.expires_at);
+  if (attempts(sql, hash, tok.expires_at) >= cfg.caps.signinAttemptsPerTicket) return view("too_many", b, tok.expires_at);
+  return view("open", b, tok.expires_at);
 }

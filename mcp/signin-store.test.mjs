@@ -610,11 +610,10 @@ test("F-002 sign-in start: an expired, used, withdrawn or declined request, a sp
   const withdrawn = await ask(t);
   await agentCancel(t, withdrawn.booking_id);
   assert.equal((await start(t, withdrawn.confirm_url)).error, "cancelled");
-  const used = await ask(t);
+  const used = await ask(t), taken = await ask(t);
   await confirm(t, used);
   assert.equal((await start(t, used.confirm_url)).error, "used");
   // Found no longer free when the sign-in starts: settled declined then and there.
-  const taken = await ask(t);
   assert.equal((await start(t, taken.confirm_url)).error, "declined", "the slot was booked by `used`");
   assert.equal(requestRow(t, taken.booking_id).state, "declined");
   const id = await booked(t, JANE, { start: "2026-10-22T09:00:00.000Z" });
@@ -699,11 +698,9 @@ test("F-002 peek: a cancel ticket's state (open; then still booked, started, can
 test("F-002 retention: requests are deleted 30 days after they were used, withdrawn or declined, or 30 days after an unused one expired; lapsed sign-in transactions go at once", async () => {
   const t = setup();
   const DAY_MS = 24 * HOUR;
-  const used = await ask(t);
+  const [used, withdrawn, declined] = [await ask(t), await ask(t), await ask(t)];
   await confirm(t, used, JANE, { now: later(10 * MINUTE) });
-  const withdrawn = await ask(t);
   await agentCancel(t, withdrawn.booking_id, { now: later(20 * MINUTE) });
-  const declined = await ask(t);
   store.settleRequest(t.sql, declined.booking_id, { cfg, now: later(30 * MINUTE), busy: [], deps: t.deps });
   const lapsed = await ask(t, { start: "2026-10-22T09:00:00.000Z" });
   await start(t, lapsed.confirm_url);
