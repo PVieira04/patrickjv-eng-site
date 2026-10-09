@@ -950,7 +950,6 @@ async function signinResult(r) {
   if (r.result === "cancelled") return page(200, "Cancelled", [para("Cancelled. Google has told everyone invited.")], "", CLEAR_COOKIE);
   if (r.result === "confirming") return page(202, "Your call is being finished", [para("Your call is being finished. Check your email in a few minutes, and don't book again.")], "", CLEAR_COOKIE);
   if (r.result === "declined") return withCookie(ticketPage({ ...r.view, state: "declined", reason: r.reason }));
-  if (r.error === "not_authoritative") return page(403, "Google can't vouch for this address", [para(`Google can't vouch for this address. Sign in with a Gmail or Google Workspace account, or book at ${BOOK_LINK} with email instead.`), para(nothing)], "", CLEAR_COOKIE);
   if (r.error === "not_guest") return page(403, "This booking belongs to someone else", [para("This booking belongs to someone else. Nothing has changed.")], "", CLEAR_COOKIE);
   if (r.error === "person_cap") {
     const limit = r.which === "daily" ? `You can book at most ${BOOKING_CONFIG.caps.confirmationsPerPersonPerDay} calls a day.` : `You can have at most ${BOOKING_CONFIG.caps.upcomingPerPerson} calls booked at once.`;

@@ -343,22 +343,17 @@ test("F-002 callback refusals, each with nothing booked: missing, mismatched or 
   assert.equal(h.f.mails().length, 1, "only the one real booking was emailed");
 });
 
-test("F-002 sign-in: only Google-authoritative addresses book or cancel; any other verified address is refused with nothing changed, the request left open, and nobody emailed", async () => {
+test("F-002 sign-in: a Google account on a non-Google work address books and cancels like any other", async () => {
   const h = harness();
   const b = (await h.tool("book_meeting", ask())).structuredContent;
-  const no = await h.signInOn(b.confirm_url, { email: "omar@acme.example" });
-  assert.equal(no.res.status, 403);
-  assert.match(text(no.html), /Google can't vouch for this address\. Sign in with a Gmail or Google Workspace account, or book at patrickjv\.com\/book with email instead\./);
-  assert.equal((await h.tool("get_booking_status", { booking_id: b.booking_id })).structuredContent.status, "pending_confirmation");
-  assert.equal(h.f.mails().length, 0);
-  const ws = await h.signInOn(b.confirm_url, { sub: "ws-1", email: "omar@acme.example", hd: "acme.example" });
-  assert.match(text(ws.html), /Booked/, "a matching hd claim is authoritative");
-  assert.deepEqual(h.f.mails()[0].to, ["omar@acme.example"]);
-  // Cancelling: the guest's own account, but signed in with a non-authoritative address, changes nothing.
-  const c = (await h.tool("cancel_booking", { booking_id: b.booking_id })).structuredContent;
-  const bad = await h.signInOn(c.confirm_url, { sub: "ws-1", email: "omar@acme.example" });
-  assert.equal(bad.res.status, 403);
+  const ok = await h.signInOn(b.confirm_url, { sub: "work-1", email: "omar@acme.example" });
+  assert.match(text(ok.html), /Booked/);
   assert.equal((await h.tool("get_booking_status", { booking_id: b.booking_id })).structuredContent.status, "confirmed");
+  assert.deepEqual(h.f.mails()[0].to, ["omar@acme.example"]);
+  const c = (await h.tool("cancel_booking", { booking_id: b.booking_id })).structuredContent;
+  const out = await h.signInOn(c.confirm_url, { sub: "work-1", email: "omar@acme.example" });
+  assert.equal(out.res.status, 200);
+  assert.equal((await h.tool("get_booking_status", { booking_id: b.booking_id })).structuredContent.status, "cancelled");
 });
 
 test("F-002 sign-in: a cancel transaction can't book and a book transaction can't cancel", async () => {
