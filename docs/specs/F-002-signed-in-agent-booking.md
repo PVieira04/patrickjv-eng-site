@@ -210,6 +210,14 @@ New Worker routes: `patrickjv.com/oauth/*` and `patrickjv.com/.well-known/oauth-
 
 ---
 
+## Watch: agent identities that act for several people
+
+A gap recorded on 2026-10-09, **not a planned feature**. Patrick asked whether an agent with its own identity can act for a list of other people. Building delegation here isn't worth it, because most people book once. The site would only *accept* it if an identity provider supplied it.
+
+- **Today:** "Sign in with Google" says who signed in and nothing about whom they may act for. Google's own delegation (Gmail delegates, shared calendars) isn't passed on to other sites.
+- **What would make it usable here:** a token or credential that proves "agent X acts for person Y, approved by Y", issued by a provider the site trusts and presented through MCP. The building blocks exist: OAuth token exchange (RFC 8693) with an `act` (actor) claim, IETF drafts on AI agents acting on behalf of users, enterprise agent-identity products, and verifiable credentials (the did:web/VC idea parked in F-001). MCP's authorisation spec doesn't cover acting for someone else yet. These points weren't spiked; check them before relying on any.
+- **If it arrives:** booking accepts the verified principal Y as the guest instead of the signed-in identity. Caps, D7 and the "Booked" email (sent to Y) stay as they are.
+
 ## Google setup (manual, P1)
 
 In a **new** Google Cloud project `patrickjv-signin` owned by `hello@` (about 30–40 minutes, plus brand-verification waiting time):
