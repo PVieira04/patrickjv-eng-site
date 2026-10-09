@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { harness } from "../mcp/booking-harness.mjs";
 import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict } from "../lib/smoke-lib.mjs";
 import { handle } from "../mcp/handler.js";
 
@@ -109,6 +110,8 @@ function mockSite(faults = {}) {
     // Booking switched on with none of its secrets set: enabled but not ready.
     ...(faults.bookingNotReady ? { BOOKING_ENABLED: "true" } : {}),
   };
+  const h = faults.booking ? harness(faults.booking) : null;
+  if (h && faults.bookingCaps) Object.assign(h.cfg.caps, faults.bookingCaps);
   const faq = faults.faq ? content.faq.map((f, k) => (k ? f : { ...f, a: f.a + " (changed)" })) : content.faq;
   const deps = { content: { ...content, faq }, now: () => new Date(), reserve: async () => { throw new Error("never"); }, sendEmail: async () => { throw new Error("never"); } };
   return createServer(async (req, res) => {
@@ -117,6 +120,12 @@ function mockSite(faults = {}) {
     if (url.pathname === "/mcp") {
       const chunks = [];
       for await (const c of req) chunks.push(c);
+      // F-002: booking switched on and fully configured (the real BookingStore body, fake Google).
+      if (h) {
+        const r = await h.call(req.url, { method: req.method, headers: { "content-type": req.headers["content-type"], accept: req.headers.accept, "mcp-protocol-version": req.headers["mcp-protocol-version"] }, body: req.method === "POST" ? Buffer.concat(chunks).toString() : undefined });
+        res.writeHead(r.status, Object.fromEntries(r.headers));
+        return res.end(await r.text());
+      }
       const r = await handle(new Request(`https://patrickjv.com${req.url}`, { method: req.method, headers: req.headers, body: req.method === "POST" ? Buffer.concat(chunks) : undefined }), env, deps);
       let body = await r.text();
       if (faults.serverName) body = body.replace('"name":"patrickjv.com"', '"name":"someone-else"');
@@ -159,6 +168,26 @@ test("smoke against a correct mock: no FAIL, exit 0", async () => {
   const r = await runSmoke({}, ["--mcp"]);
   assert.deepEqual(r.fails, []);
   assert.equal(r.code, 0, r.lines.join("\n"));
+});
+
+// F-002 Observability: with booking on, the smoke makes one booking request for the first free slot,
+// checks its shape, withdraws it with cancel_booking (reading cancelled), and checks that an email
+// argument is refused. No free slot, the allowance used up (429) or the slot gone (409) is
+// reported as skipped, and passes.
+test("smoke with booking on: one booking request made and withdrawn, and an email argument refused", async () => {
+  const r = await runSmoke({ booking: {} }, ["--mcp"]);
+  assert.deepEqual(r.fails, [], r.lines.join("\n"));
+  assert.ok(r.lines.some((l) => /^PASS .*book_meeting.*cancel_booking/.test(l) && /cancelled/.test(l)), r.lines.join("\n"));
+  assert.ok(r.lines.some((l) => /^PASS .*email argument.*refused/.test(l)), r.lines.join("\n"));
+});
+
+test("smoke with booking on: no free slot, or the request allowance used up, is skipped and passes", async () => {
+  const busy = await runSmoke({ booking: { fetchOpts: { busy: [{ start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" }] } } }, ["--mcp"]);
+  assert.deepEqual(busy.fails, [], busy.lines.join("\n"));
+  assert.ok(busy.lines.some((l) => /^PASS .*book_meeting.*skipped: no free slot/.test(l)), busy.lines.join("\n"));
+  const spent = await runSmoke({ booking: {}, bookingCaps: { requestsPerDay: 0 } }, ["--mcp"]);
+  assert.deepEqual(spent.fails, [], spent.lines.join("\n"));
+  assert.ok(spent.lines.some((l) => /^PASS .*book_meeting.*skipped: .*rate_limited/.test(l)), spent.lines.join("\n"));
 });
 
 test("smoke FAILs each false-PASS case from the round-2 review", async () => {
