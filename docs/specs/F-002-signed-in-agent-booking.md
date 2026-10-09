@@ -50,7 +50,7 @@ As **a signed-in person**, I want **my agent to cancel my own meeting straight a
 
 ### US-5: Patrick controls which agent apps can connect
 
-As **Patrick**, I want **only known agent apps (Claude, ChatGPT, VS Code) to be able to connect at first**, so that **the consent screen can't be abused by look-alike apps**.
+As **Patrick**, I want **only known agent apps (Claude and VS Code in P1; ChatGPT in P3) to be able to connect at first**, so that **the consent screen can't be abused by look-alike apps**.
 
 ### US-6: Abuse stays bounded
 
@@ -85,7 +85,7 @@ As **a visitor on patrickjv.com**, I want to **sign in once so `/book` and the h
 | # | Decision | Alternatives rejected |
 |---|---|---|
 | D1 | **MCP booking writes require sign-in.** `book_meeting` and `cancel_booking` over MCP need a token; everything else stays anonymous. | Optional "fast lane": no client prompts sign-in unless the server asks, so most agent bookings would stay anonymous and strangers' inboxes would stay exposed. |
-| D2 | **Allowlist of agent apps** at launch: Client ID Metadata Documents hosted on `claude.ai`, `chatgpt.com`, `vscode.dev`. Others are refused before the consent page. | Any CIMD client: more phishing surface on the consent page. |
+| D2 | **Allowlist of agent apps** at launch: Client ID Metadata Documents hosted on `claude.ai` and `vscode.dev`. Others are refused before the consent page. **ChatGPT moves to P3** (spike 2026-10-09): it supports CIMD, but it only shows its sign-in UI for a tool *result* carrying `_meta["mcp/www_authenticate"]` plus per-tool `securitySchemes`, not for the HTTP 401 Claude uses, and no documented signal tells the two clients apart. Its write-capable MCP is also limited to Business/Enterprise/Edu workspaces on the web. | Any CIMD client: more phishing surface on the consent page. |
 | D3 | **A signed-in owner cancels directly**; anonymous bookings keep the emailed confirm-cancellation link. | Email confirmation for every cancellation: safer against a rogue agent, but undoes much of the point. |
 | D4 | **A separate Google Cloud project** (`patrickjv-signin`) for visitor sign-in, scopes `openid email profile` only. | The same project as `hello@`'s calendar access. It would work: Google's 100-user cap counts only users granting unapproved sensitive scopes, and the warning screen follows the requested scopes. But branding and the cap are per project, a public sign-in would share risk with the project that holds the calendar token, and a basic-scope-only project can get brand verification (name and logo) cleanly. ([spike](F-001-spikes/README.md#f-002-research-2026-10-09)) |
 | D5 | **Per-request consent:** the agent host's own tool approval, the `booking` scope granted at connect time, and the "Booked" notification with one-click cancel. Where a client declares elicitation on MCP 2026-07-28, ask it to confirm the slot details (P3). | Short-lived tokens: refresh tokens defeat them and they cost KV writes. |
@@ -204,7 +204,7 @@ New Worker routes: `patrickjv.com/oauth/*` and `patrickjv.com/.well-known/oauth-
 
 - **P2, site sign-in:** "Sign in with Google" on `/book`, a `__Host-` session cookie (`Secure; HttpOnly; SameSite=Lax`), `GET /api/booking/me`, signed-in `/book` and WebMCP bookings confirmed directly. WebMCP asks for in-page confirmation before booking. Cookie-authenticated POSTs require an exact `Origin` and `Content-Type: application/json`. `/privacy` changes from "sets no cookies".
 - **P3, delegated booking:** a signed-in person may give another `email`. That booking falls back to F-001's hold-and-confirm, with the hold email sent to that address and naming who asked ("Jane Smith, jane@…, asked to book this on your behalf"). The other person still consents by clicking, but the request is attributed to a verified, capped identity instead of being anonymous. Counts against the requester's identity caps and the recipient's per-email cap.
-- **P3, more providers and consent:** Microsoft (key on tenant + object ID; email counted as verified only when Microsoft says so); Altimist ID (needs this site registered as a client, and its tokens to carry email verification and nothing internal); MCP elicitation for per-booking confirmation where clients support it; ChatGPT's per-tool security schemes; Dynamic Client Registration only if a needed client requires it.
+- **P3, more providers and consent:** Microsoft (key on tenant + object ID; email counted as verified only when Microsoft says so); Altimist ID (needs this site registered as a client, and its tokens to carry email verification and nothing internal); MCP elicitation for per-booking confirmation where clients support it; ChatGPT: per-tool `securitySchemes` (`noauth` on read tools, `oauth2` with scope `booking` on the two write tools, also mirrored in `_meta`), a tool-error result with `_meta["mcp/www_authenticate"]` instead of the 401 for ChatGPT, AS metadata with `authorization_response_iss_parameter_supported` (only if every authorisation response returns `iss`), allowlisting `https://chatgpt.com/oauth/client.json` and redirect `https://chatgpt.com/connector_platform_oauth_redirect`, then a live test in developer mode on a Business workspace (about half a day to a day); Dynamic Client Registration only if a needed client requires it.
 
 ---
 
