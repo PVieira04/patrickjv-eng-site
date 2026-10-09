@@ -10,7 +10,10 @@
   "preview_urls": false,
   "routes": [
     { "pattern": "patrickjv.com/mcp*", "zone_name": "patrickjv.com" },
-    { "pattern": "patrickjv.com/api/booking*", "zone_name": "patrickjv.com" }
+    { "pattern": "patrickjv.com/api/booking*", "zone_name": "patrickjv.com" },
+    // F-002: the sign-in confirm page and Google's return. /book itself stays a static asset.
+    { "pattern": "patrickjv.com/book/confirm*", "zone_name": "patrickjv.com" },
+    { "pattern": "patrickjv.com/book/callback*", "zone_name": "patrickjv.com" }
   ],
   // Workers Logs: ONLY the handler's own console events (redacted failure and quota-refusal events:
   // subsystem or cap name, no personal data). Invocation logs are off: they would record every
@@ -35,6 +38,11 @@
   //   wrangler secret put BOOKING_OWNER_EMAIL -c mcp/wrangler.jsonc    Patrick's address, invited to every meeting
   //   wrangler secret put CAL_PERSONAL_MAIN -c mcp/wrangler.jsonc      a calendar ID named by idSecret in booking.json,
   //                                                                    copied exactly from Settings → Integrate calendar
+  // Sign-in secrets (F-002; health's signinReady is false until both are set): the web client of
+  // the separate patrickjv-signin Google Cloud project (openid email profile only), with redirect URI
+  // https://patrickjv.com/book/callback/google:
+  //   wrangler secret put SIGNIN_GOOGLE_CLIENT_ID -c mcp/wrangler.jsonc
+  //   wrangler secret put SIGNIN_GOOGLE_CLIENT_SECRET -c mcp/wrangler.jsonc
   // Booking quota keys are HMACs with QUOTA_SALT too.
   // Email Routing send_email can only deliver to the account's verified destination addresses
   // (free plan), so strangers can never use it to email anyone else. No destination_address here:

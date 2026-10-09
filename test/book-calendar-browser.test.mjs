@@ -67,8 +67,15 @@ test("Chromium /book: a booking made by keyboard alone, through the calendar, un
     assert.ok(kb.inView, "the focused time is fully in view in the list");
     const ring = await page.evaluate(() => getComputedStyle(document.querySelector('label[for="' + document.activeElement.id + '"]')).outlineStyle);
     assert.notEqual(ring, "none", "the focused time shows a focus ring");
-    assert.equal(await page.isVisible("#details"), true, "choosing a time opens the details form");
+    // F-002 (D8): choosing a time offers "Sign in with Google to book" first, then "Book with email instead".
+    assert.equal(await page.isVisible("#how"), true, "choosing a time offers how to confirm");
     await page.keyboard.press("Tab");
+    assert.equal(await focused(page), "by-signin");
+    await page.keyboard.press("Tab");
+    assert.equal(await focused(page), "by-email");
+    await page.keyboard.press("Enter");
+    assert.equal(await page.isVisible("#details"), true);
+    assert.equal(await focused(page), "name", "focus moves to the form");
     await page.keyboard.type("Ada Lovelace");
     await page.keyboard.press("Tab");
     await page.keyboard.type("ada@example.com");
@@ -144,9 +151,9 @@ test("Chromium /book: the times are a single-column list of start times that scr
       await page.click("#days button[aria-pressed=false]");
       assert.equal(await page.evaluate(() => document.getElementById("times").scrollTop), 0, `${at}: a new day starts at the top`);
       assert.equal(await page.getAttribute("#times", "data-more"), "true", at);
-      // Choosing a time still opens the details form.
+      // Choosing a time still hands off: F-002 (D8) offers how to confirm.
       await page.click("#times label >> nth=3");
-      assert.equal(await page.isVisible("#details"), true, at);
+      assert.equal(await page.isVisible("#how"), true, at);
       assert.deepEqual(problems, [], at);
     } finally { await done(); }
   }

@@ -21,7 +21,9 @@ export const quiet = async (fn) => { const saved = [console.error, console.log];
 export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 1e9, env: over = {}, storeDown = false } = {}) {
   const f = fakeFetch(fetchOpts);
   const clock = { now: NOW };
-  const svc = createBookingService({ sql: openSql(), storage: alarmStorage(), env: { ...ENV, ...over }, cfg, fetch: f.fetch, sleep: async () => {}, now: () => clock.now });
+  // Each harness has its own copy of booking.json, so a test may change its caps.
+  const sql = openSql(), ownCfg = structuredClone(cfg);
+  const svc = createBookingService({ sql, storage: alarmStorage(), env: { QUOTA_SALT: SALT, ...ENV, ...over }, cfg: ownCfg, fetch: f.fetch, sleep: async () => {}, now: () => clock.now });
   let storeCalls = 0;
   // Like a Durable Object stub: every method is async and results are structured-cloned.
   const stub = new Proxy(svc, { get: (o, k) => async (...a) => { storeCalls++; if (storeDown) throw new Error("DO unreachable"); return structuredClone(await o[k](...a)); } });
@@ -47,5 +49,27 @@ export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 
   const actPost = (t, { form = true, headers = {} } = {}) => call("/api/booking/act", { method: "POST",
     headers: { "content-type": form ? "application/x-www-form-urlencoded" : "application/json", origin: ORIGIN, ...headers },
     body: form ? `t=${encodeURIComponent(t)}` : { t } });
-  return { call, post, actPost, f, svc, clock, env, alerts, rl, storeCalls: () => storeCalls };
+  // F-002: MCP calls, and the sign-in round trip a browser makes: the confirm page's POST (which
+  // sets the __Host- cookie and redirects to Google), Google (the fake's authorize) and the callback.
+  const rpc = (method, params) => ({ jsonrpc: "2.0", id: 1, method, ...(params === undefined ? {} : { params }) });
+  const mcp = async (method, params) => (await (await call("/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: rpc(method, params) })).json());
+  const tool = (name, args = {}) => mcp("tools/call", { name, arguments: args }).then((r) => r.result);
+  const ticketOf = (url) => new URL(url).searchParams.get("t");
+  const startSignin = (ticket, { headers = {} } = {}) => call("/book/confirm/google", { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, ...headers }, body: `t=${encodeURIComponent(ticket)}` });
+  const cookieOf = (res) => res.headers.get("set-cookie")?.match(/__Host-pjv_signin=([^;]*)/)?.[1];
+  const callback = (query, cookie) => call(`/book/callback/google?${new URLSearchParams(query)}`, { headers: cookie ? { cookie: `__Host-pjv_signin=${cookie}` } : {} });
+  // Signs in on a confirm_url (as `claims` says) and returns the callback's page, or the start's
+  // page if the ticket started no sign-in.
+  const signInOn = async (url, claims = {}) => {
+    const start = await startSignin(ticketOf(url));
+    if (start.status !== 303) return { res: start, html: await start.text(), start };
+    const cookie = cookieOf(start);
+    const { code, state } = f.authorize(start.headers.get("location"), claims, clock.now);
+    const res = await callback({ code, state }, cookie);
+    return { res, html: await res.text(), start, cookie, code, state };
+  };
+  const rows = (q, ...b) => sql.exec(q, ...b).toArray();
+  const run = (q, ...b) => { sql.exec(q, ...b); };
+  return { call, post, actPost, f, svc, clock, env, alerts, rl, storeCalls: () => storeCalls, cfg: ownCfg, rows, run, mcp, tool, ticketOf, startSignin, cookieOf, callback, signInOn };
 }

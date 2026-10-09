@@ -12,11 +12,11 @@
 
 # The page: "/" is negotiated (HTML, or Markdown for Accept: text/markdown), hence Vary.
 /
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-LCr85w63fwnA9uuuOV4jtrRzcPqv3n38GQT3wEstlR4='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-M2Chvy5UebOjNuGRhK9GYnd7xNxXCXEANmQJlSkSwn0='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
   Vary: Accept
 
 /index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ixGvFPmUUpfpRBR3EJ1tic5yB/WDULFhHlARTuPsjiw='; script-src 'sha256-LCr85w63fwnA9uuuOV4jtrRzcPqv3n38GQT3wEstlR4='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-M2Chvy5UebOjNuGRhK9GYnd7xNxXCXEANmQJlSkSwn0='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
 
 # The CV: served at /cv (and /cv.html, which the asset server redirects to /cv). It names employers;
 # the page and agent surfaces do not.
@@ -35,10 +35,10 @@
 
 # Booking (F-001).
 /book
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-FBrgq0hqgauvc8aPNyRysNNDykICatu0pI8Kmv/blVE='; script-src 'sha256-GEg7AcajHz8MWq9IGUlonBhrxqHmdnJTV0rc2ZjdHEU='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-khgY7of0pI6ac8dZFokG5W9eGDTOFPlbNrZcNGVKEy0='; script-src 'sha256-YMFeJR9k/pz2/ucLqkZUK0xHMqqwq052baz99pg/Ds8='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
 
 /book.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-FBrgq0hqgauvc8aPNyRysNNDykICatu0pI8Kmv/blVE='; script-src 'sha256-GEg7AcajHz8MWq9IGUlonBhrxqHmdnJTV0rc2ZjdHEU='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-khgY7of0pI6ac8dZFokG5W9eGDTOFPlbNrZcNGVKEy0='; script-src 'sha256-YMFeJR9k/pz2/ucLqkZUK0xHMqqwq052baz99pg/Ds8='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
 
 # Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
 /writing/gating-agent-written-code
@@ -76,6 +76,10 @@
   Content-Type: text/markdown; charset=utf-8
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   Vary: Accept
+
+/book.md
+  Content-Type: text/markdown; charset=utf-8
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /llms.txt
   Content-Type: text/plain; charset=utf-8

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { SECURITY_HEADERS, BOOKING_SECRETS } from "./handler.js";
+import { SECURITY_HEADERS, BOOKING_SECRETS, SIGNIN_SECRETS } from "./handler.js";
 import { tokenIn } from "./booking-fakes.mjs";
 import { harness, quiet, NOW, ORIGIN } from "./booking-harness.mjs";
 
@@ -284,12 +284,15 @@ test("GET /api/booking/status and POST /api/booking/cancel: the same results as 
   const { booking_id } = await (await h.post(booking())).json();
   const s = await h.call(`/api/booking/status?booking_id=${booking_id}`);
   assert.equal(s.status, 200);
-  assert.deepEqual(await s.json(), { status: "pending_confirmation", start: SLOT, end: "2026-10-21T10:30:00+01:00", type: "consultation" });
+  // F-002 adds next_step (US-7).
+  const { next_step, ...view } = await s.json();
+  assert.deepEqual(view, { status: "pending_confirmation", start: SLOT, end: "2026-10-21T10:30:00+01:00", type: "consultation" });
+  assert.match(next_step, /Wait and check again/);
   assert.equal((await h.call("/api/booking/status?booking_id=nope")).status, 400);
   assert.equal((await h.call(`/api/booking/status?booking_id=${"0".repeat(32)}`)).status, 404);
   const c = await h.call("/api/booking/cancel", { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: { booking_id } });
   assert.equal(c.status, 200);
-  assert.deepEqual(await c.json(), { status: "cancelled" });
+  assert.equal((await c.json()).status, "cancelled");
   assert.equal((await h.call("/api/booking/cancel")).status, 405);
 });
 
@@ -309,11 +312,12 @@ test("POST /api/booking: optional source is exactly \"page\" (the default) or \"
 
 test("book_meeting over MCP is always source mcp: a source argument is refused, nothing is held", async () => {
   const h = harness();
-  const r = await mcp(h, rpc("tools/call", { name: "book_meeting", arguments: { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com", source: "page" } }));
+  const r = await mcp(h, rpc("tools/call", { name: "book_meeting", arguments: { type: "consultation", start: SLOT, source: "page" } }));
   assert.equal(r.result.isError, true);
   assert.equal(h.storeCalls(), 0);
-  await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
-  assert.match(h.f.mails()[0].text, /An AI agent asked to book/);
+  // F-002: MCP's book_meeting makes a sign-in request (stored as mcp; see signin-flow.test.mjs).
+  assert.equal((await tool(h, "book_meeting", { type: "consultation", start: SLOT })).structuredContent.status, "pending_confirmation");
+  assert.deepEqual(h.rows("SELECT source FROM booking_requests"), [{ source: "mcp" }]);
 });
 
 // ---- MCP tools ----
@@ -333,10 +337,9 @@ test("tools/list: the five booking tools, with schemas, limits, annotations and 
     assert.ok(byName[n].title && byName[n].description, n);
   }
   const b = byName.book_meeting;
-  assert.deepEqual(b.inputSchema.required, ["type", "start", "name", "email"]);
+  // F-002 (D5): no name or email; they come from the person's sign-in.
+  assert.deepEqual(b.inputSchema.required, ["type", "start"]);
   assert.deepEqual(b.inputSchema.properties.type.enum, ["consultation", "recruiter-intro"]);
-  assert.equal(b.inputSchema.properties.name.maxLength, 100);
-  assert.equal(b.inputSchema.properties.email.maxLength, 254);
   assert.equal(b.inputSchema.properties.note.maxLength, 500);
   assert.match(b.description, /Only use this when the person has asked/);
   assert.match(b.description, /Do not retry on error/);
@@ -356,39 +359,39 @@ test("list_meeting_types and get_availability over MCP", async () => {
   assert.deepEqual(JSON.parse(av.content[0].text), av.structuredContent);
 });
 
-test("book_meeting holds and emails the person as an agent booking; get_booking_status shows it without guest details", async () => {
+test("get_booking_status over MCP shows an email-form hold without guest details", async () => {
   const h = harness();
-  const r = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane Smith", email: "jane@example.com" });
-  assert.equal(r.isError, undefined, JSON.stringify(r));
-  const { booking_id, status, hold_expires } = r.structuredContent;
-  assert.equal(status, "pending_confirmation");
-  assert.equal(hold_expires, "2026-10-19T12:00:00+01:00");
-  assert.match(h.f.mails()[0].text, /An AI agent asked to book a Consultation/);
+  // F-002: holds come only from the email form now (MCP's book_meeting makes sign-in requests).
+  const { booking_id } = await (await h.post(booking())).json();
   const s = await tool(h, "get_booking_status", { booking_id });
-  assert.deepEqual(s.structuredContent, { status: "pending_confirmation", start: SLOT, end: "2026-10-21T10:30:00+01:00", type: "consultation" });
+  const { next_step, ...view } = s.structuredContent;
+  assert.deepEqual(view, { status: "pending_confirmation", start: SLOT, end: "2026-10-21T10:30:00+01:00", type: "consultation" });
+  assert.ok(next_step);
   assert.ok(!s.content[0].text.includes("jane"));
 });
 
 test("cancel_booking: withdraws a hold; on a confirmed meeting only emails a confirm-cancellation link", async () => {
   const h = harness();
-  const { booking_id } = (await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" })).structuredContent;
-  assert.deepEqual((await tool(h, "cancel_booking", { booking_id })).structuredContent, { status: "cancelled" });
+  // Email-form holds (F-002 moved MCP's book_meeting to sign-in requests); results carry next_step.
+  const { booking_id } = await (await h.post(booking())).json();
+  assert.equal((await tool(h, "cancel_booking", { booking_id })).structuredContent.status, "cancelled");
   assert.deepEqual((await tool(h, "get_booking_status", { booking_id })).structuredContent.status_reason, "agent_withdrew");
 
-  const { booking_id: id2 } = (await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" })).structuredContent;
+  const { booking_id: id2 } = await (await h.post(booking(), { ip: "198.51.100.2" })).json();
   await h.actPost(tokenIn(h.f.mails().at(-1).text, "confirm"));
   const c = await tool(h, "cancel_booking", { booking_id: id2 });
-  assert.deepEqual(c.structuredContent, { status: "confirmed", cancellation: "requested" });
+  const { next_step, ...cancel } = c.structuredContent;
+  assert.deepEqual(cancel, { status: "confirmed", cancellation: "requested" });
+  assert.match(next_step, /cancellation email was sent/);
   assert.match(h.f.mails().at(-1).subject, /^Confirm cancellation/);
   assert.equal((await tool(h, "get_booking_status", { booking_id: id2 })).structuredContent.status, "confirmed");
 });
 
 test("booking tools: failures are tool errors naming the error and asking agents not to retry; bad arguments reach nothing", async () => {
   const h = harness();
-  await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
-  const taken = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
+  const taken = await tool(h, "book_meeting", { type: "consultation", start: "2026-10-19T15:00:00+01:00" });
   assert.equal(taken.isError, true);
-  assert.equal(taken.structuredContent.error, "hold_pending", "same email, one live hold");
+  assert.equal(taken.structuredContent.error, "invalid_slot", "inside the notice window");
   assert.match(taken.content[0].text, /Do not retry/);
   const missing = await tool(h, "get_booking_status", { booking_id: "f".repeat(32) });
   assert.equal(missing.isError, true);
@@ -408,7 +411,7 @@ test("BOOKING_ENABLED not \"true\": every write path is 503 booking_disabled; ty
     const h = harness({ env: { BOOKING_ENABLED: value } });
     const res = await h.post(booking());
     assert.equal(res.status, 503, String(value));
-    assert.deepEqual(await res.json(), { error: "booking_disabled", message: "Booking isn't open yet." });
+    assert.deepEqual(await res.json(), { error: "booking_disabled", message: "Booking isn't open yet. Please try again later, or email hello@patrickjv.com." }); // F-002: says what to do
     const viaTool = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
     assert.equal(viaTool.isError, true);
     assert.equal(viaTool.structuredContent.error, "booking_disabled");
@@ -420,25 +423,30 @@ test("BOOKING_ENABLED not \"true\": every write path is 503 booking_disabled; ty
   }
 });
 
-test("BOOKING_ENABLED not \"true\": MCP hides booking — tools/list omits the five tools, instructions don't mention it, calls say it isn't open", async () => {
+// F-002 (F-001 US-8 as F-002 restates it): with booking off, new requests and cancel links are
+// refused, but the read tools still work, so an agent holding a link can still check its status.
+test("BOOKING_ENABLED not \"true\": MCP lists and answers the read tools; book_meeting and cancel_booking say booking isn't open; instructions don't mention booking", async () => {
   for (const value of ["false", undefined, "TRUE", "1"]) {
     const h = harness({ env: { BOOKING_ENABLED: value } });
     const { result } = await mcp(h, rpc("tools/list"));
-    assert.deepEqual(result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"], String(value));
+    assert.deepEqual(result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro", "get_booking_guide", "list_meeting_types", "get_availability", "get_booking_status"], String(value));
     const init = await mcp(h, rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
     assert.doesNotMatch(init.result.instructions, /book|meeting/i, String(value));
     assert.match(init.result.instructions, /request_intro/);
-    for (const [name, args] of [["list_meeting_types", {}], ["get_availability", { type: "consultation" }], ["book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" }],
-      ["get_booking_status", { booking_id: "a".repeat(32) }], ["cancel_booking", { booking_id: "a".repeat(32) }]]) {
+    for (const [name, args] of [["book_meeting", { type: "consultation", start: SLOT }], ["cancel_booking", { booking_id: "a".repeat(32) }]]) {
       const r = await tool(h, name, args);
       assert.equal(r.isError, true, name);
       assert.equal(r.structuredContent.error, "booking_disabled", name);
       assert.match(r.content[0].text, /^Booking isn't open yet\./, name);
     }
-    assert.equal(h.storeCalls(), 0, "nothing reaches the BookingStore");
+    assert.equal(h.storeCalls(), 0, "no write reaches the BookingStore");
+    for (const [name, args] of [["get_booking_guide", {}], ["list_meeting_types", {}], ["get_availability", { type: "consultation" }]]) {
+      assert.equal((await tool(h, name, args)).isError, undefined, name);
+    }
+    assert.equal((await tool(h, "get_booking_status", { booking_id: "a".repeat(32) })).structuredContent.error, "not_found", "status is looked up, not refused");
   }
-  // Switched on, all ten are listed.
-  assert.equal((await mcp(harness(), rpc("tools/list"))).result.tools.length, 10);
+  // Switched on, all eleven are listed (F-002 adds get_booking_guide).
+  assert.equal((await mcp(harness(), rpc("tools/list"))).result.tools.length, 11);
 });
 
 test("kill switch: availability works while configured, and is 503 when not configured", async () => {
@@ -540,22 +548,23 @@ test("global cap: a failed alert is logged by subsystem only and doesn't change 
 test("mcp/wrangler.jsonc: booking route, BookingStore Durable Object (migration v2), ships dark, secrets documented", () => {
   const text = readFileSync(new URL("./wrangler.jsonc", import.meta.url), "utf8");
   const w = JSON.parse(text.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"));
-  assert.deepEqual(w.routes.map((r) => r.pattern), ["patrickjv.com/mcp*", "patrickjv.com/api/booking*"]);
+  assert.deepEqual(w.routes.map((r) => r.pattern), ["patrickjv.com/mcp*", "patrickjv.com/api/booking*", "patrickjv.com/book/confirm*", "patrickjv.com/book/callback*"]); // F-002 adds the last two
   assert.ok(w.durable_objects.bindings.some((b) => b.name === "BOOKING" && b.class_name === "BookingStore"));
   assert.deepEqual(w.migrations, [{ tag: "v1", new_sqlite_classes: ["IntroQuota"] }, { tag: "v2", new_sqlite_classes: ["BookingStore"] }]);
   assert.equal(w.vars.BOOKING_ENABLED, "true", "switched on at launch (8 Oct 2026, docs/06 launch checklist)");
   assert.equal(w.vars.BOOKING_FROM, "Patrick Vieira <hello@patrickjv.com>");
-  for (const k of BOOKING_SECRETS.filter((k) => k !== "BOOKING_FROM")) assert.match(text, new RegExp(`wrangler secret put ${k} -c mcp/wrangler\\.jsonc`), k);
+  for (const k of [...BOOKING_SECRETS.filter((k) => k !== "BOOKING_FROM"), ...SIGNIN_SECRETS]) assert.match(text, new RegExp(`wrangler secret put ${k} -c mcp/wrangler\\.jsonc`), k);
   assert.doesNotMatch(text, /@gmail\.com|@googlemail\.com/, "calendar IDs are secrets");
 });
 
 // ---- Server metadata ----
 
-// Launch (8 Oct 2026): 1.2.0 mentions booking, published to the Registry right after the deploy
-// that sets BOOKING_ENABLED=true, because the monitor checks serverInfo.version against the Registry.
-test("server.json: 1.2.0 at launch, mentions booking; description fits the Registry's 100 characters", async () => {
+// Launch (8 Oct 2026): 1.2.0 mentions booking. F-002: 1.3.0, because book_meeting's shape changed
+// (no name or email; sign-in confirms). Published to the Registry right after the deploy, because
+// the monitor checks serverInfo.version against the Registry.
+test("server.json: 1.3.0 for F-002, mentions booking; description fits the Registry's 100 characters", async () => {
   const s = JSON.parse(readFileSync(new URL("./server.json", import.meta.url), "utf8"));
-  assert.equal(s.version, "1.2.0");
+  assert.equal(s.version, "1.3.0");
   assert.ok(s.description.length <= 100, `${s.description.length}`);
   assert.match(s.description, /book/i);
   const init = await mcp(harness(), rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));

@@ -127,14 +127,14 @@ test("client JSON-RPC responses: exactly one of result/error, and a well-formed 
   }
 });
 
-test("tools/list: four read-only tools, request_intro, then (only with BOOKING_ENABLED=true) the five booking tools", async () => {
+test("tools/list: four read-only tools, request_intro, the booking read tools, then (only with BOOKING_ENABLED=true) book_meeting and cancel_booking", async () => {
   const dark = await (await harness().call(rpc("tools/list"))).json();
-  assert.deepEqual(dark.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+  assert.deepEqual(dark.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro", "get_booking_guide", "list_meeting_types", "get_availability", "get_booking_status"]); // F-002: reads work with booking off
   const h = harness();
   h.env.BOOKING_ENABLED = "true";
   const r = await (await h.call(rpc("tools/list"))).json();
   assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
-    "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
+    "get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
   for (const t of r.result.tools.slice(0, 4)) assert.equal(t.annotations.readOnlyHint, true);
   for (const t of r.result.tools) assert.equal(t.icons[0].src, "https://patrickjv.com/icon-192.png");
   assert.match(r.result.tools[4].description, /not stored by this site/);
@@ -461,7 +461,7 @@ test("MCP-Protocol-Version: unsupported (or empty) is 400; absent is accepted", 
   for (const v of ["2025-11-25", "2025-06-18"]) assert.equal((await call(rpc("tools/list"), { headers: { "mcp-protocol-version": v } })).status, 200, v);
   const absent = await call(rpc("tools/list"));
   assert.equal(absent.status, 200);
-  assert.equal((await absent.json()).result.tools.length, 5); // booking off: no booking tools
+  assert.equal((await absent.json()).result.tools.length, 9); // booking off: the four booking read tools, no book_meeting or cancel_booking (F-002)
 });
 
 test("security headers on every response branch", async () => {
@@ -574,12 +574,12 @@ test("failures and quota refusals are logged as redacted events naming the subsy
 
 // patrickjv/health: a read-only readiness signal for request_intro (smoke --mcp requires introReady).
 const health = async (h, opts) => (await (await h.call(rpc("patrickjv/health"), opts)).json());
-const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits", "bookingEnabled", "bookingReady"];
+const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits", "bookingEnabled", "bookingReady", "signinReady"]; // signinReady: F-002
 
 test("patrickjv/health: only booleans; introReady when salt, email, quota and rate limits are all configured", async () => {
   const r = await health(harness());
   // No booking configuration in this harness: booking is off and not ready (mcp/booking-api.test.mjs covers it).
-  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false });
+  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false, signinReady: false });
   const broken = [
     ["salt", (h) => { delete h.env.QUOTA_SALT; }], ["salt", (h) => { h.env.QUOTA_SALT = "x".repeat(31); }],
     ["email", (h) => { delete h.env.EMAIL; }], ["email", (h) => { delete h.env.INTRO_TO_ADDRESS; }], ["email", (h) => { h.env.INTRO_FROM = ""; }],

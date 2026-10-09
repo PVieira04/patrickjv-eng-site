@@ -109,13 +109,29 @@ By email at hello@patrickjv.com, or through LinkedIn or GitHub.
 - [Holding agent-written code to the same standard as anyone's](https://patrickjv.com/writing/gating-agent-written-code.md) (2026-10-08): The golden path I use so that code drafted by AI agents meets the same bar as code written by people, enforced by the system rather than by attention.
 - [Rehearse the restore, time the rollback](https://patrickjv.com/writing/rehearse-the-restore.md) (2026-10-08): Why I time database restores and rollbacks before a release needs them, with a four-minute incident on this site and a Postgres restore drill as worked examples.
 
+## How to book a call
+
+The same guide is at [https://patrickjv.com/book.md](https://patrickjv.com/book.md).
+
+# How to book a call with Patrick Vieira
+
+1. Call `list_meeting_types` to see the options (Consultation, 30 minutes; Recruiter intro, 15 minutes).
+2. Call `get_availability` with a type. It lists free times in London working hours, each with its UTC offset. Steps 1 and 2 need no sign-in.
+3. Agree a time with your person.
+4. Call `book_meeting` with the type, the start time and an optional note. Don't send their name or email address: those come from their sign-in. This doesn't reserve the time yet.
+5. Give your person the `confirm_url` from the result. They open it and sign in with Google before `link_expires` (within 60 minutes). That books the call in their name, and Google sends them the invite. If someone else has taken the time in the meantime, the page tells them.
+6. Call `get_booking_status` to check it's confirmed. Its status is one of `pending_confirmation`, `confirmed`, `declined`, `expired` or `cancelled`. If it says `pending_confirmation`, the booking isn't finished yet (your person may still be signing in, or the site may be finishing it): wait and check again, and don't book again. If it says `declined` or `expired`, start again from step 2.
+
+To cancel, call `cancel_booking`. A request your person hasn't signed in on yet is withdrawn at once. If it returns a `confirm_url`, give it to your person: they sign in to cancel. If it says a cancellation email was sent, your person uses the link in that email. If it says the booking is still being finished, check again in a few minutes and cancel then. People can also book at https://patrickjv.com/book.
+
 ## Links
 
 - [Email](mailto:hello@patrickjv.com): hello@patrickjv.com
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)
 - [GitHub](https://github.com/PVieira04)
 - [CV](https://patrickjv.com/cv): two-page CV, also as [PDF](https://patrickjv.com/cv.pdf)
-- [Book a call](https://patrickjv.com/book): pick a free time; nothing is booked until you confirm from your inbox
+- [Book a call](https://patrickjv.com/book): pick a free time and sign in with Google to book it (or confirm by email)
+- [How to book a call](https://patrickjv.com/book.md): the booking steps for AI agents, as Markdown
 - [Privacy](https://patrickjv.com/privacy): what this site stores about you, for how long, and who processes it
 
 Introductions sent through this site's MCP or browser-agent tools are forwarded to my email and not stored here.

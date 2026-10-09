@@ -8,7 +8,11 @@
   "maxPerDay": 3,
   "holdHours": 2,
   "retentionDays": 30,
-  "caps": { "perIpPerDay": 4, "perEmailPerDay": 2, "globalPerDay": 10, "liveHoldsPerEmail": 1 },
+  "requestMinutes": 60,
+  "caps": {
+    "perIpPerDay": 4, "perEmailPerDay": 2, "globalPerDay": 10, "liveHoldsPerEmail": 1,
+    "requestsPerIpPerDay": 20, "requestsPerDay": 200, "signinAttemptsPerTicket": 5, "confirmationsPerPersonPerDay": 2, "upcomingPerPerson": 2
+  },
   "meetingTypes": [
     { "id": "consultation", "title": "Consultation", "minutes": 30, "description": "A 30-minute call about a platform, infrastructure or AI agent problem you're working on." },
     { "id": "recruiter-intro", "title": "Recruiter intro", "minutes": 15, "description": "A 15-minute call for recruiters to introduce a role." }

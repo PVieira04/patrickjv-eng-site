@@ -24,10 +24,28 @@ const SCHEMA = [
   "CREATE TABLE IF NOT EXISTS health (key TEXT PRIMARY KEY, n INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS bookings_status ON bookings (status)",
   "CREATE INDEX IF NOT EXISTS tokens_booking ON tokens (booking_id)",
+  // F-002's sign-in path. A booking request reserves nothing; its booking row is made only when
+  // a verified person signs in (confirmRequest), reusing the request's id.
+  `CREATE TABLE IF NOT EXISTS booking_requests (
+    id TEXT PRIMARY KEY, ticket_hash TEXT NOT NULL UNIQUE, type TEXT NOT NULL, start_utc TEXT NOT NULL, end_utc TEXT NOT NULL,
+    note TEXT, source TEXT NOT NULL, ip_key TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+    state TEXT NOT NULL, reason TEXT, settled_at TEXT)`,
+  `CREATE TABLE IF NOT EXISTS identities (
+    id TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL,
+    email TEXT NOT NULL, display_name TEXT NOT NULL, created_at TEXT NOT NULL, delete_after TEXT NOT NULL,
+    UNIQUE (provider, subject))`,
+  `CREATE TABLE IF NOT EXISTS signin_tx (
+    state_hash TEXT PRIMARY KEY, ticket_hash TEXT NOT NULL, cookie_hash TEXT NOT NULL,
+    nonce TEXT NOT NULL, code_verifier TEXT NOT NULL, purpose TEXT NOT NULL, expires_at TEXT NOT NULL)`,
 ];
+// Columns F-002 adds to F-001's bookings table: nullable, so F-001 rows keep NULL (an email-form
+// booking). ALTER TABLE has no IF NOT EXISTS, so each is added only if missing.
+const BOOKING_COLUMNS = ["identity_id", "proof", "actor"];
 
 export function migrate(sql) {
   for (const s of SCHEMA) sql.exec(s);
+  const have = new Set(sql.exec("PRAGMA table_info(bookings)").toArray().map((c) => c.name));
+  for (const c of BOOKING_COLUMNS) if (!have.has(c)) sql.exec(`ALTER TABLE bookings ADD COLUMN ${c} TEXT`);
 }
 
 const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -218,11 +236,17 @@ export async function act(sql, { token, now, cfg, deps }) {
     settle(sql, b.id, "declined", "guest_declined", now.toISOString());
     return { result: "declined" };
   }
-  if (tok.action === "cancel" || tok.action === "confirm_cancel") return cancelMeeting(sql, found, { now, deps });
+  // A sign-in booking (F-002) ends only through the core: the "Booked" email's link is its proof.
+  if (tok.action === "cancel" && b.proof) {
+    return cancelMeeting(sql, b.id, null, { proof: "booked_email_link", actor: null, scope: "cancel", ticket_hash: tok.hash, expires_at: tok.expires_at }, { now, deps });
+  }
+  if (tok.action === "cancel" || tok.action === "confirm_cancel") return cancelByLink(sql, found, { now, deps });
   return { error: "unknown" };
 }
 
-async function cancelMeeting(sql, { tok, booking: b }, { now, deps }) {
+// F-001's cancellation: claim cancelling and spend the link, delete the event, then cancelled; a
+// failed deletion puts the booking back to confirmed and the link works again until it expires.
+async function cancelByLink(sql, { tok, booking: b }, { now, deps }) {
   const nowIso = now.toISOString();
   if (b.status !== "confirmed") return { error: "used" };
   // ---- Claim: synchronous, no await. ----
@@ -244,11 +268,12 @@ async function cancelMeeting(sql, { tok, booking: b }, { now, deps }) {
 
 // cancel_booking. Withdrawing a hold needs no consent (nothing exists yet); cancelling a meeting
 // does, so the guest is emailed a link and only that link cancels it.
-export async function cancelByAgent(sql, { bookingId, now, deps }) {
+// F-002: a sign-in booking (proof set) gets a sign-in cancel link instead (signinCancelLink).
+export async function cancelByAgent(sql, { bookingId, now, cfg, ipKey, deps }) {
   const nowIso = now.toISOString();
   const link = await newToken();
   const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
-  if (!b) return { error: "not_found" };
+  if (!b) return withdrawRequest(sql, bookingId, now);
   // Decided on the internal state: a hold being confirmed must not be withdrawn under the confirm.
   const status = internalStatus(sql, b.id, now).status;
   if (status === "pending_confirmation") {
@@ -256,6 +281,7 @@ export async function cancelByAgent(sql, { bookingId, now, deps }) {
     return { status: "cancelled" };
   }
   if (status !== "confirmed" || b.start_utc <= nowIso) return { error: "not_cancellable", status: callerStatus(status) };
+  if (b.proof) return signinCancelLink(sql, b, link, { now, cfg, ipKey, deps });
   const requested = { status: "confirmed", cancellation: "requested" };
   // One outstanding request at a time, so a booking ID can't be used to flood the guest's inbox.
   const outstanding = sql.exec(
@@ -396,6 +422,10 @@ async function settleConfirmed(sql, b, { now, cfg, deps, meetLink }) {
 export async function recoverConfirm(sql, b, { now, cfg, deps }) {
   const existing = await deps.getEvent(b.id);
   if (existing) return settleConfirmed(sql, b, { now, cfg, deps, meetLink: existing.meetLink ?? null });
+  // F-002: a sign-in booking (proof set) settles as its live path does, rather than being retried
+  // forever: a meeting whose start has passed with no event, or an insert Google refuses, ends
+  // declined (unavailable). F-001's email bookings keep their rules.
+  if (b.proof && b.start_utc <= now.toISOString()) return declineUnavailable(sql, b.id, now.toISOString());
   // Nothing was made, and time has passed: check the slot again, as a live confirm does.
   const { busy } = await slotFreeBusy(b, cfg, deps);
   if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
@@ -410,7 +440,13 @@ export async function recoverConfirm(sql, b, { now, cfg, deps }) {
     // no meeting, no "Booked" email, and get_booking_status shows declined.
     return declineConfirm(sql, b.id, check.reason, now.toISOString());
   }
-  const event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
+  let event;
+  try {
+    event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail)); // 409 = made meanwhile
+  } catch (e) {
+    if (b.proof && e?.status >= 400 && e.status < 500) return declineUnavailable(sql, b.id, now.toISOString());
+    throw e;
+  }
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
 }
 
@@ -419,7 +455,8 @@ export async function recoverConfirm(sql, b, { now, cfg, deps }) {
 // The in-between states are the store's own: callers see the state they know.
 export function getStatus(sql, bookingId, now) {
   const view = internalStatus(sql, bookingId, now);
-  return view && { ...view, status: callerStatus(view.status) };
+  if (view) return { ...view, status: callerStatus(view.status) };
+  return requestStatus(sql, bookingId, now);
 }
 
 // confirming is still a hold to the guest until it settles; cancelling is still a meeting.
@@ -452,7 +489,16 @@ export function prune(sql, now) {
   sql.exec("DELETE FROM tokens WHERE booking_id IN (SELECT id FROM bookings WHERE delete_after <= ?)", nowIso);
   sql.exec("DELETE FROM bookings WHERE delete_after <= ?", nowIso);
   sql.exec("DELETE FROM quota WHERE day < ?", new Date(now.getTime() - 2 * DAY).toISOString().slice(0, 10));
+  // F-002: sign-in transactions past their 10 minutes; booking requests 30 days after they were
+  // used, withdrawn or declined, or after an unused one expired (a used request's booking carries
+  // on under the retention above); identities once their delete_after has passed.
+  const cutoff = new Date(now.getTime() - REQUEST_RETENTION_DAYS * DAY).toISOString();
+  sql.exec("DELETE FROM signin_tx WHERE expires_at <= ?", nowIso);
+  sql.exec("DELETE FROM booking_requests WHERE (state = 'open' AND expires_at <= ?) OR (state != 'open' AND settled_at <= ?)", cutoff, cutoff);
+  sql.exec("DELETE FROM identities WHERE delete_after <= ?", nowIso);
 }
+// As the privacy notice says (and as retentionDays is for bookings).
+const REQUEST_RETENTION_DAYS = 30;
 
 // When the alarm should next run (ms): the earliest hold expiry, or the next UTC midnight for the
 // daily prune, whichever is sooner. An overdue hold means now.
@@ -461,4 +507,337 @@ export function nextAlarmAt(sql, now) {
   const next = sql.exec("SELECT min(hold_expires) AS t FROM bookings WHERE status = 'pending_confirmation'").one().t;
   if (!next) return midnight;
   return Math.max(now.getTime(), Math.min(Date.parse(next), midnight));
+}
+
+// ---------------------------------------------------------------------------------------------
+// F-002: booking requests. A request reserves nothing and sends nothing: it records which slot a
+// person may book by signing in on its link (the ticket) before it expires. The slot is claimed
+// only at sign-in, by confirmRequest, under the same race rule as F-001's confirm.
+// ---------------------------------------------------------------------------------------------
+
+// Request counters (D7), taken when a request is stored and never refunded. Global first, as F-001
+// checks a closed day first; a refusal writes nothing.
+export function reserveRequestQuota(sql, { day, ipKey, caps }) {
+  if (quotaCount(sql, day, "request_global", "") >= caps.requestsPerDay) return { ok: false, which: "global" };
+  if (quotaCount(sql, day, "request_ip", ipKey) >= caps.requestsPerIpPerDay) return { ok: false, which: "ip" };
+  quotaAdd(sql, day, "request_global", "");
+  quotaAdd(sql, day, "request_ip", ipKey);
+  return { ok: true };
+}
+
+// The cheap checks, against what the store already knows (no free/busy), so a start that is
+// malformed, inside the notice window, past the horizon or locally taken never waits on Google.
+export function precheckRequest(sql, { cfg, now, input, deps }) {
+  const pre = deps.checkSlot({ cfg, typeId: input.type, start: input.start, now, busy: [], bookings: liveBookings(sql, now) });
+  return pre.ok ? null : slotError(pre.reason);
+}
+
+// book_meeting (MCP, WebMCP) and /book's sign-in button. `busy` is the shared free/busy cache's
+// answer (the one get_availability uses), so however many requests arrive, Google is asked at most
+// once a minute. Order, as F-001's: the slot against local bookings, live holds, the day count and
+// that cache; then the counters; then the row. So a refused request takes no allowance.
+export async function createRequest(sql, { cfg, now, input, ipKey, busy, deps }) {
+  const ticket = await newToken();
+  const nowIso = now.toISOString();
+  // ---- Synchronous from here to the insert. No await. ----
+  const check = deps.checkSlot({ cfg, typeId: input.type, start: input.start, now, busy, bookings: liveBookings(sql, now) });
+  if (!check.ok) return slotError(check.reason);
+  const quota = reserveRequestQuota(sql, { day: deps.day(nowIso), ipKey, caps: cfg.caps });
+  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
+  const type = cfg.meetingTypes.find((t) => t.id === input.type);
+  const id = newId();
+  const expires = plus(nowIso, cfg.requestMinutes * MINUTE);
+  sql.exec(
+    `INSERT INTO booking_requests (id, ticket_hash, type, start_utc, end_utc, note, source, ip_key, created_at, expires_at, state)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
+    id, ticket.hash, input.type, input.start, plus(input.start, type.minutes * MINUTE), input.note ?? null, input.source, ipKey, nowIso, expires,
+  );
+  // ---- End of the write. ----
+  return { booking_id: id, status: "pending_confirmation", confirm_url: deps.confirmUrl(ticket.token), link_expires: expires };
+}
+
+const getRequest = (sql, id) => (typeof id === "string" && sql.exec("SELECT * FROM booking_requests WHERE id = ?", id).toArray()[0]) || null;
+// An open request past its link's expiry reads as expired; expiry isn't stored, it's the clock.
+const requestState = (r, now) => (r.state === "open" && r.expires_at <= now.toISOString() ? "expired" : r.state);
+
+function settleRequestRow(sql, id, state, reason, nowIso) {
+  sql.exec("UPDATE booking_requests SET state = ?, reason = ?, settled_at = ? WHERE id = ? AND state = 'open'", state, reason, nowIso, id);
+}
+
+// The first time the site finds an open request's slot no longer free (another booking or live
+// F-001 hold overlaps it, `busy` shows it busy, or the day is full), the request is settled
+// declined for good, so the link, the status and the guide agree and the old link can't book later.
+// Notice isn't re-applied (D3). Synchronous; returns the request's state afterwards (null if none).
+export function settleRequest(sql, id, { cfg, now, busy, deps }) {
+  const r = getRequest(sql, id);
+  if (!r) return null;
+  const state = requestState(r, now);
+  if (state !== "open") return state;
+  const check = deps.checkSlot({ cfg, typeId: r.type, start: r.start_utc, now, busy, bookings: liveBookings(sql, now), ignoreNotice: true });
+  if (check.ok || !TAKEN.has(check.reason)) return "open";
+  settleRequestRow(sql, id, "declined", check.reason === "day_full" ? "day_full" : "slot_taken", now.toISOString());
+  return "declined";
+}
+
+// A request's public status (Status for callers). A used request has its booking row, which
+// getStatus reads first.
+const REQUEST_STATUS = {
+  open: ["pending_confirmation", null], expired: ["expired", "request_expired"], cancelled: ["cancelled", "agent_withdrew"],
+};
+function requestStatus(sql, id, now) {
+  const r = getRequest(sql, id);
+  if (!r || r.state === "used") return null;
+  const state = now ? requestState(r, now) : r.state;
+  const [status, reason] = state === "declined" ? ["declined", r.reason] : REQUEST_STATUS[state];
+  return { status, status_reason: reason, start: r.start_utc, end: r.end_utc, type: r.type };
+}
+
+// cancel_booking on an ID that isn't a booking: an open request is withdrawn at once (its link
+// stops working); any other request isn't cancellable.
+function withdrawRequest(sql, id, now) {
+  const view = requestStatus(sql, id, now);
+  if (!view) return { error: "not_found" };
+  if (view.status !== "pending_confirmation") return { error: "not_cancellable", status: view.status };
+  settleRequestRow(sql, id, "cancelled", null, now.toISOString());
+  return { status: "cancelled" };
+}
+
+// ---------------------------------------------------------------------------------------------
+// F-002: the booking core (D6). confirmRequest is the only way a booking request becomes a
+// meeting, and cancelMeeting the only way a sign-in booking ends. `person` is the guest
+// ({provider, subject, email, display_name}; the name is asserted, not verified); `grant` is the
+// authority to act ({proof, actor, scope, ticket_hash, expires_at}). Each proof's only job is to
+// produce those two. The grant is checked once, in the claim; after that the booking carries its
+// own authority, so the alarm's recovery finishes it with no grant and takes no cap again.
+// ---------------------------------------------------------------------------------------------
+
+// Which proofs may do what. Later proofs (P2, P4) add their checks here.
+const PROOFS = { book: ["signin:google"], cancel: ["signin:google", "booked_email_link"] };
+const grantAllows = (grant, scope, ticketHash, now) => grant?.scope === scope && PROOFS[scope].includes(grant.proof)
+  && grant.ticket_hash === ticketHash && typeof grant.expires_at === "string" && grant.expires_at > now.toISOString();
+
+// The person's row, keyed on (provider, subject); email and name follow their latest sign-in. Kept
+// until 30 days after the later of their last sign-in and the end of their last meeting.
+function upsertIdentity(sql, person, nowIso, deleteAfter) {
+  return sql.exec(
+    `INSERT INTO identities (id, provider, subject, email, display_name, created_at, delete_after) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (provider, subject) DO UPDATE SET email = excluded.email, display_name = excluded.display_name, delete_after = max(delete_after, excluded.delete_after)
+     RETURNING id`,
+    newId(), person.provider, person.subject, person.email, person.display_name, nowIso, deleteAfter,
+  ).one().id;
+}
+
+// The person caps (D7): confirmations a UTC day (counted at the claim, never refunded), and
+// meetings still to come, counted from current bookings so they free up when one ends or is
+// cancelled. Returns which is reached, or null.
+function personCap(sql, identityId, { day, now, caps }) {
+  if (quotaCount(sql, day, "person_day", identityId) >= caps.confirmationsPerPersonPerDay) return "daily";
+  const upcoming = sql.exec(
+    "SELECT count(*) AS c FROM bookings WHERE identity_id = ? AND status IN ('confirming', 'confirmed', 'cancelling') AND end_utc > ?",
+    identityId, now.toISOString(),
+  ).one().c;
+  return upcoming >= caps.upcomingPerPerson ? "upcoming" : null;
+}
+
+export async function confirmRequest(sql, requestId, person, grant, { cfg, now, deps }) {
+  const nowIso = now.toISOString();
+  // F-001's email key, from the verified address: computed before the claim (it awaits).
+  const emailKey = await deps.emailKey(person.email);
+
+  // ---- Claim: synchronous from here to the inserts. No await. ----
+  const r = getRequest(sql, requestId);
+  if (!r) return { error: "unknown" };
+  if (!grantAllows(grant, "book", r.ticket_hash, now)) return { error: "forbidden" };
+  const state = requestState(r, now);
+  // A start already passed is refused too: config forbids it, this is the backstop.
+  if (state === "expired" || r.start_utc <= nowIso) return { error: "expired" };
+  if (state !== "open") return { error: "used" };
+  const retention = cfg.retentionDays * DAY;
+  const identityId = upsertIdentity(sql, person, nowIso, plus(nowIso, retention));
+  // Caps reached: nothing is booked and the request stays open (another account may use it).
+  const cap = personCap(sql, identityId, { day: deps.day(nowIso), now, caps: cfg.caps });
+  if (cap) return { error: "person_cap", which: cap };
+  // Notice isn't re-applied (D3): it was checked when the request was made.
+  const claim = deps.checkSlot({ cfg, typeId: r.type, start: r.start_utc, now, busy: [], bookings: liveBookings(sql, now), ignoreNotice: true });
+  if (!claim.ok) {
+    const why = claim.reason === "day_full" ? "day_full" : "slot_taken";
+    settleRequestRow(sql, r.id, "declined", why, nowIso);
+    return { result: "declined", reason: why };
+  }
+  quotaAdd(sql, deps.day(nowIso), "person_day", identityId);
+  // Everything the alarm's recovery needs, in case this instance is evicted from here on.
+  sql.exec(
+    `INSERT INTO bookings (id, type, start_utc, end_utc, status, source, guest_name, guest_email, ip_key, email_key, note, created_at, delete_after, identity_id, proof, actor)
+     VALUES (?, ?, ?, ?, 'confirming', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    r.id, r.type, r.start_utc, r.end_utc, r.source, person.display_name, person.email, r.ip_key, emailKey, r.note, nowIso,
+    plus(r.end_utc, retention), identityId, grant.proof, grant.actor ?? null,
+  );
+  sql.exec("UPDATE identities SET delete_after = max(delete_after, ?) WHERE id = ?", plus(r.end_utc, retention), identityId);
+  settleRequestRow(sql, r.id, "used", null, nowIso);
+  // ---- End of claim. ----
+
+  return finishSigninConfirm(sql, sql.exec("SELECT * FROM bookings WHERE id = ?", r.id).one(), { now, cfg, deps });
+}
+
+// A sign-in booking that Google can't make ends declined (unavailable), freeing its slot and the
+// person's upcoming place. Only while it is still confirming.
+function declineUnavailable(sql, id, nowIso) {
+  if (sql.exec("SELECT status FROM bookings WHERE id = ?", id).one().status !== "confirming") return outcome(sql, id);
+  settle(sql, id, "declined", "unavailable", nowIso);
+  return { result: "declined", reason: "unavailable" };
+}
+
+// After the claim: nothing is rolled back or refunded. Recovery either completes the booking or
+// settles it declined, so an unclear answer from Google leaves it confirming for the alarm.
+async function finishSigninConfirm(sql, b, { now, cfg, deps }) {
+  const nowIso = now.toISOString();
+  let busy;
+  try {
+    ({ busy } = await slotFreeBusy(b, cfg, deps));
+  } catch {
+    logFailure("google_freebusy");
+    return { result: "confirming" };
+  }
+  if (sql.exec("SELECT status FROM bookings WHERE id = ?", b.id).one().status !== "confirming") return outcome(sql, b.id);
+  const check = deps.checkSlot({ ...confirmSlot(b, cfg, now), busy, bookings: meetings(sql) });
+  if (!check.ok) return declineConfirm(sql, b.id, check.reason, nowIso);
+  let event;
+  try {
+    event = await deps.insertEvent(buildEvent(b, cfg, deps.ownerEmail));
+  } catch (e) {
+    if (e?.status >= 400 && e.status < 500) { logFailure("google_insert"); return declineUnavailable(sql, b.id, nowIso); }
+    logFailure("google_insert_unknown");
+    return { result: "confirming" };
+  }
+  return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
+}
+
+// cancel_booking on a confirmed sign-in booking, before its start: a single-use sign-in link
+// lasting requestMinutes or until the start, whichever is sooner. It takes the request counters
+// (D7) and revokes the booking's previous sign-in cancel link (not the "Booked" email's link), so
+// a booking has at most one live sign-in cancel link. Synchronous after the token is made.
+function signinCancelLink(sql, b, link, { now, cfg, ipKey, deps }) {
+  const nowIso = now.toISOString();
+  const quota = reserveRequestQuota(sql, { day: deps.day(nowIso), ipKey, caps: cfg.caps });
+  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
+  const lapse = plus(nowIso, cfg.requestMinutes * MINUTE);
+  const expires = lapse < b.start_utc ? lapse : b.start_utc;
+  sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND action = 'cancel_signin' AND used_at IS NULL", nowIso, b.id);
+  sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel_signin', ?)", link.hash, b.id, expires);
+  return { status: "confirmed", confirm_url: deps.confirmUrl(link.token), link_expires: expires };
+}
+
+// The only way a sign-in booking is cancelled, on either proof: a sign-in by the guest
+// (signin:google, on a cancel_signin ticket) or the "Booked" email's cancel link
+// (booked_email_link, on that F-001 token: holding it proves the verified mailbox). Caps and
+// availability never stop a cancellation. Once authorised it runs F-001's cancellation unchanged.
+const CANCEL_TICKET = { "signin:google": "cancel_signin", booked_email_link: "cancel" };
+export async function cancelMeeting(sql, bookingId, person, grant, { now, deps }) {
+  const nowIso = now.toISOString();
+  // ---- Synchronous from here to cancelByLink's claim. No await. ----
+  const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
+  if (!b?.proof) return { error: "unknown" };
+  const tok = typeof grant?.ticket_hash === "string" && sql.exec("SELECT * FROM tokens WHERE hash = ? AND booking_id = ?", grant.ticket_hash, b.id).toArray()[0];
+  if (!tok || tok.action !== CANCEL_TICKET[grant.proof] || !grantAllows(grant, "cancel", tok.hash, now)) return { error: "forbidden" };
+  if (tok.used_at || b.status !== "confirmed") return { error: "used" };
+  if (tok.expires_at <= nowIso || b.start_utc <= nowIso) return { error: "expired" };
+  if (grant.proof === "signin:google") {
+    const guest = sql.exec("SELECT provider, subject FROM identities WHERE id = ?", b.identity_id).toArray()[0];
+    if (!guest || guest.provider !== person?.provider || guest.subject !== person?.subject) return { error: "not_guest" };
+  }
+  return cancelByLink(sql, { tok, booking: b }, { now, deps });
+}
+
+// ---------------------------------------------------------------------------------------------
+// F-002: sign-in transactions. A ticket (a request's, or a sign-in cancel link's) starts a Google
+// sign-in; the transaction binds it to the browser's cookie, the OIDC nonce and the PKCE verifier,
+// and is consumed by the callback before any outside call.
+// ---------------------------------------------------------------------------------------------
+const SIGNIN_TX_MS = 10 * MINUTE;
+
+// What a ticket's hash refers to: a booking request (purpose book) or a sign-in cancel link
+// (purpose cancel). Synchronous.
+export function findTicket(sql, hash) {
+  const request = sql.exec("SELECT * FROM booking_requests WHERE ticket_hash = ?", hash).toArray()[0];
+  if (request) return { purpose: "book", request };
+  const tok = sql.exec("SELECT * FROM tokens WHERE hash = ? AND action = 'cancel_signin'", hash).toArray()[0];
+  const booking = tok && sql.exec("SELECT * FROM bookings WHERE id = ?", tok.booking_id).toArray()[0];
+  return booking ? { purpose: "cancel", tok, booking } : null;
+}
+// Sign-ins a ticket has started, counted under its expiry day so the count outlives the ticket.
+const attemptsKey = (hash, expiresAt) => [expiresAt.slice(0, 10), "signin", hash];
+const attempts = (sql, hash, expiresAt) => quotaCount(sql, ...attemptsKey(hash, expiresAt));
+
+// POST /book/confirm/google. A request ticket is first checked against the slot (settling it
+// declined if it's gone, as the confirm page does); `busy` is the shared cache's answer, or [] if
+// that can't be refreshed. Each ticket starts at most signinAttemptsPerTicket sign-ins, counted
+// here and never refunded. `tx` holds the hashed state and cookie, the nonce and the verifier.
+export async function startSignin(sql, { token, now, cfg, busy, tx, deps }) {
+  if (typeof token !== "string" || token === "") return { error: "unknown" };
+  const hash = await hashToken(token);
+  const nowIso = now.toISOString();
+  // ---- Synchronous from here to the insert. No await. ----
+  const found = findTicket(sql, hash);
+  if (!found) return { error: "unknown" };
+  let expiresAt;
+  if (found.purpose === "book") {
+    const state = settleRequest(sql, found.request.id, { cfg, now, busy, deps });
+    if (state !== "open") return { error: state };
+    expiresAt = found.request.expires_at;
+  } else {
+    const { tok, booking: b } = found;
+    if (tok.used_at || b.status !== "confirmed") return { error: "used" };
+    if (tok.expires_at <= nowIso || b.start_utc <= nowIso) return { error: "expired" };
+    expiresAt = tok.expires_at;
+  }
+  if (attempts(sql, hash, expiresAt) >= cfg.caps.signinAttemptsPerTicket) return { error: "too_many" };
+  quotaAdd(sql, ...attemptsKey(hash, expiresAt));
+  sql.exec(
+    "INSERT INTO signin_tx (state_hash, ticket_hash, cookie_hash, nonce, code_verifier, purpose, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    tx.stateHash, hash, tx.cookieHash, tx.nonce, tx.codeVerifier, found.purpose, plus(nowIso, SIGNIN_TX_MS),
+  );
+  return { purpose: found.purpose };
+}
+
+// GET /book/callback/google, before any outside call: the transaction is deleted whatever happens
+// next, so `state` is single-use even if the code exchange fails. It must come with this
+// transaction's cookie and within its 10 minutes (whether or not the alarm has pruned it yet).
+export function consumeSignin(sql, { stateHash, cookieHash, now }) {
+  const tx = typeof stateHash === "string" && sql.exec("DELETE FROM signin_tx WHERE state_hash = ? RETURNING *", stateHash).toArray()[0];
+  if (!tx) return { error: "state" };
+  if (typeof cookieHash !== "string" || tx.cookie_hash !== cookieHash) return { error: "cookie" };
+  if (tx.expires_at <= now.toISOString()) return { error: "expired" };
+  return { tx };
+}
+
+// What the confirm page shows for a ticket (GET: changes nothing; the caller settles a request
+// whose slot has gone first). No guest details.
+const BOOKING_PAGE_STATE = { confirming: "confirming", confirmed: "confirmed", cancelling: "confirmed", declined: "declined", cancelled: "cancelled" };
+// `hash` instead of a token: the callback knows only its transaction's ticket hash.
+export async function peekTicket(sql, token, { now, cfg, hash: known }) {
+  if (!known && (typeof token !== "string" || token === "")) return { state: "unknown" };
+  const hash = known ?? (await hashToken(token));
+  const nowIso = now.toISOString();
+  const found = findTicket(sql, hash);
+  if (!found) return { state: "unknown" };
+  const view = (state, row, expiresAt, extra = {}) => ({ purpose: found.purpose, state, type: row.type, start: row.start_utc, end: row.end_utc, expires_at: expiresAt, ...extra });
+  if (found.purpose === "book") {
+    const r = found.request;
+    const state = requestState(r, now);
+    if (state === "declined") return view("declined", r, r.expires_at, { reason: r.reason });
+    if (state === "used") {
+      const b = sql.exec("SELECT status, status_reason FROM bookings WHERE id = ?", r.id).toArray()[0];
+      const shown = BOOKING_PAGE_STATE[b?.status] ?? "unknown";
+      return view(shown, r, r.expires_at, shown === "declined" ? { reason: b.status_reason } : {});
+    }
+    if (state === "open" && attempts(sql, hash, r.expires_at) >= cfg.caps.signinAttemptsPerTicket) return view("too_many", r, r.expires_at);
+    return view(state, r, r.expires_at, state === "cancelled" ? { reason: "agent_withdrew" } : {});
+  }
+  const { tok, booking: b } = found;
+  if (b.status === "cancelled" || b.status === "cancelling") return view(b.status, b, tok.expires_at);
+  if (b.status !== "confirmed") return view("unknown", b, tok.expires_at);
+  if (b.start_utc <= nowIso) return view("started", b, tok.expires_at);
+  if (tok.used_at || tok.expires_at <= nowIso) return view("still_booked", b, tok.expires_at);
+  if (attempts(sql, hash, tok.expires_at) >= cfg.caps.signinAttemptsPerTicket) return view("too_many", b, tok.expires_at);
+  return view("open", b, tok.expires_at);
 }

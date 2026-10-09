@@ -24,10 +24,15 @@ export function validateConfig(cfg) {
   if (!HHMM.test(h.end)) fail("hours.end", "must be HH:MM (24-hour)");
   if (h.end <= h.start) fail("hours.end", "must be after hours.start");
 
-  for (const k of ["slotStepMinutes", "minNoticeHours", "horizonDays", "bufferMinutes", "maxPerDay", "holdHours", "retentionDays"])
+  for (const k of ["slotStepMinutes", "minNoticeHours", "horizonDays", "bufferMinutes", "maxPerDay", "holdHours", "retentionDays", "requestMinutes"])
     if (!posInt(cfg[k])) fail(k, "must be a positive integer");
+  // F-002 (D3): a sign-in request's link must lapse before its slot can start, so the notice rule
+  // (checked only when the request is made) still holds at sign-in.
+  if (cfg.requestMinutes >= cfg.minNoticeHours * 60) fail("requestMinutes", `must be less than minNoticeHours × 60 (${cfg.minNoticeHours * 60})`);
   if (!isObject(cfg.caps)) fail("caps", "must be an object");
-  for (const k of ["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerEmail"])
+  // The first four are F-001's email-path caps; the rest are F-002's sign-in path (D7).
+  for (const k of ["perIpPerDay", "perEmailPerDay", "globalPerDay", "liveHoldsPerEmail",
+    "requestsPerIpPerDay", "requestsPerDay", "signinAttemptsPerTicket", "confirmationsPerPersonPerDay", "upcomingPerPerson"])
     if (!posInt(cfg.caps[k])) fail(`caps.${k}`, "must be a positive integer");
 
   if (!Array.isArray(cfg.meetingTypes) || !cfg.meetingTypes.length) fail("meetingTypes", "must be a non-empty array");

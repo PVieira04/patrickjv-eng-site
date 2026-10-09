@@ -4,15 +4,33 @@ export const ENV = {
   GOOGLE_CLIENT_ID: "client-id", GOOGLE_CLIENT_SECRET: "client-secret", GOOGLE_REFRESH_TOKEN: "refresh-token",
   RESEND_API_KEY: "re_key", BOOKING_OWNER_EMAIL: "owner@example.net", BOOKING_FROM: "Patrick Vieira <hello@patrickjv.com>",
   CAL_PERSONAL_MAIN: "main@example.net",
+  SIGNIN_GOOGLE_CLIENT_ID: "signin-client.apps.googleusercontent.com", SIGNIN_GOOGLE_CLIENT_SECRET: "signin-secret",
 };
 
 // opts: busy [{start,end}] reported for every calendar; fail: {token, freebusy, insert, delete, mail,
-// afterCreate} (true → that call fails; afterCreate makes the event, then answers 503); insertStatus
-// (e.g. 409); gate: a promise every Google call awaits first; afterInsert: awaited once an insert
-// has made the event, before it answers.
+// afterCreate, exchange, discovery} (true → that call fails; afterCreate makes the event, then
+// answers 503); insertStatus (e.g. 409); gate: a promise every Google call awaits first;
+// afterInsert: awaited once an insert has made the event, before it answers.
+//
+// F-002's fake Google sign-in: authorize(authUrl, claims, now) plays the person signing in on
+// Google's page and returns the code and state Google would send back to the callback. The code
+// is single-use and bound to the PKCE challenge; the ID token carries the auth URL's nonce and
+// client ID unless `claims` overrides them.
 export function fakeFetch(opts = {}) {
   const calls = [];
   const events = new Map();
+  const codes = new Map();
+  const b64url = (buf) => Buffer.from(buf).toString("base64url");
+  const authorize = (authUrl, claims = {}, now = new Date()) => {
+    const p = new URL(authUrl).searchParams;
+    const code = `code-${codes.size + 1}-${Math.random().toString(36).slice(2)}`;
+    const iat = Math.floor(now.getTime() / 1000);
+    codes.set(code, { challenge: p.get("code_challenge"), claims: {
+      iss: "https://accounts.google.com", aud: p.get("client_id"), sub: "sub-jane", email: "jane@gmail.com", email_verified: true,
+      name: "Jane Smith", nonce: p.get("nonce"), iat, exp: iat + 3600, ...claims,
+    } });
+    return { code, state: p.get("state") };
+  };
   const json = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -22,6 +40,17 @@ export function fakeFetch(opts = {}) {
     if (u.host === "api.resend.com") {
       if (opts.fail?.mail) return json(500, { name: "application_error" });
       return json(200, { id: `mail-${calls.length}` });
+    }
+    if (u.host === "accounts.google.com" && u.pathname === "/.well-known/openid-configuration") {
+      return opts.fail?.discovery ? json(503, {}) : json(200, { issuer: "https://accounts.google.com" });
+    }
+    const form = typeof body === "string" ? Object.fromEntries(new URLSearchParams(body)) : {};
+    if (u.host === "oauth2.googleapis.com" && form.grant_type === "authorization_code") {
+      const grant = codes.get(form.code);
+      codes.delete(form.code);
+      const pkce = grant && b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(form.code_verifier ?? ""))) === grant.challenge;
+      if (opts.fail?.exchange || !pkce || form.client_secret !== ENV.SIGNIN_GOOGLE_CLIENT_SECRET) return json(400, { error: "invalid_grant" });
+      return json(200, { id_token: idToken(grant.claims), access_token: "unused", expires_in: 3600 });
     }
     if (u.host === "oauth2.googleapis.com") {
       if (opts.fail?.token) return json(400, { error: "invalid_grant" });
@@ -54,8 +83,13 @@ export function fakeFetch(opts = {}) {
     }
     return json(404, {});
   };
-  return { fetch, calls, events, opts, mails: () => calls.filter((c) => c.url.startsWith("https://api.resend.com")).map((c) => c.body) };
+  return { fetch, calls, events, opts, authorize, mails: () => calls.filter((c) => c.url.startsWith("https://api.resend.com")).map((c) => c.body) };
 }
+
+// F-002: an unsigned ID token with these claims, as Google's token endpoint returns one (its
+// signature is never checked: the token comes straight from Google over TLS).
+export const idToken = (claims) => [{ alg: "RS256", kid: "fake" }, claims, "sig"]
+  .map((p) => Buffer.from(typeof p === "string" ? p : JSON.stringify(p)).toString("base64url")).join(".");
 
 // In-memory Durable Object alarm storage.
 export function alarmStorage() {

@@ -16,7 +16,8 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { marked } from "marked";
 import { agentData } from "./lib/agent-data.mjs";
-import { tools as mcpTools } from "./mcp/handler.js";
+import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
+import { bookingGuide } from "./lib/booking-guide.mjs";
 
 export const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -30,7 +31,8 @@ const TOOL_DATA = { get_profile: "profile", list_work: "work", list_skills: "ski
 // Booking tools (F-001): the page script implements each by calling the same-origin booking API.
 // Parity is checked here for every tool; the page registers the booking ones at runtime only once
 // GET /api/booking/types reports enabled (tested in test/webmcp-booking.test.mjs).
-const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
+// F-002 adds get_booking_guide, which reads the guide embedded in the page (no HTTP read endpoint).
+const BOOKING_TOOLS = ["get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 const DAY = 864e5;
 
 const sha256 = (s) => createHash("sha256").update(s).digest();
@@ -245,6 +247,7 @@ export function checkPage(html, c) {
   (function walk(o, path) {
     if (path.split(".").at(-1) === "_status") return;
     if (path === "pages") return; // copy for pages the build generates (/privacy, /book), not the hand-written page
+    if (path === "booking_guide") return; // F-002: published to llms.txt, index.md, /book.md and the agent tools, not the page
     if (typeof o === "string") { if (!used.has(path)) unchecked.push(`${path}: ${o.slice(0, 80)}`); }
     else if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) walk(v, path ? `${path}.${k}` : k);
   })(c, "");
@@ -574,6 +577,9 @@ button { margin-top: 20px; padding: 10px 18px; border: 0; border-radius: 4px; ba
 button:disabled { opacity: 0.6; cursor: progress; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
 #status { min-height: 1.65em; font-weight: 600; }
+#how .choices button { margin-top: 0; }
+#how #by-email { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); font-weight: 400; }
+.guide { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.875rem; }
 :root { --line-strong: #b9b6ab; --signal-soft: rgba(166, 75, 0, 0.08); }
 @media (prefers-color-scheme: dark) { :root { --line-strong: #3a414c; --signal-soft: rgba(255, 181, 71, 0.12); } }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
@@ -692,7 +698,7 @@ const bookScript = (copy) => `
 
   function pickDay(k) {
     picked = k; start = null;
-    show("details", false); $("times").textContent = "";
+    show("how", false); show("details", false); $("times").textContent = "";
     Object.keys(cells).forEach(function (c) { if (byDay[c]) cells[c].setAttribute("aria-pressed", c === k ? "true" : "false"); });
     moveStop(k);
     $("time-legend").textContent = t.labels.timeOn.replace("{day}", nameOf(k));
@@ -704,13 +710,34 @@ const bookScript = (copy) => `
   // The time list scrolls in a box of fixed height; its bottom edge fades while more times lie below.
   function more() { var l = $("times"); l.setAttribute("data-more", l.scrollHeight - l.scrollTop - l.clientHeight > 1 ? "true" : "false"); }
 
-  // Hand-off: the picker ends here, with \`type\` and a chosen \`start\`. Everything after (the details
-  // form, POST /api/booking and its result) is the F-001 flow and does not depend on how they were picked.
-  function slotChosen(s) { start = s; show("details", true); }
+  // Hand-off: the picker ends here, with \`type\` and a chosen \`start\`. F-002 (D8): the visitor then
+  // chooses how to book. "Sign in with Google to book" makes a booking request and starts its
+  // sign-in straight away; "Book with email instead" opens the F-001 form (POST /api/booking),
+  // unchanged. Nothing is created until one is chosen, and nothing turns one into the other.
+  function slotChosen(s) { start = s; show("details", false); show("how", true); }
+  $("by-email").addEventListener("click", function () { show("details", true); $("name").focus(); });
+  $("by-signin").addEventListener("click", function () {
+    if (!start) return;
+    $("by-signin").disabled = true;
+    say(t.messages.signingIn);
+    call("/api/booking/request", { type: type, start: start, source: "page" }).then(function (r) {
+      if (!r.ok || typeof r.data.confirm_url !== "string") {
+        $("by-signin").disabled = false;
+        if (r.status === 409) return loadSlots(t.messages.slotGone);
+        return failed(r);
+      }
+      // The confirm page's own POST, made here so there's no extra page: it sets the sign-in
+      // cookie and sends the browser on to Google.
+      var f = document.createElement("form"), i = document.createElement("input");
+      f.method = "post"; f.action = "/book/confirm/google";
+      i.type = "hidden"; i.name = "t"; i.value = new URL(r.data.confirm_url).searchParams.get("t");
+      f.appendChild(i); document.body.appendChild(f); f.submit();
+    }, function () { $("by-signin").disabled = false; broken(); });
+  });
 
   function loadSlots(done) {
     start = null; byDay = {}; picked = null; months = [];
-    show("day-set", false); show("time-set", false); show("details", false);
+    show("day-set", false); show("time-set", false); show("how", false); show("details", false);
     $("cal-body").textContent = ""; $("times").textContent = "";
     say(t.messages.loadingSlots);
     var want = type;
@@ -801,7 +828,8 @@ const bookScript = (copy) => `
 })();
 `;
 
-export function renderBook(c) {
+// \`guide\`: the booking guide (F-002, US-7), shown verbatim in a "For AI agents" note.
+export function renderBook(c, guide) {
   const b = c.pages.book, l = b.labels, email = c.person.links.email;
   const field = (id, label, control) => `<label class="field" for="${id}">${attr(label)}</label>\n${control}`;
   return sitePage({
@@ -817,6 +845,8 @@ export function renderBook(c) {
 <table id="days" class="cal" role="grid" aria-labelledby="cal-month"><thead id="cal-cols"></thead><tbody id="cal-body"></tbody></table>
 </fieldset>
 <fieldset id="time-set" hidden><legend id="time-legend">${attr(l.time)}</legend><div id="times" class="slots"></div></fieldset>
+<fieldset id="how" hidden><legend>${attr(l.how)}</legend><p class="meta">${attr(l.howHint)}</p>
+<div class="choices"><button id="by-signin" type="button">${attr(l.signin)}</button><button id="by-email" type="button">${attr(l.byEmail)}</button></div></fieldset>
 <div id="details" hidden>
 ${field("name", l.name, '<input id="name" name="name" type="text" autocomplete="name" required maxlength="100">')}
 ${field("email", l.email, '<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">')}
@@ -826,22 +856,27 @@ ${field("note", l.note, '<textarea id="note" name="note" rows="4" maxlength="500
 </div>
 </form>
 <p id="status" role="status" aria-live="polite"></p>
-<p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>`,
+<p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>
+<section id="for-agents" aria-labelledby="for-agents-h"><h2 id="for-agents-h">${attr(b.agents.heading)}</h2>
+<p class="meta">${attr(b.agents.intro.replace("/book.md", ""))}<a href="/book.md">/book.md</a></p>
+<pre class="guide">${attr(guide)}</pre></section>`,
     script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, labels: { minutes: l.minutes, noteCount: l.noteCount, freeOne: l.freeOne, freeMany: l.freeMany, freeNone: l.freeNone, timeOn: l.timeOn }, messages: b.messages }),
   });
 }
 
 // The CSP for a generated page: its inline <style> (and <script>, which may fetch same-origin) by hash.
-const pageCsp = (ic) => [
+const pageCsp = (ic, formAction = "'none'") => [
   "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${ic.styles.map(cspHash).join(" ")}`,
   ...(ic.scripts.length ? [`script-src ${ic.scripts.map(cspHash).join(" ")}`, "connect-src 'self'"] : []),
-  "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
+  "base-uri 'none'", `form-action ${formAction}`, "frame-ancestors 'none'", "upgrade-insecure-requests",
 ].join("; ");
 
 // ---------------------------------------------------------------------------------------------
 // Rendering: every generated file, as a function of the content and the dateModified value.
 // ---------------------------------------------------------------------------------------------
-function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
+function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, bookingCfg) {
+  // F-002 (US-7): the one booking guide, with booking.json's timings and meeting types filled in.
+  const guide = bookingGuide(c, bookingCfg);
   const writing = renderWriting(posts);
   const city = c.person.location.split(",")[0].trim();
   const title = `${c.person.name} — ${c.person.headline}, ${city}`;
@@ -895,7 +930,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
     if (out.data && !out.annotations.readOnlyHint) throw new Error(`MCP tool ${t.name} serves page data but is not readOnlyHint`);
     return out;
   });
-  const webmcp = { ...data, tools: webTools };
+  const webmcp = { ...data, booking_guide: guide, tools: webTools };
 
   // ---- index.html: head metadata, JSON-LD and WebMCP data spliced into the hand-written page ----
   let html = html0;
@@ -915,7 +950,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
   html = splice(html, /var d = \{.*\};/, () => `var d = ${safeJson(webmcp)};`, "WebMCP data");
 
   // ---- index.md ----
-  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Book a call](${SITE}book): pick a free time; nothing is booked until you confirm from your inbox`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
+  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Book a call](${SITE}book): pick a free time and sign in with Google to book it (or confirm by email)`, `- [How to book a call](${SITE}book.md): the booking steps for AI agents, as Markdown`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
   const md = [
     `# ${c.person.name}`, "",
     `Platform engineer in London (not the footballer of the same name). Canonical page: ${SITE}`, "",
@@ -929,6 +964,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
     "## Skills", "", ...c.skills.map((s) => `- ${s}`), "",
     "## Quick answers", "", ...c.faq.flatMap((f) => [`### ${f.q}`, "", f.a, ""]),
     "## Writing", "", ...writing.sorted.map((p) => `- [${p.title}](${SITE}writing/${p.slug}.md) (${p.date}): ${p.description}`), "",
+    "## How to book a call", "", `The same guide is at [${SITE}book.md](${SITE}book.md).`, "", guide,
     "## Links", "", ...links,
   ].join("\n");
 
@@ -943,11 +979,12 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date) {
     "## Background", "", ...c.background.flatMap((p) => [p, ""]),
     "## Quick answers", "", ...c.faq.map((f) => `- **${f.q}**: ${f.a}`), "",
     "## Writing", "", ...writing.sorted.map((p) => `- [${p.title}](${SITE}writing/${p.slug}.md): ${p.description}`), "",
+    "## How to book a call", "", `The same guide is at [${SITE}book.md](${SITE}book.md).`, "", guide,
     "## Links", "", ...links,
     "## Machine-readable", "",
     `- [Markdown version of this page](${SITE}index.md): the full profile as clean Markdown`,
     `- [Sitemap](${SITE}sitemap.xml)`,
-    `- [MCP server](${SITE}mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day); list_meeting_types, get_availability, book_meeting, get_booking_status and cancel_booking book a call, confirmed by the person from their own inbox`, "",
+    `- [MCP server](${SITE}mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day); get_booking_guide, list_meeting_types, get_availability, book_meeting, get_booking_status and cancel_booking book a call, confirmed by the person signing in with Google (see How to book a call above)`, "",
   ].join("\n");
 
   // ---- sitemap.xml ----
@@ -995,13 +1032,15 @@ Sitemap: ${SITE}sitemap.xml
   const privacyHtml = renderPrivacy(c);
   const privacyPage = inlineCode(privacyHtml, { styles: 1, scripts: 0 });
   const privacyCsp = pageCsp(privacyPage);
-  const bookHtml = renderBook(c);
+  const bookHtml = renderBook(c, guide);
   const bookPage = inlineCode(bookHtml, { styles: 1, scripts: 1 });
-  const bookCsp = pageCsp(bookPage);
+  const bookCsp = pageCsp(bookPage, "'self' https://accounts.google.com"); // F-002: the sign-in POST goes on to Google
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${page.styles.map(cspHash).join(" ")}`,
-    `script-src ${page.scripts.map(cspHash).join(" ")}`, "connect-src 'self'", "base-uri 'none'", "form-action 'none'",
+    `script-src ${page.scripts.map(cspHash).join(" ")}`, "connect-src 'self'", "base-uri 'none'",
+    // F-002: WebMCP's "Sign in to book" prompt posts to /book/confirm/google, which redirects to Google.
+    "form-action 'self' https://accounts.google.com",
     "frame-ancestors 'none'", "upgrade-insecure-requests",
   ].join("; ");
   // Production lesson (6 Oct 2026): Workers static-asset _headers does NOT honour "! Header"
@@ -1015,7 +1054,7 @@ Sitemap: ${SITE}sitemap.xml
     "base-uri 'none'", "form-action 'none'",
   ].join("; ");
   const types = [
-    ["/index.md", "text/markdown; charset=utf-8"], ["/llms.txt", "text/plain; charset=utf-8"], ["/robots.txt", "text/plain; charset=utf-8"],
+    ["/index.md", "text/markdown; charset=utf-8"], ["/book.md", "text/markdown; charset=utf-8"], ["/llms.txt", "text/plain; charset=utf-8"], ["/robots.txt", "text/plain; charset=utf-8"],
     ["/sitemap.xml", "application/xml; charset=utf-8"], ["/.well-known/security.txt", "text/plain; charset=utf-8"],
     ["/.well-known/mcp-registry-auth", "text/plain; charset=utf-8"],
   ];
@@ -1091,7 +1130,7 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
     : html404.replace(/<meta charset="utf-8">/, `<meta charset="utf-8">\n${cspMeta}`);
 
   return {
-    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, "public/book.html": bookHtml, ...writing.files },
+    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/book.md": guide, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, "public/book.html": bookHtml, ...writing.files },
     inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...privacyPage.errors.map((e) => "privacy.html: " + e), ...bookPage.errors.map((e) => "book.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
     md, llms,
   };
@@ -1105,7 +1144,7 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
+const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/book.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
 // Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
 // over the original. This is NOT transactional: a failure part-way through the renames leaves some
@@ -1141,7 +1180,9 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const html404 = read("public/404.html");
   const imageFiles = readdirSync(p("public")).filter((f) => /\.(webp|jpe?g|png|ico|svg|avif|gif)$/i.test(f)).sort();
   const fontFiles = readdirSync(p("public/fonts")).filter((f) => !f.startsWith(".")).sort();
-  const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00").files;
+  // booking.json at the root (the build checks the guide against it), or the Worker's own copy.
+  const bookingCfg = readOr("booking.json") ? JSON.parse(read("booking.json")) : BOOKING_CONFIG;
+  const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00", bookingCfg).files;
   // Images the page references by path (src, srcset, icons, og:image / twitter:image).
   const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
   const assetDigests = referenced.map((f) => [f, sha256(readFileSync(p(`public/${f}`))).toString("hex")]);
@@ -1154,14 +1195,14 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   else if (check) { errors.push("build-state.json does not match the generated output (run npm run build)"); date = state?.date ?? today; }
   else date = today;
 
-  const { files, inlineErrors, md, llms } = render(c, cv, posts, html0, html404, imageFiles, fontFiles, date);
+  const { files, inlineErrors, md, llms } = render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, bookingCfg);
   files["build-state.json"] = JSON.stringify({ hash, date }, null, 2) + "\n";
 
   // ---- checks (all before any write) ----
   errors.push(...inlineErrors);
   errors.push(...checkPage(files["public/index.html"], c).map((e) => "index.html: " + e));
   const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
-  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
+  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["book.md", files["public/book.md"]], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
   const nf = parseHtml(html404);
   if (elements(nf, { visible: false }).filter((e) => e.tag === "h1").length !== 1) errors.push("404.html must have exactly one <h1>");
   if (!elements(nf, { visible: false }).some((e) => e.tag === "meta" && e.attrs.name === "robots" && /noindex/.test(e.attrs.content ?? ""))) errors.push("404.html must carry <meta name=\"robots\" content=\"noindex\">");

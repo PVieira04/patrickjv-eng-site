@@ -182,3 +182,44 @@ After booking was switched on, these were checked on the live site:
 - **Found and fixed:**
   - `hold_expires` had a fractional offset (`+00:59.997…`) because of milliseconds. Fixed in #5.
   - The invite read "1pm (Coordinated Universal Time)" for 14:00 BST. Events now carry `timeZone: Europe/London`. Fixed in #6.
+
+## F-002 research (2026-10-09)
+
+Two read-only investigations for [F-002](../F-002-signed-in-agent-booking.md), checked against official docs that day.
+
+**Outcome (rewrite, 2026-10-09):** F-002 dropped the OAuth-server route for P1. Sign-in now confirms each booking, and the site is only a Google sign-in client (F-002 D2). The findings below are kept as the evidence for that decision, and for the optional OAuth phase (P3).
+
+**Design investigation:**
+
+- **MCP version:** the current MCP revision is **2026-07-28**. It deprecates Dynamic Client Registration in favour of Client ID Metadata Documents (CIMD), and adds a multi-round-trip mechanism through which a stateless server can use elicitation.
+- **Optional auth:** authorisation is optional in the spec, and `tools/list` may vary by authorisation. Claude documents "lazy auth": a 401 with `WWW-Authenticate` on a tool call shows a Connect card, then retries the call.
+- **Library:** `@cloudflare/workers-oauth-provider` 1.2.3 has a split authorisation-server API. It can sit beside the existing stateless handler, with token validation done in `handle()`. Its `OAuthProvider` wrapper would 401 every anonymous request. It needs a KV namespace; the Free plan allows 1,000 writes a day.
+- **Client support:** Claude (web, desktop and mobile) supports CIMD with the full flow, and Claude Code supports OAuth via `/mcp`. ChatGPT needs per-tool `securitySchemes` to prompt mid-session. VS Code supports CIMD. Cursor's CIMD support and mid-session prompts are unverified.
+
+**Google project spike:**
+
+- **The 100-user cap** for unverified apps counts only users granting unapproved sensitive or restricted scopes, and it applies per project for the project's lifetime.
+- **The "unverified app" warning** follows the scopes requested, so `openid email profile` alone shouldn't trigger it, even in a mixed project. That last part is inferred, not stated by Google.
+- **Branding:** branding and publishing status are per project. Brand verification (needed to show a name or logo) is automated, and works for basic-scope-only apps.
+- **Decision (D4):** a separate project for visitor sign-in, to keep its branding and risk apart from the calendar token's project.
+
+**KV write spike** (read from the source of `@cloudflare/workers-oauth-provider` 1.2.3; Cloudflare pricing and limits pages):
+
+- **Free plan allowances:** 1,000 writes, 1,000 deletes and 1,000 lists a day, each counted separately, plus 100,000 reads. They reset at 00:00 UTC, with at most 1 write per second per key.
+- **Cost per operation:**
+  - full sign-in: about 5 writes, 2 deletes and 1 list
+  - each refresh: 2 writes, and the refresh token rotates
+  - each token check: 1 read
+  - Client ID Metadata Documents are cached in the Cache API, not in KV
+- **Gap: the consent page writes before the person acts.** Showing it creates a KV transaction, so anonymous GETs of `/oauth/authorize` could use up the day's writes. Fixed by D8.
+- **Gap: refresh tokens can be replayed.** After a refresh, the previous refresh token stays valid and reusing it re-arms it. Fixed by D7: no refresh tokens.
+- **No pluggable storage:** `OAUTH_KV` is hard-coded in the library.
+
+**ChatGPT spike:**
+
+- **Registration:** CIMD is supported (`client_id` `https://chatgpt.com/oauth/client.json`, redirect `https://chatgpt.com/connector_platform_oauth_redirect`). The authorisation server must advertise S256 and `none`, and copy `resource` into the token's audience.
+- **Sign-in prompt:** ChatGPT shows its sign-in UI only when the tool declares per-tool `securitySchemes` and a call returns a tool error with `_meta["mcp/www_authenticate"]`. An HTTP 401 isn't documented as triggering it.
+- **Plans:** write-capable MCP is in beta for Business, Enterprise and Edu workspaces on the web, enabled by an admin.
+- **Outcome:** ChatGPT moved to P3 (F-002 D2).
+
+Sources: developers.openai.com/apps-sdk/build/auth and /apps-sdk/reference. The other sources are listed in F-002's References.
