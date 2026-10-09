@@ -96,6 +96,8 @@ test("WebMCP booking tools call the same-origin booking API and return what the 
   assert.equal(refused.isError, true);
   assert.match(refused.content[0].text, /invalid_input/);
   assert.match(refused.content[0].text, /come from their Google sign-in/);
+  // Even with a null value: the field's presence is what's refused, as on MCP (review round 2).
+  assert.equal((await byName.book_meeting.execute({ type: "consultation", start: "2026-10-22T10:00:00+01:00", email: null }, {})).isError, true);
 
   const { booking_id } = data(booked);
   const st = await byName.get_booking_status.execute({ booking_id }, {});

@@ -1041,7 +1041,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
       // server refuses it exactly as it does on MCP: they come only from the sign-in (D5).
       book_meeting: async function (input) {
         var i = input || {}, body = {};
-        ["type", "start", "note", "name", "email"].forEach(function (k) { if (i[k] != null) body[k] = i[k]; });
+        ["type", "start", "note", "name", "email"].forEach(function (k) { if (i[k] !== undefined) body[k] = i[k]; });
         body.source = "webmcp";
         var unsure = function (why) { return reply(why + ": the booking request may or may not have been made. Do not retry; call get_availability and start again if the person still wants this time.", true); };
         var r;
