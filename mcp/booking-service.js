@@ -115,7 +115,7 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     let jwt;
     try { jwt = await signin.exchange(code, tx.code_verifier); } catch { logFailure("signin_exchange"); return { error: "exchange", purpose: tx.purpose }; }
     const v = verifyIdToken(jwt, { clientId: env.SIGNIN_GOOGLE_CLIENT_ID, nonce: tx.nonce, now: now() });
-    if (v.error) return { error: v.error === "not_authoritative" ? "not_authoritative" : "id_token", purpose: tx.purpose };
+    if (v.error) return { error: "id_token", purpose: tx.purpose };
     const found = findTicket(sql, tx.ticket_hash);
     if (!found || found.purpose !== tx.purpose) return { error: "forbidden", purpose: tx.purpose };
     const grant = { proof: "signin:google", actor: null, scope: tx.purpose };

@@ -73,14 +73,6 @@ function decodePayload(jwt) {
 // bidi or zero-width characters, as request_intro's fields), at most 100 characters.
 const plainName = (s) => [...s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/[\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/g, "").replace(/\s+/g, " ").trim()].slice(0, 100).join("");
 
-// Google warns that email_verified can outlive a change of who owns a mailbox for addresses it
-// doesn't run. So only addresses Google is authoritative for are accepted: @gmail.com, or a
-// Workspace address whose domain matches the token's hd claim.
-function authoritative(email, hd) {
-  const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
-  return domain === "gmail.com" || (typeof hd === "string" && hd.toLowerCase() === domain);
-}
-
 // The checks OIDC Core 3.1.3.7 requires of an ID token received directly from the token endpoint
 // (so its signature needn't be checked), then the person it identifies. {person} or {error}.
 export function verifyIdToken(jwt, { clientId, nonce, now }) {
@@ -94,8 +86,10 @@ export function verifyIdToken(jwt, { clientId, nonce, now }) {
   if (typeof c.nonce !== "string" || c.nonce !== nonce) return { error: "nonce" };
   if (typeof c.sub !== "string" || c.sub === "") return { error: "sub" };
   if (typeof c.email !== "string" || !c.email.includes("@")) return { error: "email" };
+  // Any address Google has verified is accepted, including a Google account on a work address
+  // whose mail runs elsewhere. Google warns the flag can outlive a change of who owns such a
+  // mailbox; for booking a call that risk was accepted (F-002 D9). The person is keyed on sub.
   if (c.email_verified !== true && c.email_verified !== "true") return { error: "email_verified" };
-  if (!authoritative(c.email, c.hd)) return { error: "not_authoritative" };
   const name = typeof c.name === "string" ? plainName(c.name) : "";
   return { person: { provider: "google", subject: c.sub, email: c.email, display_name: name || c.email.slice(0, c.email.lastIndexOf("@")) } };
 }
