@@ -137,7 +137,7 @@
     "privacy": {
       "title": "Privacy",
       "description": "What patrickjv.com stores about you, for how long, and who processes it on my behalf.",
-      "updated": "8 October 2026",
+      "updated": "9 October 2026",
       "intro": [
         "This is my personal website, and I am responsible for any personal data it handles. Two parts of it collect personal data: introductions, and booking a meeting with me. This page explains what each one keeps and for how long.",
         "If anything here is unclear, email me at hello@patrickjv.com."
@@ -146,7 +146,7 @@
         {
           "heading": "Reading the site",
           "paragraphs": [
-            "The site sets no cookies and has no analytics or tracking scripts. Everything a page loads comes from patrickjv.com itself.",
+            "The site sets no cookies while you read it, and has no analytics or tracking scripts. Everything a page loads comes from patrickjv.com itself.",
             "Cloudflare hosts the site, so it handles your IP address and browser details in order to serve the pages. If Cloudflare's security checks ever challenge your browser, Cloudflare may set its own cookie to remember that you passed."
           ]
         },
@@ -167,6 +167,15 @@
           ]
         },
         {
+          "heading": "Booking by signing in with Google",
+          "paragraphs": [
+            "Instead of the confirmation email, you can book (or cancel) a meeting by signing in with Google on a link the site gives you or your AI agent. Google tells the site your name, your email address and an ID for your Google account, and confirms the address is yours. The site reads these once, when you sign in, and keeps none of Google's sign-in tokens.",
+            "While you sign in, the site sets one cookie, which is strictly necessary for signing in securely and expires after 10 minutes. The site sets no lasting cookie.",
+            "A booking request keeps the meeting type, the time, your note and a keyed hash of the IP address it came from, and nothing about you. It is deleted 30 days after it is used, withdrawn or declined, or 30 days after it expires.",
+            "When you sign in, the site keeps the account's provider and ID, your verified email address and your name, so that only you can cancel your meeting. It deletes them 30 days after the later of your last sign-in and the end of your last meeting. Your booking itself is kept as above."
+          ]
+        },
+        {
           "heading": "Limits and logs",
           "paragraphs": [
             "To stop abuse, the site counts introductions and booking requests per day for each IP address and each email address. It stores a keyed hash of each address, never the address itself. Introduction counts are deleted at midnight UTC and booking counts within two days.",
@@ -178,7 +187,7 @@
           "heading": "Who processes your data",
           "items": [
             "Cloudflare hosts the site and the booking service, stores booking records and the daily counts, and forwards email sent to hello@patrickjv.com.",
-            "Google holds booked meetings in Google Calendar and sends the invitations. Introductions and email to hello@patrickjv.com arrive in my Gmail mailbox.",
+            "Google holds booked meetings in Google Calendar and sends the invitations. If you sign in with Google to book or cancel, Google is also the identity provider that confirms who you are. Introductions and email to hello@patrickjv.com arrive in my Gmail mailbox.",
             "Resend sends the booking emails: the confirmation link, the booking confirmation and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules."
           ]
         },
