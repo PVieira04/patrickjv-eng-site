@@ -556,7 +556,8 @@ export function renderPrivacy(c) {
 }
 
 // /book (F-001), launched 8 Oct 2026: linked from the homepage nav, in the sitemap, index.md and
-// llms.txt. The picker uses native radio inputs in fieldsets, so it works by keyboard.
+// llms.txt. The meeting type and time are native radio inputs in fieldsets; the day is a month
+// calendar (F-003): a role="grid" table of buttons with a roving tab stop and arrow-key movement.
 export const BOOK_PATH = "/book";
 const BOOK_STYLE = WRITING_STYLE + `
 [hidden] { display: none; }
@@ -572,6 +573,27 @@ button { margin-top: 20px; padding: 10px 18px; border: 0; border-radius: 4px; ba
 button:disabled { opacity: 0.6; cursor: progress; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
 #status { min-height: 1.65em; font-weight: 600; }
+:root { --line-strong: #b9b6ab; --signal-soft: rgba(166, 75, 0, 0.08); }
+@media (prefers-color-scheme: dark) { :root { --line-strong: #3a414c; --signal-soft: rgba(255, 181, 71, 0.12); } }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.cal-month { margin: 0; font-family: var(--mono); font-size: 0.9375rem; letter-spacing: 0.04em; }
+.cal-nav { display: flex; gap: 8px; }
+.cal-nav button, .cal button, .chips label { box-sizing: border-box; min-height: 2.75rem; margin: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; color: var(--ink); font-family: var(--mono); font-size: 0.9375rem; font-weight: 400; font-variant-numeric: tabular-nums; cursor: pointer; }
+.cal-nav button { width: 2.75rem; padding: 0; }
+.cal-nav button:disabled { opacity: 0.35; cursor: default; }
+.cal { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.cal th { padding: 0 0 6px; font-family: var(--mono); font-size: 0.75rem; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); text-align: center; }
+.cal td { padding: 2px; }
+.cal button { display: block; width: 100%; padding: 0; background: var(--signal-soft); }
+.cal button[aria-disabled="true"] { border-color: transparent; background: none; color: var(--muted); cursor: default; }
+.cal button[aria-pressed="true"], .chips input:checked + label { border-color: var(--signal); background: var(--signal); color: var(--bg); font-weight: 600; }
+.cal-nav button:not(:disabled):hover, .cal button:not([aria-disabled="true"]):hover, .chips label:hover { border-color: var(--signal); }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 8px; }
+.chips .choice { position: relative; display: block; }
+.chips .choice input { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; opacity: 0; }
+.chips label { display: flex; align-items: center; justify-content: center; padding: 6px 8px; }
+.chips input:focus-visible + label { outline: 3px solid var(--signal); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .cal-nav button, .cal button, .chips label { transition: background-color 120ms, border-color 120ms, color 120ms; } }
 `;
 
 // The picker script. Copy is spliced in from content.json; it talks only to /api/booking on this
@@ -588,13 +610,27 @@ const bookScript = (copy) => `
   $("zone").textContent = zone ? t.zone.replace("{zone}", zone) : t.zoneFallback;
   zone = zone || "Europe/London";
   var dayKey = new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" });
-  var dayName = new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: "long", day: "numeric", month: "long" });
   var hhmm = new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: "2-digit", minute: "2-digit" });
   var keyOf = function (iso) {
     var p = {};
     dayKey.formatToParts(new Date(iso)).forEach(function (x) { p[x.type] = x.value; });
     return p.year + "-" + p.month + "-" + p.day;
   };
+
+  // The calendar (F-003). Day keys (YYYY-MM-DD) are already the visitor's days; the grid does plain
+  // calendar arithmetic on them at noon UTC, so neither the visitor's clock nor a clock change matters.
+  var months = [], shown = 0, picked = null, stop = null, cells = {};
+  var utc = function (k) { return Date.UTC(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10), 12); };
+  var keyAt = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+  var addDays = function (k, d) { return keyAt(utc(k) + d * 864e5); };
+  var addMonths = function (k, d) {
+    var y = +k.slice(0, 4), m = +k.slice(5, 7) - 1 + d, last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    return keyAt(Date.UTC(y, m, Math.min(+k.slice(8, 10), last), 12));
+  };
+  var weekday = function (k) { return (new Date(utc(k)).getUTCDay() + 6) % 7; }; // Monday 0
+  var dayName = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" });
+  var monthName = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", month: "long", year: "numeric" });
+  var nameOf = function (k) { return dayName.format(new Date(utc(k))); };
 
   function say(text) { $("status").textContent = text; }
   function show(id, on) { $(id).hidden = !on; }
@@ -624,10 +660,52 @@ const bookScript = (copy) => `
   }
   function broken() { say(t.messages.error); }
 
+  // Draws the month months[shown]: every day a button, free days (with slots) selectable, the rest
+  // aria-disabled. One button is the grid's tab stop: \`focus\` if given, else the picked day, else
+  // the month's first free day.
+  function render(focus) {
+    var ym = months[shown], y = +ym.slice(0, 4), m = +ym.slice(5, 7);
+    var len = new Date(Date.UTC(y, m, 0)).getUTCDate(), lead = weekday(ym + "-01");
+    $("cal-month").textContent = monthName.format(new Date(Date.UTC(y, m - 1, 1, 12)));
+    $("cal-nav").hidden = months.length < 2;
+    $("cal-prev").disabled = shown === 0;
+    $("cal-next").disabled = shown === months.length - 1;
+    var body = $("cal-body"), row = null, keys = [];
+    body.textContent = ""; cells = {};
+    for (var d = 1; d <= len; d++) keys.push(ym + "-" + (d < 10 ? "0" : "") + d);
+    stop = focus || (picked && picked.slice(0, 7) === ym ? picked : keys.filter(function (k) { return byDay[k]; })[0] || keys[0]);
+    for (var i = 0; i < Math.ceil((lead + len) / 7) * 7; i++) {
+      if (i % 7 === 0) row = body.appendChild(document.createElement("tr"));
+      var td = row.appendChild(document.createElement("td")), k = keys[i - lead];
+      if (!k) continue;
+      var b = td.appendChild(document.createElement("button")), free = byDay[k];
+      b.type = "button"; b.value = k; b.textContent = String(i - lead + 1); b.tabIndex = k === stop ? 0 : -1;
+      b.setAttribute("aria-label", (free ? (free.length === 1 ? t.labels.freeOne : t.labels.freeMany.replace("{n}", free.length)) : t.labels.freeNone).replace("{day}", nameOf(k)));
+      if (free) b.setAttribute("aria-pressed", k === picked ? "true" : "false");
+      else b.setAttribute("aria-disabled", "true");
+      cells[k] = b;
+    }
+  }
+  function moveStop(k) { cells[stop].tabIndex = -1; stop = k; cells[k].tabIndex = 0; }
+
+  function pickDay(k) {
+    picked = k; start = null;
+    show("details", false); $("times").textContent = "";
+    Object.keys(cells).forEach(function (c) { if (byDay[c]) cells[c].setAttribute("aria-pressed", c === k ? "true" : "false"); });
+    moveStop(k);
+    $("time-legend").textContent = t.labels.timeOn.replace("{day}", nameOf(k));
+    byDay[k].forEach(function (s) { choice("times", "time", s.start, hhmm.format(new Date(s.start)) + "–" + hhmm.format(new Date(s.end))); });
+    show("time-set", true);
+  }
+
+  // Hand-off: the picker ends here, with \`type\` and a chosen \`start\`. Everything after (the details
+  // form, POST /api/booking and its result) is the F-001 flow and does not depend on how they were picked.
+  function slotChosen(s) { start = s; show("details", true); }
+
   function loadSlots(done) {
-    start = null; byDay = {};
+    start = null; byDay = {}; picked = null; months = [];
     show("day-set", false); show("time-set", false); show("details", false);
-    $("days").textContent = ""; $("times").textContent = "";
+    $("cal-body").textContent = ""; $("times").textContent = "";
     say(t.messages.loadingSlots);
     var want = type;
     return call("/api/booking/availability?type=" + encodeURIComponent(type)).then(function (r) {
@@ -638,20 +716,55 @@ const bookScript = (copy) => `
       if (!days.length) return say(t.messages.noSlots);
       days.forEach(function (k) {
         byDay[k].sort(function (a, b) { return Date.parse(a.start) - Date.parse(b.start); });
-        choice("days", "day", k, dayName.format(new Date(byDay[k][0].start)));
+        if (months.indexOf(k.slice(0, 7)) < 0) months.push(k.slice(0, 7));
       });
+      shown = 0;
+      render();
       show("day-set", true);
       say(done || "");
     }, broken);
   }
 
+  // Column headers, Monday first, in the visitor's language (1 January 2024 was a Monday).
+  var wdShort = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "short" }), wdLong = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "long" });
+  var head = $("cal-cols").appendChild(document.createElement("tr"));
+  for (var w = 0; w < 7; w++) {
+    var th = head.appendChild(document.createElement("th")), when = new Date(Date.UTC(2024, 0, 1 + w, 12));
+    th.setAttribute("scope", "col"); th.setAttribute("abbr", wdLong.format(when)); th.textContent = wdShort.format(when);
+  }
+
   $("types").addEventListener("change", function (e) { type = e.target.value; loadSlots(); });
-  $("days").addEventListener("change", function (e) {
-    start = null; show("details", false); $("times").textContent = "";
-    byDay[e.target.value].forEach(function (s) { choice("times", "time", s.start, hhmm.format(new Date(s.start)) + "–" + hhmm.format(new Date(s.end))); });
-    show("time-set", true);
+  $("days").addEventListener("click", function (e) { var k = e.target.value; if (k && byDay[k]) pickDay(k); });
+  // Arrows by a day or a week, Home/End to the week's ends, Page Up/Down by a month; into the
+  // neighbouring month when it is one of the months shown, otherwise focus stays where it is.
+  $("days").addEventListener("keydown", function (e) {
+    var k = e.target.value, to = null;
+    if (!k) return;
+    if (e.key === "ArrowLeft") to = addDays(k, -1);
+    else if (e.key === "ArrowRight") to = addDays(k, 1);
+    else if (e.key === "ArrowUp") to = addDays(k, -7);
+    else if (e.key === "ArrowDown") to = addDays(k, 7);
+    else if (e.key === "Home") to = addDays(k, -weekday(k));
+    else if (e.key === "End") to = addDays(k, 6 - weekday(k));
+    else if (e.key === "PageUp") to = addMonths(k, -1);
+    else if (e.key === "PageDown") to = addMonths(k, 1);
+    else return;
+    e.preventDefault();
+    var i = months.indexOf(to.slice(0, 7));
+    if (i < 0) to = k;
+    else if (i !== shown) { shown = i; render(to); }
+    moveStop(to);
+    cells[to].focus();
   });
-  $("times").addEventListener("change", function (e) { start = e.target.value; show("details", true); });
+  function turn(d) {
+    return function () {
+      shown += d; render();
+      if ($(d < 0 ? "cal-prev" : "cal-next").disabled) cells[stop].focus(); // don't strand focus on a disabled button
+    };
+  }
+  $("cal-prev").addEventListener("click", turn(-1));
+  $("cal-next").addEventListener("click", turn(1));
+  $("times").addEventListener("change", function (e) { slotChosen(e.target.value); });
   $("note").addEventListener("input", function () { $("note-count").textContent = t.labels.noteCount.replace("{n}", $("note").value.length); });
 
   form.addEventListener("submit", function (e) {
@@ -692,8 +805,11 @@ export function renderBook(c) {
 <form id="book" hidden>
 <fieldset><legend>${attr(l.type)}</legend><div id="types" class="choices"></div></fieldset>
 <p id="zone" class="meta"></p>
-<fieldset id="day-set" hidden><legend>${attr(l.day)}</legend><div id="days" class="choices"></div></fieldset>
-<fieldset id="time-set" hidden><legend>${attr(l.time)}</legend><div id="times" class="choices"></div></fieldset>
+<fieldset id="day-set" hidden><legend>${attr(l.day)}</legend>
+<div class="cal-head"><p id="cal-month" class="cal-month" aria-live="polite"></p><div id="cal-nav" class="cal-nav" hidden><button id="cal-prev" type="button" aria-label="${attr(l.prevMonth)}">←</button><button id="cal-next" type="button" aria-label="${attr(l.nextMonth)}">→</button></div></div>
+<table id="days" class="cal" role="grid" aria-labelledby="cal-month"><thead id="cal-cols"></thead><tbody id="cal-body"></tbody></table>
+</fieldset>
+<fieldset id="time-set" hidden><legend id="time-legend">${attr(l.time)}</legend><div id="times" class="choices chips"></div></fieldset>
 <div id="details" hidden>
 ${field("name", l.name, '<input id="name" name="name" type="text" autocomplete="name" required maxlength="100">')}
 ${field("email", l.email, '<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">')}
@@ -704,7 +820,7 @@ ${field("note", l.note, '<textarea id="note" name="note" rows="4" maxlength="500
 </form>
 <p id="status" role="status" aria-live="polite"></p>
 <p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>`,
-    script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, labels: { minutes: l.minutes, noteCount: l.noteCount }, messages: b.messages }),
+    script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, labels: { minutes: l.minutes, noteCount: l.noteCount, freeOne: l.freeOne, freeMany: l.freeMany, freeNone: l.freeNone, timeOn: l.timeOn }, messages: b.messages }),
   });
 }
 

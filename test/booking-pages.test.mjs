@@ -129,6 +129,20 @@ test("/book form: native controls, every field labelled, a polite live status re
   }
   const status = els.find((e) => e.attrs.id === "status");
   assert.equal(status?.attrs["aria-live"], "polite");
+  // F-003: the days are a grid labelled by the month name, which is announced when it changes;
+  // the month buttons are plain buttons (not submit) with labels; the times are chips.
+  const grid = els.find((e) => e.attrs.id === "days");
+  assert.equal(grid.tag, "table");
+  assert.equal(grid.attrs.role, "grid");
+  assert.equal(grid.attrs["aria-labelledby"], "cal-month");
+  assert.equal(els.find((e) => e.attrs.id === "cal-month")?.attrs["aria-live"], "polite");
+  for (const [id, label] of [["cal-prev", content.pages.book.labels.prevMonth], ["cal-next", content.pages.book.labels.nextMonth]]) {
+    const b = els.find((e) => e.attrs.id === id);
+    assert.equal(b?.tag, "button", `no #${id}`);
+    assert.equal(b.attrs.type, "button");
+    assert.equal(b.attrs["aria-label"], label);
+  }
+  assert.match(els.find((e) => e.attrs.id === "times").attrs.class, /\bchips\b/);
   assert.ok(els.some((e) => e.tag === "button" && e.attrs.type === "submit"));
 });
 
@@ -150,6 +164,10 @@ class El {
     }
   }
   appendChild(c) { c.parent = this; this.children.push(c); return c; }
+  setAttribute(k, v) { (this.attributes ??= {})[k] = String(v); }
+  getAttribute(k) { return this.attributes?.[k] ?? (typeof this[k] === "string" ? this[k] : null); }
+  removeAttribute(k) { if (this.attributes) delete this.attributes[k]; }
+  focus() { this.doc.activeElement = this; }
   get textContent() { return this.children.map((c) => (typeof c === "string" ? c : c.textContent)).join(""); }
   set textContent(t) { this.children = t === "" ? [] : [String(t)]; }
   addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
@@ -164,8 +182,8 @@ function toFake(node) {
 }
 const walk = (el, out = []) => { for (const c of el.children) if (typeof c !== "string") { out.push(c); walk(c, out); } return out; };
 const visible = (el) => (el.hidden ? "" : el.children.map((c) => (typeof c === "string" ? c : visible(c))).join("").replace(/\s+/g, " ").trim());
-const fire = (el, type) => {
-  const ev = { type, target: el, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+const fire = (el, type, extra = {}) => {
+  const ev = { type, target: el, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra };
   for (let n = el; n; n = n.parent) for (const fn of n.listeners[type] ?? []) fn(ev);
   return ev;
 };
@@ -176,7 +194,8 @@ const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) 
 function openBook({ zone = "Europe/Paris", routes }) {
   const html = read("public/book.html");
   const root = toFake(parseHtml(html));
-  const document = { getElementById: (id) => walk(root).find((e) => e.id === id) ?? null, createElement: (tag) => new El(tag) };
+  const document = { activeElement: null, getElementById: (id) => walk(root).find((e) => e.id === id) ?? null, createElement: (tag) => Object.assign(new El(tag), { doc: document }) };
+  for (const e of walk(root)) e.doc = document;
   const requests = [];
   const fetch = async (url, init = {}) => {
     const method = init.method ?? "GET";
@@ -198,7 +217,13 @@ function openBook({ zone = "Europe/Paris", routes }) {
   const radios = (box) => walk($(box)).filter((e) => e.tag === "input" && e.type === "radio");
   const labelFor = (input) => visible(walk(root).find((e) => e.tag === "label" && e.htmlFor === input.id));
   const choose = async (box, i) => { const r = radios(box)[i]; r.checked = true; fire(r, "change"); await settle(); };
-  return { $, requests, radios, labelFor, choose, status: () => visible($("status")) };
+  // The calendar: every day button of the month shown, the free ones, and picking the i-th free day.
+  const cells = () => walk($("days")).filter((e) => e.tag === "button");
+  const free = () => cells().filter((b) => b.getAttribute("aria-disabled") !== "true");
+  const nameOf = (b) => b.getAttribute("aria-label");
+  const pickDay = async (i) => { fire(free()[i], "click"); await settle(); };
+  const key = (k) => fire(document.activeElement, "keydown", { key: k });
+  return { $, document, requests, radios, labelFor, choose, cells, free, nameOf, pickDay, key, status: () => visible($("status")) };
 }
 
 const TYPES = { status: 200, body: { enabled: true, types: [
@@ -216,14 +241,14 @@ const ready = (extra = {}) => ({ "GET /api/booking/types": TYPES, "GET /api/book
 async function toDetails(v) {
   await settle();
   await v.choose("types", 0);
-  await v.choose("days", 0);
+  await v.pickDay(0);
   await v.choose("times", 0);
   v.$("name").value = "Ada Lovelace";
   v.$("email").value = "ada@example.com";
   return v;
 }
 const submit = async (v) => { const ev = fire(v.$("book"), "submit"); await settle(); return ev; };
-const button = (v) => walk(v.$("book")).find((e) => e.tag === "button");
+const button = (v) => v.$("send");
 
 test("/book loading: the form stays hidden and the status says so until the types arrive", async () => {
   let release;
@@ -246,7 +271,7 @@ test("/book meeting types are native radio inputs, each labelled with the type, 
   assert.match(v.labelFor(r[1]), /^Recruiter intro · 15 min/);
 });
 
-test("/book choosing a type lists days, then times, in the visitor's zone, which is named", async () => {
+test("/book choosing a type shows a calendar of free days, then times, in the visitor's zone, which is named", async () => {
   const v = openBook({ routes: ready() });
   await settle();
   await v.choose("types", 1);
@@ -254,9 +279,9 @@ test("/book choosing a type lists days, then times, in the visitor's zone, which
   assert.equal(v.status(), "");
   assert.equal(visible(v.$("zone")), "Times shown in Europe/Paris.");
   assert.equal(v.$("day-set").hidden, false);
-  assert.deepEqual(v.radios("days").map(v.labelFor), ["Monday 26 October", "Tuesday 27 October"]);
+  assert.deepEqual(v.free().map(v.nameOf), ["Monday 26 October, 2 free times", "Tuesday 27 October, 1 free time"]);
   assert.equal(v.$("time-set").hidden, true);
-  await v.choose("days", 0);
+  await v.pickDay(0);
   // Paris is UTC+1 after 25 Oct: 09:00 and 10:00 UTC are 10:00 and 11:00.
   assert.deepEqual(v.radios("times").map(v.labelFor), ["10:00–10:30", "11:00–11:30"]);
   assert.ok(v.radios("times").every((r) => r.name === "time"));
@@ -270,8 +295,8 @@ test("/book days are the visitor's days: in a +14:00 zone the 10:00 GMT slot mov
   await settle();
   await v.choose("types", 0);
   assert.equal(visible(v.$("zone")), "Times shown in Pacific/Kiritimati.");
-  assert.deepEqual(v.radios("days").map(v.labelFor), ["Monday 26 October", "Tuesday 27 October", "Wednesday 28 October"]);
-  await v.choose("days", 1);
+  assert.deepEqual(v.free().map(v.nameOf), ["Monday 26 October, 1 free time", "Tuesday 27 October, 1 free time", "Wednesday 28 October, 1 free time"]);
+  await v.pickDay(1);
   assert.deepEqual(v.radios("times").map(v.labelFor), ["00:00–00:30"]);
 });
 
@@ -280,19 +305,20 @@ test("/book an unknown time zone falls back to Europe/London and says so", async
   await settle();
   assert.equal(visible(v.$("zone")), bookCopy.zoneFallback);
   await v.choose("types", 0);
-  await v.choose("days", 0);
+  await v.pickDay(0);
   assert.deepEqual(v.radios("times").map(v.labelFor), ["09:00–09:30", "10:00–10:30"]);
 });
 
 test("/book changing day or type clears the choices made after it", async () => {
   const v = openBook({ routes: ready() });
   await toDetails(v);
-  await v.choose("days", 1);
+  await v.pickDay(1);
   assert.equal(v.$("details").hidden, true);
   assert.equal(v.radios("times").length, 1);
   await v.choose("types", 1);
   assert.equal(v.$("time-set").hidden, true);
-  assert.equal(v.radios("days").length, 2);
+  assert.equal(v.free().length, 2);
+  assert.ok(v.cells().every((b) => b.getAttribute("aria-pressed") !== "true"), "no day stays selected");
 });
 
 test("/book no free slots: says so and offers no days", async () => {
@@ -388,7 +414,7 @@ test("/book slot gone (409): reloads the free times and says the slot was taken"
   await submit(v);
   assert.equal(calls, 2, "availability was fetched again");
   assert.equal(v.status(), M.slotGone);
-  assert.equal(v.radios("days").length, 1);
+  assert.equal(v.free().length, 1);
   assert.equal(v.$("details").hidden, true);
   assert.equal(button(v).disabled, false);
 });
@@ -429,4 +455,118 @@ test("/book CSP allows the page's own script by hash and same-origin fetch only"
     assert.match(rule, /script-src 'sha256-[A-Za-z0-9+/=]+'; connect-src 'self';/);
     assert.match(rule, /form-action 'none'/);
   }
+});
+
+// ---- /book calendar (F-003) ----
+
+const slots = (...starts) => ({ status: 200, body: { timezone: "Europe/London", slots: starts.map((s) => ({ start: s, end: new Date(Date.parse(s) + 30 * 6e4).toISOString() })) } });
+const pressed = (v) => v.cells().filter((b) => b.getAttribute("aria-pressed") === "true").map((b) => b.textContent);
+const tabStops = (v) => v.cells().filter((b) => b.tabIndex === 0).map((b) => b.textContent);
+const headers = (v) => walk(v.$("days")).filter((e) => e.tag === "th");
+
+test("/book calendar: the month of the first free day, Monday first, every day of it a button, free days named with their count", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  await v.choose("types", 0);
+  assert.equal(visible(v.$("cal-month")), "October 2026");
+  assert.deepEqual(headers(v).map((h) => h.textContent), ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+  assert.deepEqual(headers(v).map((h) => h.getAttribute("abbr")), ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]);
+  assert.equal(v.cells().length, 31);
+  assert.deepEqual(v.cells().map((b) => b.textContent), Array.from({ length: 31 }, (_, i) => String(i + 1)));
+  // 1 October 2026 is a Thursday: three empty cells come first in the first week.
+  const rows = walk(v.$("days")).filter((e) => e.tag === "tr").slice(1);
+  assert.equal(rows.length, 5);
+  assert.deepEqual(rows[0].children.map((td) => td.children.length), [0, 0, 0, 1, 1, 1, 1]);
+  assert.ok(rows.every((r) => r.children.length === 7));
+  const unfree = v.cells().filter((b) => b.getAttribute("aria-disabled") === "true");
+  assert.equal(unfree.length, 29);
+  assert.equal(v.nameOf(unfree[0]), "Thursday 1 October, no free times");
+  assert.equal(v.$("cal-nav").hidden, true, "one month: no month buttons");
+});
+
+test("/book calendar: an unavailable day does nothing; a free day is selected and its times shown, named in the time step", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  await v.choose("types", 0);
+  fire(v.cells()[0], "click");
+  await settle();
+  assert.deepEqual(pressed(v), []);
+  assert.equal(v.$("time-set").hidden, true);
+  await v.pickDay(1);
+  assert.deepEqual(pressed(v), ["27"]);
+  assert.equal(visible(v.$("time-legend")), "Time on Tuesday 27 October");
+  assert.equal(v.$("time-set").hidden, false);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["11:15–11:45"]);
+  assert.deepEqual(tabStops(v), ["27"], "the selected day is the grid's one tab stop");
+});
+
+test("/book calendar keyboard: one tab stop; arrows, Home/End move focus within the month; unavailable days can be focused", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  await v.choose("types", 0);
+  assert.deepEqual(tabStops(v), ["26"], "the first free day is the tab stop");
+  v.free()[0].focus();
+  const at = () => v.document.activeElement.textContent;
+  let ev = v.key("ArrowRight");
+  assert.ok(ev.defaultPrevented, "handled keys don't scroll the page");
+  assert.equal(at(), "27");
+  v.key("ArrowUp"); assert.equal(at(), "20");
+  v.key("ArrowLeft"); assert.equal(at(), "19");
+  v.key("End"); assert.equal(at(), "25");
+  v.key("Home"); assert.equal(at(), "19");
+  v.key("ArrowDown"); assert.equal(at(), "26");
+  v.key("ArrowDown"); assert.equal(at(), "26", "no month after October in range: stays");
+  v.key("PageDown"); assert.equal(at(), "26");
+  assert.deepEqual(tabStops(v), ["26"], "the tab stop follows focus");
+  ev = v.key("a");
+  assert.equal(ev.defaultPrevented, false, "other keys are left alone");
+});
+
+test("/book calendar across two months: month buttons, Page Down / arrows cross months, focus lands on the same date", async () => {
+  const v = openBook({ routes: ready({ "GET /api/booking/availability": slots("2026-10-30T10:00:00Z", "2026-11-02T10:00:00Z", "2026-11-03T11:00:00Z") }) });
+  await settle();
+  await v.choose("types", 0);
+  assert.equal(visible(v.$("cal-month")), "October 2026");
+  assert.equal(v.$("cal-nav").hidden, false);
+  assert.equal(v.$("cal-prev").disabled, true);
+  assert.equal(v.$("cal-next").disabled, false);
+  fire(v.$("cal-next"), "click");
+  assert.equal(visible(v.$("cal-month")), "November 2026");
+  assert.equal(v.cells().length, 30);
+  assert.deepEqual(v.free().map((b) => b.textContent), ["2", "3"]);
+  assert.equal(v.$("cal-prev").disabled, false);
+  assert.equal(v.$("cal-next").disabled, true);
+  fire(v.$("cal-prev"), "click");
+  assert.equal(visible(v.$("cal-month")), "October 2026");
+  v.free()[0].focus(); // 30 October
+  const at = () => v.document.activeElement.getAttribute("aria-label");
+  v.key("ArrowRight"); v.key("ArrowRight");
+  assert.equal(at(), "Sunday 1 November, no free times");
+  assert.equal(visible(v.$("cal-month")), "November 2026");
+  v.key("PageUp");
+  assert.equal(at(), "Thursday 1 October, no free times");
+  v.key("PageDown"); v.key("ArrowDown");
+  assert.equal(at(), "Sunday 8 November, no free times");
+  // A day picked in November stays selected when the visitor looks back at October and returns.
+  fire(v.free()[1], "click");
+  fire(v.$("cal-prev"), "click");
+  assert.deepEqual(pressed(v), []);
+  fire(v.$("cal-next"), "click");
+  assert.deepEqual(pressed(v), ["3"]);
+});
+
+test("/book calendar: the time chips are a required radio group; picking one is the hand-off to the details form", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  await v.choose("types", 0);
+  await v.pickDay(0);
+  assert.ok(v.radios("times").every((r) => r.name === "time" && r.required));
+  assert.equal(v.$("details").hidden, true);
+  await v.choose("times", 1);
+  assert.equal(v.$("details").hidden, false);
+});
+
+test("/book script: the picker hands off through one slotChosen(start) function", () => {
+  const script = inlineCode(read("public/book.html"), { styles: 1, scripts: 1 }).scripts[0];
+  assert.equal((script.match(/function slotChosen\(/g) || []).length, 1);
 });
