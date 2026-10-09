@@ -204,7 +204,13 @@
         "note": "Note (optional)",
         "noteCount": "{n} of 500 characters",
         "submit": "Hold this time",
-        "minutes": "{n} min"
+        "minutes": "{n} min",
+        "prevMonth": "Previous month",
+        "nextMonth": "Next month",
+        "freeOne": "{day}, 1 free time",
+        "freeMany": "{day}, {n} free times",
+        "freeNone": "{day}, no free times",
+        "timeOn": "Time on {day}"
       },
       "zone": "Times shown in {zone}.",
       "zoneFallback": "Times shown in Europe/London, because your browser didn't say which time zone you're in.",
