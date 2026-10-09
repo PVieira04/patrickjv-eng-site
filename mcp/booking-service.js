@@ -6,7 +6,7 @@
 import { checkSlot, availableSlots } from "./booking-config.js";
 import {
   migrate, requestBooking, act, cancelByAgent, peekToken, getStatus, liveBookings, expireHolds, prune, nextAlarmAt, recoverConfirm, emailFailures,
-  createRequest, settleRequest, findTicket, startSignin, consumeSignin, peekTicket, confirmRequest, cancelMeeting, hashToken,
+  createRequest, precheckRequest, settleRequest, findTicket, startSignin, consumeSignin, peekTicket, confirmRequest, cancelMeeting, hashToken,
 } from "./booking-store.js";
 import { createGoogle, assertNoErrors, meetLinkOf } from "./booking-google.js";
 import { createMailer, holdEmail, bookedEmail, cancelRequestEmail } from "./booking-email.js";
@@ -89,14 +89,15 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
 
   // The shared free/busy answer for the whole horizon, at most a minute old: availability, and
   // (F-002) booking requests and the "is this request's slot still free?" reads use it, so none of
-  // them can make the Worker hammer Google. One refresh at a time; a failed one isn't kept.
+  // them can make the Worker hammer Google. One refresh at a time; a failed one also counts for
+  // its minute, so an outage isn't asked about on every request.
   let availabilityCache = null; // { at, busy: Promise }
   function cachedBusy() {
     const t = now();
     if (!availabilityCache || t.getTime() - availabilityCache.at >= AVAILABILITY_CACHE_MS) {
       const timeMin = t.toISOString(), timeMax = new Date(t.getTime() + (cfg.horizonDays + 1) * DAY).toISOString();
       const entry = { at: t.getTime(), busy: freeBusy(timeMin, timeMax).then((r) => r.busy) };
-      entry.busy.catch(() => { if (availabilityCache === entry) availabilityCache = null; });
+      entry.busy.catch(() => {}); // callers see the failure; this only keeps it from going unhandled
       availabilityCache = entry;
     }
     return availabilityCache.busy;
@@ -190,6 +191,8 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     // book_meeting (MCP, WebMCP) and /book's sign-in button: a booking request, checked against
     // the shared free/busy cache. If that is stale and Google can't be reached: unavailable.
     async signinRequest(input, ipKey) {
+      const pre = precheckRequest(sql, { cfg, now: now(), input, deps });
+      if (pre) return pre;
       let busy;
       try { busy = await cachedBusy(); } catch { logFailure("google_freebusy"); return { error: "unavailable" }; }
       const r = await createRequest(sql, { cfg, now: now(), input, ipKey, busy, deps });

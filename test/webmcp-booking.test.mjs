@@ -90,9 +90,11 @@ test("WebMCP booking tools call the same-origin booking API and return what the 
   assert.deepEqual(Object.keys(data(booked)).sort(), ["booking_id", "confirm_url", "link_expires", "next_step", "status"]);
   assert.equal(h.f.mails().length, 0, "nothing is emailed");
   assert.deepEqual(h.rows("SELECT source FROM booking_requests"), [{ source: "webmcp" }]);
-  // A name or email given anyway is not sent, so it can't be used (they come from the sign-in).
-  await byName.book_meeting.execute({ type: "consultation", start: "2026-10-22T10:00:00+01:00", name: "Jane", email: "jane@example.com" }, {});
-  assert.deepEqual(Object.keys(JSON.parse(requests.at(-1).init.body)).sort(), ["source", "start", "type"]);
+  // A name or email given anyway is refused, exactly as MCP's book_meeting refuses it (D5).
+  const refused = await byName.book_meeting.execute({ type: "consultation", start: "2026-10-22T10:00:00+01:00", name: "Jane", email: "jane@example.com" }, {});
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /invalid_input/);
+  assert.match(refused.content[0].text, /come from their Google sign-in/);
 
   const { booking_id } = data(booked);
   const st = await byName.get_booking_status.execute({ booking_id }, {});

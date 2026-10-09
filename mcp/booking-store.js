@@ -525,6 +525,13 @@ export function reserveRequestQuota(sql, { day, ipKey, caps }) {
   return { ok: true };
 }
 
+// The cheap checks, against what the store already knows (no free/busy), so a start that is
+// malformed, inside the notice window, past the horizon or locally taken never waits on Google.
+export function precheckRequest(sql, { cfg, now, input, deps }) {
+  const pre = deps.checkSlot({ cfg, typeId: input.type, start: input.start, now, busy: [], bookings: liveBookings(sql, now) });
+  return pre.ok ? null : slotError(pre.reason);
+}
+
 // book_meeting (MCP, WebMCP) and /book's sign-in button. `busy` is the shared free/busy cache's
 // answer (the one get_availability uses), so however many requests arrive, Google is asked at most
 // once a minute. Order, as F-001's: the slot against local bookings, live holds, the day count and

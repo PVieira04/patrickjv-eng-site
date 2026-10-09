@@ -113,6 +113,28 @@ test("F-002 requests: with the free/busy cache stale and Google unreachable, a r
   assert.deepEqual(h.rows("SELECT kind FROM quota"), []);
 });
 
+test("F-002 requests (review): with Google down, a failed refresh still counts for the minute: ten requests make one free/busy call", async () => {
+  const h = harness({ fetchOpts: { fail: { freebusy: true } } });
+  for (let i = 0; i < 10; i++) await quiet(() => h.tool("book_meeting", ask({ start: `2026-10-22T${10 + (i % 6)}:00:00+01:00` })));
+  assert.equal(freeBusyCalls(h), 1);
+  h.clock.now = new Date(NOW.getTime() + MINUTE);
+  await quiet(() => h.tool("book_meeting", ask()));
+  assert.equal(freeBusyCalls(h), 2, "and is tried again after the minute");
+});
+
+test("F-002 requests (review): the cheap checks come before Google: during an outage a bad or locally taken start is refused as such, not 503", async () => {
+  const h = harness();
+  const b = (await h.tool("book_meeting", ask())).structuredContent;
+  await h.signInOn(b.confirm_url);
+  h.f.opts.fail = { freebusy: true };
+  h.clock.now = new Date(NOW.getTime() + 2 * MINUTE); // the cache is stale
+  for (const [start, error] of [["2026-10-19T15:00:00+01:00", "invalid_slot"], ["2026-10-21T10:05:00+01:00", "invalid_slot"], [SLOT, "slot_taken"]]) {
+    const r = await quiet(() => h.tool("book_meeting", ask({ start })));
+    assert.equal(r.structuredContent.error, error, start);
+  }
+  assert.equal(freeBusyCalls(h), 2, "none of these asked Google (the booking's own claim made the second call)");
+});
+
 test("F-002 requests: per-IP and global request caps are 429 with a sentence saying what to do", async () => {
   const h = harness();
   h.cfg.caps = { ...h.cfg.caps, requestsPerIpPerDay: 1 };

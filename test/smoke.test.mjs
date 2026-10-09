@@ -202,8 +202,10 @@ test("smoke FAILs each false-PASS case from the round-2 review", async () => {
     [{ noSalt: true }, /patrickjv\/health/],
     [{ bookingNotReady: true }, /patrickjv\/health/],
     [{ noPrivacy: true }, /\/privacy/],
+    // F-002: booking on and "ready", but get_availability failing, is not "no free slot".
+    [{ booking: { fetchOpts: { fail: { freebusy: true } } } }, /book_meeting/],
   ];
-  const results = await Promise.all(cases.map(([f]) => runSmoke(f, f.serverName || f.faq || f.noSalt || f.bookingNotReady ? ["--mcp"] : [])));
+  const results = await Promise.all(cases.map(([f]) => runSmoke(f, f.serverName || f.faq || f.noSalt || f.bookingNotReady || f.booking ? ["--mcp"] : [])));
   results.forEach((r, k) => {
     const [f, pattern] = cases[k];
     assert.equal(r.code, 1, `${JSON.stringify(f)}: exit ${r.code}\n${r.lines.join("\n")}`);

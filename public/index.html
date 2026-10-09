@@ -1037,10 +1037,11 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
         try { return answer(await api("/api/booking/availability?" + q)); } catch (e) { return netError(); }
       },
       // F-002: a booking request, exactly as the MCP server's book_meeting makes one. The person
-      // books by signing in with Google on its confirm_url; name and email come from that sign-in.
+      // books by signing in with Google on its confirm_url. A name or email given is passed on, so the
+      // server refuses it exactly as it does on MCP: they come only from the sign-in (D5).
       book_meeting: async function (input) {
         var i = input || {}, body = {};
-        ["type", "start", "note"].forEach(function (k) { if (i[k] != null) body[k] = i[k]; });
+        ["type", "start", "note", "name", "email"].forEach(function (k) { if (i[k] != null) body[k] = i[k]; });
         body.source = "webmcp";
         var unsure = function (why) { return reply(why + ": the booking request may or may not have been made. Do not retry; call get_availability and start again if the person still wants this time.", true); };
         var r;

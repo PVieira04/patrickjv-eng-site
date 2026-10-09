@@ -278,7 +278,9 @@ if (flags.has("--mcp")) {
     await check("mcp book_meeting -> a booking request for the first free slot, shaped as F-002 says, then cancel_booking reads cancelled", async () => {
       type = JSON.parse(read("booking.json")).meetingTypes[0].id;
       const av = await call(5, "get_availability", { type });
-      const slot = av?.structuredContent?.slots?.[0];
+      // An availability error is a failure, never "no free slot".
+      if (av?.isError || !Array.isArray(av?.structuredContent?.slots)) return FAIL(`get_availability: ${JSON.stringify(av?.structuredContent ?? null).slice(0, 160)}`);
+      const slot = av.structuredContent.slots[0];
       if (!slot) return PASS("skipped: no free slot in the horizon");
       const b = await call(6, "book_meeting", { type, start: slot.start });
       const e = b?.structuredContent;
