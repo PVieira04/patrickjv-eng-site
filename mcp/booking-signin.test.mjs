@@ -55,7 +55,7 @@ test("F-002 sign-in: an ID token passing every check gives the person (provider,
   assert.equal(verify(claims({ name: undefined })).person.display_name, "jane");
   assert.equal(verify(claims({ name: "  " })).person.display_name, "jane");
   // A name is tidied to one plain line (no control or bidi characters), at most 100 characters.
-  assert.equal(verify(claims({ name: "Jane‮\nSmith" })).person.display_name, "Jane Smith");
+  assert.equal(verify(claims({ name: "Jane\u202e\nSmith" })).person.display_name, "Jane Smith");
   assert.equal(verify(claims({ name: "x".repeat(150) })).person.display_name.length, 100);
 });
 
