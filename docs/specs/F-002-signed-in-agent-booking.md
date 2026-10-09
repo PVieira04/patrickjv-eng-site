@@ -73,7 +73,7 @@ As **a visitor on patrickjv.com**, I want to **sign in once so `/book` and the h
 
 **Non-Goals**
 
-- **Booking for someone else (P1).** In P1 a signed-in person books for themselves; a different `email` is refused (`email_mismatch`). Delegated booking (an assistant booking for their manager) is planned for P3 (see below).
+- **Booking for someone else, ever.** An agent books only for the email address of the account it's signed in with; any other `email` is refused (`email_mismatch`). Someone booking for another person has that person sign in, or uses `/book` (decided by Patrick, 2026-10-09).
 - **Dynamic Client Registration.** Deprecated in MCP 2026-07-28 and a spam risk on the Free plan's KV write allowance (1,000 a day). Only clients that identify with a Client ID Metadata Document (CIMD) can connect. Revisit only if a needed client lacks CIMD (Cursor is unverified).
 - **Keeping Google's tokens.** Only the verified claims are read, once, at sign-in.
 - **Rescheduling** (still F-001's planned v2).
@@ -89,11 +89,11 @@ As **a visitor on patrickjv.com**, I want to **sign in once so `/book` and the h
 | D3 | **A signed-in owner cancels directly**; anonymous bookings keep the emailed confirm-cancellation link. | Email confirmation for every cancellation: safer against a rogue agent, but undoes much of the point. |
 | D4 | **A separate Google Cloud project** (`patrickjv-signin`) for visitor sign-in, scopes `openid email profile` only. | The same project as `hello@`'s calendar access. It would work: Google's 100-user cap counts only users granting unapproved sensitive scopes, and the warning screen follows the requested scopes. But branding and the cap are per project, a public sign-in would share risk with the project that holds the calendar token, and a basic-scope-only project can get brand verification (name and logo) cleanly. ([spike](F-001-spikes/README.md#f-002-research-2026-10-09)) |
 | D5 | **Per-request consent:** the agent host's own tool approval, the `booking` scope granted at connect time, and the "Booked" notification with one-click cancel. Where a client declares elicitation on MCP 2026-07-28, ask it to confirm the slot details (P3). | Short-lived tokens: refresh tokens defeat them and they cost KV writes. |
-| D7 | **No refresh tokens; one 24-hour access token** (`refreshTokenTTL: 0`, `accessTokenTTL: 86400`). When it expires, the client gets the 401 again and the person reconnects (one Google sign-in). | Rotating 30-day refresh tokens. The KV spike read the library's source: after a refresh, the *previous* refresh token stays valid and reusing it re-arms it, so a leaked refresh token could be replayed indefinitely, costing 2 KV writes each time. For occasional bookings, reconnecting daily is acceptable, and it also halves KV writes. |
+| D7 | **Sign in for every booking.** No refresh tokens (`refreshTokenTTL: 0`), an access token lasting **15 minutes** (`accessTokenTTL: 900`, enough for one conversation: availability, then booking), and its grant **revoked as soon as a booking or cancellation succeeds**. Each booking therefore needs the person to sign in at that moment, which is also the per-booking consent D5 couldn't otherwise guarantee: an agent left on "always allow" can't book later in the person's name. (Decided by Patrick, 2026-10-09: people spend little time on the site, so asking every time is reasonable.) | Rotating 30-day refresh tokens: the KV spike read the library's source and found that after a refresh the *previous* refresh token stays valid and reusing it re-arms it, so a leaked one could be replayed indefinitely. A 24-hour token: lets a misbehaving agent book again within the day without the person. |
 | D8 | **Guard the KV write allowance** (Free plan: 1,000 writes, 1,000 deletes and 1,000 lists a day, separate counts, reset 00:00 UTC). (a) The consent page is served without touching KV; the library's `beginConsent` runs only on the POST that approves. (b) Rate limits: GET `/oauth/authorize` 10 a minute per IP; POST `/oauth/authorize` and `/oauth/token` 6 a minute per IP. (c) A daily write budget in `BookingStore`: each OAuth step that writes reserves its count first; past **700**, `/oauth/*` returns 503 with `Retry-After` until midnight UTC, and anonymous paths keep working. (d) Health warns at 500. If real use ever reaches it, move to Workers Paid ($5 a month, 1M writes). | Moving token storage to the Durable Object: the library hard-codes `env.OAUTH_KV` with no pluggable storage, so a stand-in would be unsupported and fragile. |
 | D6 | **Build with `@cloudflare/workers-oauth-provider` 1.2.x** using its split authorisation-server API, and keep the existing stateless JSON MCP handler as the resource server. | The library's `OAuthProvider` wrapper: it would 401 every anonymous request to `/mcp`. Cloudflare `agents`/McpAgent: not needed for a stateless server. A hosted broker (WorkOS AuthKit): another US processor, and free-tier MCP support unverified. |
 
-**Residual risk, stated plainly:** sign-in proves *who* the person is, not that they approved *this* booking. A misbehaving or compromised agent, or one set to "always allow", can book in the person's name. It's bounded by the per-person caps (US-6), the immediate "Booked" email to the verified address, and one-click cancel.
+**Residual risk, stated plainly:** with D7 a token is good for one booking within 15 minutes of signing in, so an agent can't book later without the person. Within that window, a misbehaving agent could book a different slot from the one the person asked for. It's bounded by the per-person caps (US-6), the immediate "Booked" email to the verified address, and one-click cancel.
 
 ---
 
@@ -121,7 +121,7 @@ Maps to: US-3
 
 Maps to: US-4
 
-1. The signed-in person's agent calls `cancel_booking` with a token.
+1. The person's agent calls `cancel_booking`; the person signs in for it (D7), and the agent retries with the token.
 2. The booking belongs to that identity, so the meeting is cancelled at once; Google notifies attendees.
 
 ---
@@ -136,7 +136,7 @@ Maps to: US-4
 - [ ] **(US-1, US-2)** No token is issued unless Google returns `email_verified: true`. The identity is keyed on Google's `sub`, never on email.
 - [ ] **(US-1)** `book_meeting` with a valid token books for the identity: guest name and address come from the identity, the booking is `confirmed` with no hold email, and the event is created. An `email` argument that differs from the identity's is refused (`email_mismatch`), not silently ignored. Free/busy is re-checked and claim-before-await holds: the concurrent-booking test still has exactly one winner.
 - [ ] **(US-1)** The "Booked" email goes to the verified address and carries the cancel link.
-- [ ] **(US-4)** `cancel_booking` with the owner's token cancels directly. A non-owner's token, or none, behaves as in F-001.
+- [ ] **(US-4)** `cancel_booking` with the owner's token (a fresh sign-in, per D7) cancels directly. A non-owner's token, or none, behaves as in F-001.
 - [ ] **(US-5)** A `client_id` whose host isn't on the allowlist is refused before the consent page. The consent page shows the client's host, not its self-declared name, and can't be framed.
 - [ ] **(US-6)** Per identity: at most 2 booking requests a day and 2 upcoming meetings. The global daily cap and the 3-a-day limit still apply. Caps are reserved before any Google call and never refunded.
 - [ ] **(US-3)** The `book_meeting` description says booking over MCP needs sign-in and names `https://patrickjv.com/book` for people without it. `name` and `email` become optional in the schema, identical on MCP and WebMCP (the build's parity check still passes).
@@ -144,7 +144,7 @@ Maps to: US-4
 
 ### Non-functional
 
-- [ ] **Security:** one access token lasting 24 hours and no refresh tokens (D7); the token endpoint refuses `refresh_token` grants; tokens and grants are stored hashed or encrypted by the library; `redirect_uri` matched exactly (loopback: any port); the OAuth endpoints are covered by the WAF flood rule and `RL_MCP`.
+- [ ] **Security (D7):** access tokens last 15 minutes and there are no refresh tokens (the token endpoint refuses `refresh_token` grants); after a successful booking or cancellation the token's grant is revoked, so a second booking with the same token gets the 401 (tested); tokens and grants are stored hashed or encrypted by the library; `redirect_uri` matched exactly (loopback: any port); the OAuth endpoints are covered by the WAF flood rule and `RL_MCP`.
 - [ ] **Privacy:** `/privacy` lists the sign-in cookies (the library's short-lived consent cookies, strictly necessary), Google as the identity provider, what's kept about a signed-in person and for how long. An identity is deleted 30 days after its last booking or sign-in, with its grants revoked.
 - [ ] **Observability:** health gains `authReady` (KV bound, sign-in secrets set, Google discovery reachable); smoke checks the anonymous 401 and both metadata documents. Logs carry the subsystem only: never a token, `sub`, email or `client_id`.
 - [ ] **Cost and KV budget (D8):** Free plan only. Loading the consent page writes nothing to KV (tested). Past 700 OAuth writes in a UTC day, `/oauth/*` returns 503 `Retry-After` while reads, `/book` and anonymous MCP keep working (tested). `/oauth/authorize` and `/oauth/token` are rate-limited per IP. Health reports the day's KV write count and warns at 500.
@@ -195,7 +195,7 @@ New Worker routes: `patrickjv.com/oauth/*` and `patrickjv.com/.well-known/oauth-
 - **Google returns `email_verified: false`:** no token; the consent flow ends with "We couldn't verify your email with Google."
 - **Person's Google address changes:** the identity is keyed on `sub`, so it's the same identity; the stored email updates at next sign-in.
 - **KV write budget reached (D8):** sign-in fails closed with 503 and `Retry-After`; tokens already issued keep working (validation only reads); anonymous paths (reads, `/book`) keep working.
-- **Token expires mid-conversation:** the next booking write gets the 401 and the client shows Connect again (D7).
+- **Token expired or already used (D7):** the next booking write gets the 401 and the client shows Connect again; the person signs in for that booking.
 - **Client not on the allowlist:** refused before consent, with a message naming `/book`.
 - **Token valid but identity deleted (retention):** treated as invalid; the client re-runs sign-in.
 - **Agent sends a different email:** `email_mismatch`; nothing booked.
@@ -206,7 +206,6 @@ New Worker routes: `patrickjv.com/oauth/*` and `patrickjv.com/.well-known/oauth-
 ## Phases after P1
 
 - **P2, site sign-in:** "Sign in with Google" on `/book`, a `__Host-` session cookie (`Secure; HttpOnly; SameSite=Lax`), `GET /api/booking/me`, signed-in `/book` and WebMCP bookings confirmed directly. WebMCP asks for in-page confirmation before booking. Cookie-authenticated POSTs require an exact `Origin` and `Content-Type: application/json`. `/privacy` changes from "sets no cookies".
-- **P3, delegated booking:** a signed-in person may give another `email`. That booking falls back to F-001's hold-and-confirm, with the hold email sent to that address and naming who asked ("Jane Smith, jane@…, asked to book this on your behalf"). The other person still consents by clicking, but the request is attributed to a verified, capped identity instead of being anonymous. Counts against the requester's identity caps and the recipient's per-email cap.
 - **P3, more providers and consent:** Microsoft (key on tenant + object ID; email counted as verified only when Microsoft says so); Altimist ID (needs this site registered as a client, and its tokens to carry email verification and nothing internal); MCP elicitation for per-booking confirmation where clients support it; ChatGPT: per-tool `securitySchemes` (`noauth` on read tools, `oauth2` with scope `booking` on the two write tools, also mirrored in `_meta`), a tool-error result with `_meta["mcp/www_authenticate"]` instead of the 401 for ChatGPT, AS metadata with `authorization_response_iss_parameter_supported` (only if every authorisation response returns `iss`), allowlisting `https://chatgpt.com/oauth/client.json` and redirect `https://chatgpt.com/connector_platform_oauth_redirect`, then a live test in developer mode on a Business workspace (about half a day to a day); Dynamic Client Registration only if a needed client requires it.
 
 ---
