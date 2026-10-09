@@ -89,15 +89,16 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
 
   // The shared free/busy answer for the whole horizon, at most a minute old: availability, and
   // (F-002) booking requests and the "is this request's slot still free?" reads use it, so none of
-  // them can make the Worker hammer Google. One refresh at a time; a failed one also counts for
-  // its minute, so an outage isn't asked about on every request.
-  let availabilityCache = null; // { at, busy: Promise }
-  function cachedBusy() {
+  // them can make the Worker hammer Google. One refresh at a time. For booking requests and the
+  // F-002 reads a failed refresh also counts for its minute, so an outage isn't asked about on every
+  // request; F-001's availability (`retryFailed`) still asks again at once, as it always has.
+  let availabilityCache = null; // { at, busy: Promise, failed }
+  function cachedBusy({ retryFailed = false } = {}) {
     const t = now();
-    if (!availabilityCache || t.getTime() - availabilityCache.at >= AVAILABILITY_CACHE_MS) {
+    if (!availabilityCache || t.getTime() - availabilityCache.at >= AVAILABILITY_CACHE_MS || (retryFailed && availabilityCache.failed)) {
       const timeMin = t.toISOString(), timeMax = new Date(t.getTime() + (cfg.horizonDays + 1) * DAY).toISOString();
-      const entry = { at: t.getTime(), busy: freeBusy(timeMin, timeMax).then((r) => r.busy) };
-      entry.busy.catch(() => {}); // callers see the failure; this only keeps it from going unhandled
+      const entry = { at: t.getTime(), busy: freeBusy(timeMin, timeMax).then((r) => r.busy), failed: false };
+      entry.busy.catch(() => { entry.failed = true; }); // callers see the failure themselves
       availabilityCache = entry;
     }
     return availabilityCache.busy;
@@ -233,7 +234,7 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     },
     // Free slots (UTC) for a type on London days from..to. Throws if Google can't answer.
     async availability(type, from, to) {
-      const busy = await cachedBusy();
+      const busy = await cachedBusy({ retryFailed: true });
       const t = now();
       const slots = availableSlots({ cfg, typeId: type, now: t, from, to, busy, bookings: liveBookings(sql, t) });
       return { slots };

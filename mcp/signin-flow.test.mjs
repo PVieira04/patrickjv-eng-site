@@ -122,6 +122,18 @@ test("F-002 requests (review): with Google down, a failed refresh still counts f
   assert.equal(freeBusyCalls(h), 2, "and is tried again after the minute");
 });
 
+test("F-002 (review round 2): F-001's get_availability still retries at once after a failed refresh; only requests wait out the minute", async () => {
+  const h = harness({ fetchOpts: { fail: { freebusy: true } } });
+  await quiet(() => h.tool("book_meeting", ask()));
+  assert.equal(freeBusyCalls(h), 1);
+  h.f.opts.fail = {};
+  const av = await h.tool("get_availability", { type: "consultation", from: "2026-10-21", to: "2026-10-21" });
+  assert.equal(av.isError, undefined, "Google is back: availability answers");
+  assert.equal(freeBusyCalls(h), 2);
+  assert.equal((await h.tool("book_meeting", ask())).structuredContent.status, "pending_confirmation", "and requests use that fresh answer");
+  assert.equal(freeBusyCalls(h), 2);
+});
+
 test("F-002 requests (review): the cheap checks come before Google: during an outage a bad or locally taken start is refused as such, not 503", async () => {
   const h = harness();
   const b = (await h.tool("book_meeting", ask())).structuredContent;
