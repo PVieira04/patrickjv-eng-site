@@ -56,6 +56,16 @@ As **a guest**, I want **my agent to ask to cancel and me to confirm it by signi
 
 As **Patrick**, I want **unconfirmed holds to be short and capped, and confirmed bookings capped per person**, so that **nobody can block my calendar or fill it**.
 
+### US-7: An agent can find out how to book, without signing in
+
+As **an AI agent that has just found patrickjv.com**, I want **the booking steps written out wherever I look first**, so that **I can explain them to my person and follow them without guessing, and without signing in to read them**.
+
+**Why this matters:** Agents arrive by different routes: the MCP server, the homepage's WebMCP tools, `llms.txt`, or reading the page. A step that's only documented in one place gets missed, and an agent that misunderstands the sign-in step will invent an email address or give up.
+
+### US-8: The person understands what they're confirming
+
+As **a person handed a confirm link by my agent**, I want **the page to say what I'm booking, why I'm asked to sign in, and what's shared**, so that **I can confirm with confidence**.
+
 ### US-6 (P4, optional): My agent signs in with an identity I've set up
 
 As **a person with an agent**, I want **my agent to confirm a booking by signing in with an identity I've set up for it**, so that **it can book for me without handing me a link each time**. That identity is either my own account, which my agent has access to, or the agent's own account, which I've authorised at the identity provider to act for me.
@@ -99,6 +109,42 @@ As **a person with an agent**, I want **my agent to confirm a booking by signing
 | D8 | **`/book` keeps the email path as a fallback until P3**, beside "Sign in with Google to confirm", for people without a Google account. Agent channels get no email path. | Removing it in P1: people without Google couldn't book until P2's providers arrive. |
 
 **Threat model for confirmation.** A sign-in proves that **whoever controls the Google account at that moment** approved the booking, not that a human clicked. An agent driving the person's own signed-in browser (WebDriver, or an in-browser agent such as Claude in Chrome) can complete the sign-in, and no website can tell the difference. The site treats that as the person's authority, because they let the agent act in their browser. The "Booked" email to the verified address is the backstop. The confirmation stops an agent from booking in the name of **someone else** (it can't sign in to an account it doesn't control), and from booking with an address it merely typed. It doesn't stop a person's own agent acting within that person's session. A person who wants that delegation explicit can give their agent its own account and authorise it at the identity provider (P4).
+
+---
+
+## Instructions for agents and people
+
+**One booking guide, published everywhere, readable without sign-in.** The guide is written once, in `content.json` (`booking_guide`), and the build and the Worker publish it in each place an agent might start:
+
+- the MCP server's `initialize` instructions
+- a read-only tool, `get_booking_guide`, on MCP and WebMCP (some clients never show `instructions` to their model)
+- `llms.txt` and `index.md` ("How to book a call"), and a plain page `/book.md`
+- the `/book` page, in a short "For AI agents" note
+
+Draft text, to be approved as public copy:
+
+> **How to book a call with Patrick Vieira**
+> 1. Call `list_meeting_types` to see the options (Consultation, 30 minutes; Recruiter intro, 15 minutes).
+> 2. Call `get_availability` with a type. It lists free times in London working hours, each with its UTC offset. Steps 1 and 2 need no sign-in.
+> 3. Agree a time with your person.
+> 4. Call `book_meeting` with the type, the start time and an optional note. Don't send their name or email address: those come from their sign-in.
+> 5. Give your person the `confirm_url` from the result. They open it and sign in with Google within 10 minutes. That books the call in their name, and Google sends them the invite.
+> 6. Call `get_booking_status` to check it's confirmed. If the hold expired, start again from step 2.
+>
+> To cancel a booked call, call `cancel_booking` and give your person the link it returns. People can also book at https://patrickjv.com/book.
+
+**Each tool says what to do next.** Tool descriptions carry the step they cover. Results include a `next_step` sentence:
+- `book_meeting`: "Give this link to the person you're booking for. They sign in with Google within 10 minutes to confirm. Then call get_booking_status."
+- `get_booking_status`: one sentence for each status (`pending_confirmation`, `confirmed`, `expired`, `declined`, `cancelled`).
+- Errors say what to change, never only a code.
+
+**For the person, on the confirm page:**
+- The meeting type, day and time in their time zone, with London time as well.
+- "Sign in with Google to confirm this call. We use your name and email address from Google for the invite, and nothing else."
+- "This link works once and expires at <time>."
+- If it's expired or used, a short explanation, with "Ask your assistant to book again, or go to patrickjv.com/book."
+
+The "Booked" email stays as in F-001.
 
 ---
 
@@ -165,6 +211,10 @@ Maps to: US-4
 - [ ] **(US-1)** A forwarded link is handled as Edge Cases describe (tested): the first valid sign-in becomes the guest; later attempts on the same ticket get "already used"; cancellation recognises that guest.
 - [ ] **(D8)** `/book` offers sign-in confirmation and, until P3, F-001's email confirmation as a fallback. Converting a hold to email behaves as Flow 2 says: same booking, F-001's email caps taken then, 2-hour expiry, sign-in ticket spent, no double charge (tested). F-001's tests for the email path stay green.
 - [ ] **(D6)** `confirmHold` is the only code path that turns a hold into a meeting. The email path (D8) and the sign-in path both call it (tested). The email path's person is `{provider: "email", subject: <normalised address>, email, display_name: <typed>}` with grant `{proof: "email_link"}`, so person caps key on `provider` and `subject` for both.
+- [ ] **(US-7)** The booking guide comes from one source, `content.json` → `booking_guide`. It's published, readable with no sign-in, in the MCP `initialize` instructions, the `get_booking_guide` tool (MCP and WebMCP, read-only, identical), `llms.txt`, `index.md`, `/book.md` and the `/book` page. A test checks every place carries the same text, and the build fails if one drifts.
+- [ ] **(US-7)** Every booking tool's description names its step in the guide. `book_meeting` and `get_booking_status` results include a `next_step` sentence (one for each status), and every booking error includes a sentence saying what to do. Tested for each result and error code.
+- [ ] **(US-7)** An agent given only `https://patrickjv.com/` (reading `llms.txt` or the page, with no tools) can find the guide in one hop. Test: `llms.txt` links to `/book.md`, which contains the full guide.
+- [ ] **(US-8)** The confirm page shows the meeting in the visitor's time zone and in London time, says why sign-in is asked and what's shared, and gives the link's expiry. Expired and used links explain what happened and what to do. Public copy is approved by Patrick before release.
 - [ ] **(US-1)** Manual check: a booking made through the Claude connector (link in chat → sign-in on a phone → "Booked"), and one through WebMCP in a browser.
 
 ### Non-functional
@@ -250,8 +300,10 @@ In a **new** Google Cloud project `patrickjv-signin` owned by `hello@` (about 30
 
 ## Open Questions
 
-- [ ] **Defaults to confirm** (all in `booking.json`, changeable without code): holds awaiting sign-in last 10 minutes; at most 2 live holds per IP; 2 confirmations per person a day; 2 upcoming meetings per person. Owner: @PVieira04. The build uses these unless changed.
-- [ ] **Threat model:** confirm Patrick accepts that an agent driving his guest's own signed-in browser counts as the guest (see the threat model under Decisions).
+None blocking. Resolved by Patrick on 2026-10-09:
+
+- **Defaults (D3, D7)** accepted: holds awaiting sign-in last 10 minutes; at most 2 live holds per IP; 2 confirmations per person a day; 2 upcoming meetings per person. All are in `booking.json` and can be changed without code.
+- **Threat model** accepted: an agent driving its guest's own signed-in browser counts as the guest.
 
 ---
 
