@@ -42,11 +42,11 @@ const hostile = {
 
 const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
 
-test("WebMCP registers all ten tools, in the MCP server's order, once booking is open", async () => {
+test("WebMCP registers all eleven tools (F-002 adds get_booking_guide), in the MCP server's order, once booking is open", async () => {
   const { tools } = runPage({ respond: ok, bookingOpen: true });
   await settle();
   assert.deepEqual(tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
-    "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
+    "get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
 });
 
 test("WebMCP registers only the read tools and request_intro while booking is closed", async () => {

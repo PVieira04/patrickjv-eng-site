@@ -134,7 +134,7 @@ test("tools/list: four read-only tools, request_intro, then (only with BOOKING_E
   h.env.BOOKING_ENABLED = "true";
   const r = await (await h.call(rpc("tools/list"))).json();
   assert.deepEqual(r.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro",
-    "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
+    "get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
   for (const t of r.result.tools.slice(0, 4)) assert.equal(t.annotations.readOnlyHint, true);
   for (const t of r.result.tools) assert.equal(t.icons[0].src, "https://patrickjv.com/icon-192.png");
   assert.match(r.result.tools[4].description, /not stored by this site/);

@@ -411,7 +411,7 @@ test("BOOKING_ENABLED not \"true\": every write path is 503 booking_disabled; ty
     const h = harness({ env: { BOOKING_ENABLED: value } });
     const res = await h.post(booking());
     assert.equal(res.status, 503, String(value));
-    assert.deepEqual(await res.json(), { error: "booking_disabled", message: "Booking isn't open yet." });
+    assert.deepEqual(await res.json(), { error: "booking_disabled", message: "Booking isn't open yet. Please try again later, or email hello@patrickjv.com." }); // F-002: says what to do
     const viaTool = await tool(h, "book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" });
     assert.equal(viaTool.isError, true);
     assert.equal(viaTool.structuredContent.error, "booking_disabled");
@@ -440,8 +440,8 @@ test("BOOKING_ENABLED not \"true\": MCP hides booking — tools/list omits the f
     }
     assert.equal(h.storeCalls(), 0, "nothing reaches the BookingStore");
   }
-  // Switched on, all ten are listed.
-  assert.equal((await mcp(harness(), rpc("tools/list"))).result.tools.length, 10);
+  // Switched on, all eleven are listed (F-002 adds get_booking_guide).
+  assert.equal((await mcp(harness(), rpc("tools/list"))).result.tools.length, 11);
 });
 
 test("kill switch: availability works while configured, and is 503 when not configured", async () => {

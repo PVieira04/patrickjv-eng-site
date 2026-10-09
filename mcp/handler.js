@@ -13,6 +13,7 @@ import serverJson from "./server.json" with { type: "json" };
 import bookingJson from "../booking.json" with { type: "json" };
 import { validateConfig, withOffset } from "./booking-config.js";
 import { capAlertEmail } from "./booking-email.js";
+import { bookingGuide } from "../lib/booking-guide.mjs";
 
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18"];
 export const ALLOWED_ORIGIN = "https://patrickjv.com";
@@ -92,11 +93,14 @@ export function tools() {
       icons: ICONS,
     },
     // Booking (F-001). The operations are bookingOps below, shared with the HTTP API.
-    { name: "list_meeting_types", title: "Meeting types", description: "The kinds of meeting you can book with Patrick Vieira: id, title, length in minutes and what each is for.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    // F-002 (US-7): the booking guide itself, readable with no sign-in (some clients never show
+    // the initialize instructions to their model).
+    { name: "get_booking_guide", title: "How to book", description: "The booking guide: how to book a call with Patrick Vieira, step by step, and how to cancel one. Read this first; no sign-in needed.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    { name: "list_meeting_types", title: "Meeting types", description: "Step 1 of the booking guide (get_booking_guide). The kinds of meeting you can book with Patrick Vieira: id, title, length in minutes and what each is for.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
     {
       name: "get_availability",
       title: "Free times",
-      description: "Free start times for a meeting type, from Patrick's live calendar: weekdays 10:00–17:00 London time, at least 24 hours ahead and up to four weeks out. Times are ISO 8601 with the Europe/London offset. Optional from and to (YYYY-MM-DD, London days) narrow the range.",
+      description: "Step 2 of the booking guide (get_booking_guide). Free start times for a meeting type, from Patrick's live calendar: weekdays 10:00–17:00 London time, at least 24 hours ahead and up to four weeks out. Times are ISO 8601 with the Europe/London offset. Optional from and to (YYYY-MM-DD, London days) narrow the range.",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -457,6 +461,10 @@ async function callTool(name, args, ctx) {
       }
       return { content: [{ type: "text", text: "Thanks — your introduction has been sent to Patrick. He replies personally when he can; there is no automated follow-up." }] };
     }
+    case "get_booking_guide": {
+      const guide = bookingGuide(ctx.content, BOOKING_CONFIG);
+      return { content: [{ type: "text", text: guide }], structuredContent: { guide } };
+    }
     case "list_meeting_types": return result(meetingTypes());
     case "get_availability": return bookingResult(await bookingOps.availability(ctx, args));
     // F-002: a booking request, confirmed by the person signing in (no email path on MCP).
@@ -476,11 +484,11 @@ function bookingResult(r) {
 }
 // Booking is hidden from MCP clients until launch (BOOKING_ENABLED): not listed, not described in
 // the instructions, and a call names the kill switch rather than "unknown tool".
-const BOOKING_TOOL_NAMES = new Set(["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
+const BOOKING_TOOL_NAMES = new Set(["get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
 const INSTRUCTIONS = "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.";
 const BOOKING_INSTRUCTIONS = " To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it by signing in with Google on the link it returns.";
 // Tools that take no arguments: a non-empty arguments object is a protocol error.
-const NO_ARGUMENTS = new Set(["get_profile", "list_work", "list_skills", "list_faq", "list_meeting_types"]);
+const NO_ARGUMENTS = new Set(["get_profile", "list_work", "list_skills", "list_faq", "get_booking_guide", "list_meeting_types"]);
 
 // ---------------------------------------------------------------------------------------------
 // Booking (F-001). Every booking operation runs in the BookingStore Durable Object (deps.booking()
@@ -572,13 +580,13 @@ function validateBookingId(args) {
 }
 
 const BOOKING_ERRORS = {
-  booking_disabled: [503, "Booking isn't open yet."],
+  booking_disabled: [503, "Booking isn't open yet. Please try again later, or email hello@patrickjv.com."],
   unavailable: [503, "Booking is unavailable right now. Please try again later."],
   email_failed: [503, "The confirmation email couldn't be sent, so nothing was held. Please try again later."],
   slot_taken: [409, "That time is no longer free. Please choose another."],
   hold_pending: [429, "A booking for this email address is already waiting to be confirmed. Confirm or decline it from the email first."],
-  not_found: [404, "No booking has that ID."],
-  not_cancellable: [409, "This booking can't be cancelled: it isn't a pending hold or a meeting still to come."],
+  not_found: [404, "No booking has that ID. Check the booking_id that book_meeting returned."],
+  not_cancellable: [409, "This booking can't be cancelled now. Check next_step, or get_booking_status, for what to do."],
 };
 function bookingFailure(r) {
   const out = (status, message) => ({ status, body: { error: r.error, message, ...(r.reason ? { reason: r.reason } : {}), ...(r.status ? { status: r.status } : {}), ...(r.next_step ? { next_step: r.next_step } : {}) } });
@@ -1137,7 +1145,8 @@ export async function handle(request, env, deps) {
           protocolVersion: PROTOCOL_VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "patrickjv.com", title: "Patrick Vieira — platform engineer", version: SERVER_VERSION, websiteUrl: "https://patrickjv.com/", icons: ICONS },
-          instructions: INSTRUCTIONS + (bookingEnabled(env) ? BOOKING_INSTRUCTIONS : ""),
+          // F-002 (US-7): the whole booking guide, for clients that show instructions to their model.
+          instructions: INSTRUCTIONS + (bookingEnabled(env) ? `${BOOKING_INSTRUCTIONS}\n\n${bookingGuide(deps.content, BOOKING_CONFIG)}` : ""),
         });
       }
       case "ping":

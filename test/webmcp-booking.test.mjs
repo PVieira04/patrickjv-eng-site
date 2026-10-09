@@ -12,7 +12,7 @@ const page = readFileSync(new URL("../public/index.html", import.meta.url), "utf
 const script = inlineCode(page, { styles: 1, scripts: 1 }).scripts[0];
 const SLOT = "2026-10-21T10:00:00+01:00";
 const READ_AND_INTRO = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"];
-const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
+const BOOKING_TOOLS = ["get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 
 // Lets the page's same-origin GET /api/booking/types (and so booking registration) finish.
 const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
