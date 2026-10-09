@@ -154,7 +154,11 @@ test("/book form: native controls, every field labelled, a polite live status re
     assert.equal(b.attrs.type, "button");
     assert.equal(b.attrs["aria-label"], label);
   }
-  assert.match(els.find((e) => e.attrs.id === "times").attrs.class, /\bchips\b/);
+  // The times are a vertical list (F-003 4b), inline in the page rather than a modal (4c).
+  const times = els.find((e) => e.attrs.id === "times");
+  assert.match(times.attrs.class, /\bslots\b/);
+  assert.doesNotMatch(times.attrs.class, /\bchips\b/);
+  assert.ok(!els.some((e) => e.tag === "dialog" || e.attrs.role === "dialog" || e.attrs["aria-modal"] !== undefined), "no dialog or modal on /book");
   assert.ok(els.some((e) => e.tag === "button" && e.attrs.type === "submit"));
 });
 
@@ -299,7 +303,7 @@ test("/book choosing a type shows a calendar of free days, then times, in the vi
   assert.equal(v.$("time-set").hidden, true);
   await v.pickDay(0);
   // Paris is UTC+1 after 25 Oct: 09:00 and 10:00 UTC are 10:00 and 11:00.
-  assert.deepEqual(v.radios("times").map(v.labelFor), ["10:00–10:30", "11:00–11:30"]);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["10:00", "11:00"]);
   assert.ok(v.radios("times").every((r) => r.name === "time"));
   assert.equal(v.$("details").hidden, true);
   await v.choose("times", 1);
@@ -314,7 +318,7 @@ test("/book days are the visitor's days: in a +14:00 zone the 10:00 GMT slot mov
   assert.equal(visible(v.$("zone")), "Times shown in Pacific/Kiritimati.");
   assert.deepEqual(v.free().map(v.nameOf), ["Monday 26 October, 1 free time", "Tuesday 27 October, 1 free time", "Wednesday 28 October, 1 free time"]);
   await v.pickDay(1);
-  assert.deepEqual(v.radios("times").map(v.labelFor), ["00:00–00:30"]);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["00:00"]);
 });
 
 test("/book an unknown time zone falls back to Europe/London and says so", async () => {
@@ -323,7 +327,7 @@ test("/book an unknown time zone falls back to Europe/London and says so", async
   assert.equal(visible(v.$("zone")), bookCopy.zoneFallback);
   await v.choose("types", 0);
   await v.pickDay(0);
-  assert.deepEqual(v.radios("times").map(v.labelFor), ["09:00–09:30", "10:00–10:30"]);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["09:00", "10:00"]);
 });
 
 test("/book changing day or type clears the choices made after it", async () => {
@@ -513,7 +517,7 @@ test("/book calendar: an unavailable day does nothing; a free day is selected an
   assert.deepEqual(pressed(v), ["27"]);
   assert.equal(visible(v.$("time-legend")), "Time on Tuesday 27 October");
   assert.equal(v.$("time-set").hidden, false);
-  assert.deepEqual(v.radios("times").map(v.labelFor), ["11:15–11:45"]);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["11:15"]);
   assert.deepEqual(tabStops(v), ["27"], "the selected day is the grid's one tab stop");
 });
 
@@ -650,4 +654,16 @@ test("F-002 /book: its CSP lets the sign-in POST go on to Google, and nothing el
 test("/book script: the picker hands off through one slotChosen(start) function", () => {
   const script = inlineCode(read("public/book.html"), { styles: 1, scripts: 1 }).scripts[0];
   assert.equal((script.match(/function slotChosen\(/g) || []).length, 1);
+});
+
+test("/book times: start times only, and picking another day scrolls the list back to the top", async () => {
+  const v = openBook({ routes: ready() });
+  await settle();
+  await v.choose("types", 0);
+  await v.pickDay(0);
+  assert.ok(v.radios("times").map(v.labelFor).every((l) => /^\d\d:\d\d$/.test(l)), "labels are a start time alone, no end time");
+  v.$("times").scrollTop = 240;
+  await v.pickDay(1);
+  assert.equal(v.$("times").scrollTop, 0);
+  assert.deepEqual(v.radios("times").map(v.labelFor), ["11:15"]);
 });

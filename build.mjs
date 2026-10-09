@@ -560,7 +560,8 @@ export function renderPrivacy(c) {
 
 // /book (F-001), launched 8 Oct 2026: linked from the homepage nav, in the sitemap, index.md and
 // llms.txt. The meeting type and time are native radio inputs in fieldsets; the day is a month
-// calendar (F-003): a role="grid" table of buttons with a roving tab stop and arrow-key movement.
+// calendar (F-003): a role="grid" table of buttons with a roving tab stop and arrow-key movement,
+// and the times a single-column list of start times that scrolls inline below it (not a modal).
 export const BOOK_PATH = "/book";
 const BOOK_STYLE = WRITING_STYLE + `
 [hidden] { display: none; }
@@ -584,7 +585,7 @@ button:disabled { opacity: 0.6; cursor: progress; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
 .cal-month { margin: 0; font-family: var(--mono); font-size: 0.9375rem; letter-spacing: 0.04em; }
 .cal-nav { display: flex; gap: 8px; }
-.cal-nav button, .cal button, .chips label { box-sizing: border-box; min-height: 2.75rem; margin: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; color: var(--ink); font-family: var(--mono); font-size: 0.9375rem; font-weight: 400; font-variant-numeric: tabular-nums; cursor: pointer; }
+.cal-nav button, .cal button, .slots label { box-sizing: border-box; min-height: 2.75rem; margin: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; color: var(--ink); font-family: var(--mono); font-size: 0.9375rem; font-weight: 400; font-variant-numeric: tabular-nums; cursor: pointer; }
 .cal-nav button { width: 2.75rem; padding: 0; }
 .cal-nav button:disabled { opacity: 0.35; cursor: default; }
 .cal { width: 100%; table-layout: fixed; border-collapse: collapse; }
@@ -592,14 +593,15 @@ button:disabled { opacity: 0.6; cursor: progress; }
 .cal td { padding: 2px; }
 .cal button { display: block; width: 100%; padding: 0; background: var(--signal-soft); }
 .cal button[aria-disabled="true"] { border-color: transparent; background: none; color: var(--muted); cursor: default; }
-.cal button[aria-pressed="true"], .chips input:checked + label { border-color: var(--signal); background: var(--signal); color: var(--bg); font-weight: 600; }
-.cal-nav button:not(:disabled):hover, .cal button:not([aria-disabled="true"]):hover, .chips label:hover { border-color: var(--signal); }
-.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 8px; }
-.chips .choice { position: relative; display: block; }
-.chips .choice input { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; opacity: 0; }
-.chips label { display: flex; align-items: center; justify-content: center; padding: 6px 8px; }
-.chips input:focus-visible + label { outline: 3px solid var(--signal); outline-offset: 2px; }
-@media (prefers-reduced-motion: no-preference) { .cal-nav button, .cal button, .chips label { transition: background-color 120ms, border-color 120ms, color 120ms; } }
+.cal button[aria-pressed="true"], .slots input:checked + label { border-color: var(--signal); background: var(--signal); color: var(--bg); font-weight: 600; }
+.cal-nav button:not(:disabled):hover, .cal button:not([aria-disabled="true"]):hover, .slots label:hover { border-color: var(--signal); }
+.slots { display: grid; gap: 6px; align-content: start; max-height: 17rem; overflow-y: auto; overscroll-behavior: contain; margin: -5px; padding: 5px; }
+.slots[data-more="true"] { -webkit-mask-image: linear-gradient(#000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(#000 calc(100% - 2.5rem), transparent); }
+.slots .choice { position: relative; display: block; }
+.slots .choice input { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; opacity: 0; scroll-margin: 5px 0 calc(2.75rem + 2.5rem); }
+.slots label { display: flex; align-items: center; padding: 0 14px; }
+.slots input:focus-visible + label { outline: 3px solid var(--signal); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .cal-nav button, .cal button, .slots label { transition: background-color 120ms, border-color 120ms, color 120ms; } }
 `;
 
 // The picker script. Copy is spliced in from content.json; it talks only to /api/booking on this
@@ -700,9 +702,13 @@ const bookScript = (copy) => `
     Object.keys(cells).forEach(function (c) { if (byDay[c]) cells[c].setAttribute("aria-pressed", c === k ? "true" : "false"); });
     moveStop(k);
     $("time-legend").textContent = t.labels.timeOn.replace("{day}", nameOf(k));
-    byDay[k].forEach(function (s) { choice("times", "time", s.start, hhmm.format(new Date(s.start)) + "–" + hhmm.format(new Date(s.end))); });
+    byDay[k].forEach(function (s) { choice("times", "time", s.start, hhmm.format(new Date(s.start))); });
     show("time-set", true);
+    $("times").scrollTop = 0;
+    more();
   }
+  // The time list scrolls in a box of fixed height; its bottom edge fades while more times lie below.
+  function more() { var l = $("times"); l.setAttribute("data-more", l.scrollHeight - l.scrollTop - l.clientHeight > 1 ? "true" : "false"); }
 
   // Hand-off: the picker ends here, with \`type\` and a chosen \`start\`. F-002 (D8): the visitor then
   // chooses how to book. "Sign in with Google to book" makes a booking request and starts its
@@ -792,6 +798,7 @@ const bookScript = (copy) => `
   $("cal-prev").addEventListener("click", turn(-1));
   $("cal-next").addEventListener("click", turn(1));
   $("times").addEventListener("change", function (e) { slotChosen(e.target.value); });
+  $("times").addEventListener("scroll", more);
   $("note").addEventListener("input", function () { $("note-count").textContent = t.labels.noteCount.replace("{n}", $("note").value.length); });
 
   form.addEventListener("submit", function (e) {
@@ -837,7 +844,7 @@ export function renderBook(c, guide) {
 <div class="cal-head"><p id="cal-month" class="cal-month" aria-live="polite"></p><div id="cal-nav" class="cal-nav" hidden><button id="cal-prev" type="button" aria-label="${attr(l.prevMonth)}">←</button><button id="cal-next" type="button" aria-label="${attr(l.nextMonth)}">→</button></div></div>
 <table id="days" class="cal" role="grid" aria-labelledby="cal-month"><thead id="cal-cols"></thead><tbody id="cal-body"></tbody></table>
 </fieldset>
-<fieldset id="time-set" hidden><legend id="time-legend">${attr(l.time)}</legend><div id="times" class="choices chips"></div></fieldset>
+<fieldset id="time-set" hidden><legend id="time-legend">${attr(l.time)}</legend><div id="times" class="slots"></div></fieldset>
 <fieldset id="how" hidden><legend>${attr(l.how)}</legend><p class="meta">${attr(l.howHint)}</p>
 <div class="choices"><button id="by-signin" type="button">${attr(l.signin)}</button><button id="by-email" type="button">${attr(l.byEmail)}</button></div></fieldset>
 <div id="details" hidden>

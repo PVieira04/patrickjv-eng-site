@@ -54,9 +54,21 @@ test("Chromium /book: a booking made by keyboard alone, through the calendar, un
     assert.equal(await page.getAttribute("#days button[aria-pressed=true]", "aria-label"), "Monday 2 November, 22 free times");
     assert.equal(await page.textContent("#time-legend"), "Time on Monday 2 November");
     await page.keyboard.press("Tab");
-    await page.keyboard.press("ArrowRight"); // radio group: moves to and checks the second time
-    // F-002 (D8): "Sign in with Google to book" first, then "Book with email instead".
-    assert.equal(await page.isVisible("#how"), true);
+    assert.equal(await page.evaluate(() => document.activeElement.name), "time", "Tab moves from the grid into the time list");
+    for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowDown"); // radio group: moves to and checks the next time
+    const kb = await page.evaluate(() => {
+      const box = document.getElementById("times").getBoundingClientRect(), input = document.activeElement;
+      const row = document.querySelector('label[for="' + input.id + '"]').getBoundingClientRect();
+      return { checked: input.checked, value: input.value, label: document.querySelector('label[for="' + input.id + '"]').textContent, scrolled: document.getElementById("times").scrollTop, inView: row.top >= box.top - 0.5 && row.bottom <= box.bottom + 0.5 };
+    });
+    assert.ok(kb.checked, "arrow keys check the time they move to");
+    assert.equal(kb.label, "12:30", "the ninth free time on 2 November");
+    assert.ok(kb.scrolled > 0, "the list scrolled to follow the keyboard");
+    assert.ok(kb.inView, "the focused time is fully in view in the list");
+    const ring = await page.evaluate(() => getComputedStyle(document.querySelector('label[for="' + document.activeElement.id + '"]')).outlineStyle);
+    assert.notEqual(ring, "none", "the focused time shows a focus ring");
+    // F-002 (D8): choosing a time offers "Sign in with Google to book" first, then "Book with email instead".
+    assert.equal(await page.isVisible("#how"), true, "choosing a time offers how to confirm");
     await page.keyboard.press("Tab");
     assert.equal(await focused(page), "by-signin");
     await page.keyboard.press("Tab");
@@ -72,7 +84,8 @@ test("Chromium /book: a booking made by keyboard alone, through the calendar, un
     const [post] = site.posts;
     assert.equal(post.type, "consultation");
     assert.equal(post.name, "Ada Lovelace");
-    assert.match(post.start, /^2026-11-02T10:/);
+    assert.equal(post.start, kb.value);
+    assert.match(post.start, /^2026-11-02T12:30/);
     assert.deepEqual(problems, [], "no console errors (CSP violations are logged as errors)");
   } finally { await done(); }
 });
@@ -93,6 +106,55 @@ test("Chromium /book: no horizontal scroll at 360 px, the grid fills the gutter,
       assert.ok(m.left >= 16 && m.right <= 360 - 16, `${scheme}: grid inside the 16 px gutter (${m.left}–${m.right})`);
       assert.ok(m.cellH >= 44, `${scheme}: day cells ${m.cellH} px tall`);
       assert.deepEqual(problems, []);
+    } finally { await done(); }
+  }
+});
+
+// F-003 4a–4c: the times are start times only, in one column, in a box of bounded height that
+// scrolls (and fades at the bottom while more lie below), and goes back to the top for a new day.
+test("Chromium /book: the times are a single-column list of start times that scrolls in a bounded box, at 360 px and on desktop (light and dark)", { skip }, async () => {
+  for (const width of [360, 1280]) for (const scheme of ["light", "dark"]) {
+    const { page, problems, done } = await open({ width, scheme });
+    const at = `${width} px ${scheme}`;
+    try {
+      await page.click("#types input");
+      await page.waitForSelector("#days button");
+      await page.click("#days button:not([aria-disabled=true])"); // Monday 26 October, 21 free times
+      const m = await page.evaluate(() => {
+        const list = document.getElementById("times"), cs = getComputedStyle(list), box = list.getBoundingClientRect();
+        const rows = [...list.querySelectorAll("label")].map((l) => { const r = l.getBoundingClientRect(); return { text: l.textContent, left: r.left, width: r.width, top: r.top, height: r.height }; });
+        return { rows, overflowY: cs.overflowY, overscroll: cs.overscrollBehaviorY, maxHeight: cs.maxHeight, client: list.clientHeight, scroll: list.scrollHeight, more: list.getAttribute("data-more"), mask: cs.maskImage || cs.webkitMaskImage, left: box.left, right: box.right, pageScroll: document.documentElement.scrollWidth, pageClient: document.documentElement.clientWidth, inDialog: !!list.closest("dialog, [role=dialog], [aria-modal]") };
+      });
+      assert.equal(m.rows.length, 21, at);
+      assert.ok(m.rows.every((r) => /^\d\d:\d\d$/.test(r.text)), `${at}: labels are start times only (${m.rows[0].text})`);
+      assert.ok(m.rows.every((r) => r.left === m.rows[0].left && r.width === m.rows[0].width), `${at}: one column`);
+      assert.ok(m.rows.every((r, i) => i === 0 || r.top >= m.rows[i - 1].top + m.rows[i - 1].height), `${at}: one time per row, top to bottom`);
+      assert.ok(m.rows[0].width >= m.right - m.left - 16, `${at}: rows run the full width of the list`);
+      assert.ok(m.rows.every((r) => r.height >= 44), `${at}: rows at least 44 px tall`);
+      assert.equal(m.overflowY, "auto", at);
+      assert.equal(m.overscroll, "contain", at);
+      assert.notEqual(m.maxHeight, "none", `${at}: the list has a bounded height`);
+      const visibleRows = m.client / (m.rows[1].top - m.rows[0].top);
+      assert.ok(visibleRows >= 5 && visibleRows <= 6.5, `${at}: about 5–6 rows visible (${visibleRows.toFixed(2)})`);
+      assert.ok(m.scroll > m.client, `${at}: 21 times overflow the box, so it scrolls`);
+      assert.equal(m.more, "true", `${at}: more below, so the bottom edge fades`);
+      assert.match(m.mask, /gradient/, `${at}: the fade is a mask gradient`);
+      assert.equal(m.inDialog, false, `${at}: inline, not in a dialog`);
+      assert.ok(m.pageScroll <= m.pageClient, `${at}: page scrolls sideways (${m.pageScroll} > ${m.pageClient})`);
+      if (width === 360) assert.ok(m.left >= 16 && m.right <= 360 - 16, `${at}: list inside the 16 px gutter (${m.left}–${m.right})`);
+      // Scrolled to the end, there is nothing more below: no fade.
+      await page.evaluate(() => { const l = document.getElementById("times"); l.scrollTop = l.scrollHeight; });
+      await page.waitForFunction(() => document.getElementById("times").getAttribute("data-more") === "false");
+      assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("times")).maskImage), "none", `${at}: no fade at the end`);
+      // Partway down, then another day: the list starts again at the top.
+      await page.evaluate(() => { document.getElementById("times").scrollTop = 120; });
+      await page.click("#days button[aria-pressed=false]");
+      assert.equal(await page.evaluate(() => document.getElementById("times").scrollTop), 0, `${at}: a new day starts at the top`);
+      assert.equal(await page.getAttribute("#times", "data-more"), "true", at);
+      // Choosing a time still hands off: F-002 (D8) offers how to confirm.
+      await page.click("#times label >> nth=3");
+      assert.equal(await page.isVisible("#how"), true, at);
+      assert.deepEqual(problems, [], at);
     } finally { await done(); }
   }
 });
