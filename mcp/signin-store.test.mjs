@@ -573,3 +573,171 @@ test("F-002 cancel_booking: an email-form (F-001) booking still gets F-001's con
   assert.equal(t.calls.emails.at(-1).booking.email, "guest@example.com");
 });
 
+// ---- Sign-in transactions -----------------------------------------------------------------------
+
+let txn = 0;
+const txFor = () => { txn++; return { stateHash: `state${txn}`, cookieHash: `cookie${txn}`, nonce: `nonce${txn}`, codeVerifier: `verifier${txn}` }; };
+const start = (t, url, { now = NOW, tx = txFor(), busy = [] } = {}) => store.startSignin(t.sql, { token: ticketOf(url), now, cfg, busy, tx, deps: t.deps }).then((r) => ({ ...r, tx }));
+
+test("F-002 sign-in start: creates a signin_tx bound to the ticket and its purpose, expiring in 10 minutes", async () => {
+  const t = setup();
+  const r = await ask(t);
+  const s = await start(t, r.confirm_url);
+  assert.equal(s.purpose, "book");
+  const row = t.sql.exec("SELECT * FROM signin_tx").one();
+  assert.deepEqual(row, { state_hash: s.tx.stateHash, ticket_hash: await store.hashToken(ticketOf(r.confirm_url)), cookie_hash: s.tx.cookieHash,
+    nonce: s.tx.nonce, code_verifier: s.tx.codeVerifier, purpose: "book", expires_at: "2026-10-19T09:10:00.000Z" });
+  const id = await booked(t, JANE, { start: "2026-10-22T09:00:00.000Z" });
+  const link = await agentCancel(t, id);
+  assert.equal((await start(t, link.confirm_url)).purpose, "cancel");
+});
+
+test("F-002 sign-in admission: a ticket starts at most signinAttemptsPerTicket sign-ins, counted when the transaction is created and never refunded", async () => {
+  const t = setup();
+  const r = await ask(t);
+  for (let i = 0; i < 5; i++) assert.equal((await start(t, r.confirm_url)).purpose, "book", `attempt ${i + 1}`);
+  t.sql.exec("DELETE FROM signin_tx"); // used or pruned: still counted
+  assert.deepEqual((await start(t, r.confirm_url)).error, "too_many");
+  assert.equal(count(t, "SELECT count(*) c FROM signin_tx"), 0);
+  // Another ticket is unaffected.
+  assert.equal((await start(t, (await ask(t)).confirm_url)).purpose, "book");
+});
+
+test("F-002 sign-in start: an expired, used, withdrawn or declined request, a spent or expired cancel link, or an unknown ticket starts no sign-in", async () => {
+  const t = setup();
+  const expired = await ask(t);
+  assert.equal((await start(t, expired.confirm_url, { now: later(HOUR) })).error, "expired");
+  const withdrawn = await ask(t);
+  await agentCancel(t, withdrawn.booking_id);
+  assert.equal((await start(t, withdrawn.confirm_url)).error, "cancelled");
+  const used = await ask(t);
+  await confirm(t, used);
+  assert.equal((await start(t, used.confirm_url)).error, "used");
+  // Found no longer free when the sign-in starts: settled declined then and there.
+  const taken = await ask(t);
+  assert.equal((await start(t, taken.confirm_url)).error, "declined", "the slot was booked by `used`");
+  assert.equal(requestRow(t, taken.booking_id).state, "declined");
+  const id = await booked(t, JANE, { start: "2026-10-22T09:00:00.000Z" });
+  const link = await agentCancel(t, id);
+  assert.equal((await start(t, link.confirm_url, { now: later(HOUR) })).error, "expired");
+  await agentCancel(t, id); // revokes `link`
+  assert.equal((await start(t, link.confirm_url)).error, "used");
+  assert.equal((await start(t, CONFIRM + "AAAAAAAAAAAAAAAAAAAAAA")).error, "unknown");
+  assert.equal(count(t, "SELECT count(*) c FROM signin_tx"), 0);
+});
+
+test("F-002 sign-in callback: the transaction is consumed atomically and single-use, whatever follows; a wrong or missing cookie, or a lapsed transaction, is refused", async () => {
+  const t = setup();
+  const r = await ask(t);
+  const s = await start(t, r.confirm_url);
+  const consume = (over = {}, now = NOW) => store.consumeSignin(t.sql, { stateHash: s.tx.stateHash, cookieHash: s.tx.cookieHash, now, ...over });
+  assert.deepEqual(consume({ stateHash: "nope" }), { error: "state" });
+  const ok = consume();
+  assert.equal(ok.tx.ticket_hash, await store.hashToken(ticketOf(r.confirm_url)));
+  assert.deepEqual([ok.tx.nonce, ok.tx.code_verifier, ok.tx.purpose], [s.tx.nonce, s.tx.codeVerifier, "book"]);
+  assert.deepEqual(consume(), { error: "state" }, "replayed");
+
+  const wrong = await start(t, r.confirm_url);
+  assert.deepEqual(store.consumeSignin(t.sql, { stateHash: wrong.tx.stateHash, cookieHash: "someone-else", now: NOW }), { error: "cookie" });
+  assert.deepEqual(store.consumeSignin(t.sql, { stateHash: wrong.tx.stateHash, cookieHash: wrong.tx.cookieHash, now: NOW }), { error: "state" }, "consumed even so");
+  const missing = await start(t, r.confirm_url);
+  assert.deepEqual(store.consumeSignin(t.sql, { stateHash: missing.tx.stateHash, cookieHash: null, now: NOW }), { error: "cookie" });
+  const lapsed = await start(t, r.confirm_url);
+  assert.deepEqual(store.consumeSignin(t.sql, { stateHash: lapsed.tx.stateHash, cookieHash: lapsed.tx.cookieHash, now: later(10 * MINUTE) }), { error: "expired" }, "not pruned yet, still refused");
+});
+
+// ---- What the confirm page shows ------------------------------------------------------------------
+
+const peek = async (t, url, now = NOW) => store.peekTicket(t.sql, ticketOf(url), { now, cfg });
+
+test("F-002 peek: a request ticket's state for the confirm page (open, declined, expired, cancelled, confirming, confirmed, too many tries), never the guest's details", async () => {
+  const t = setup({ fail: { freeBusy: true } });
+  const r = await ask(t, { note: "secret note" });
+  const p = await peek(t, r.confirm_url);
+  assert.deepEqual(p, { purpose: "book", state: "open", type: "consultation", start: SLOT, end: SLOT_END, expires_at: r.link_expires });
+  assert.equal((await peek(t, r.confirm_url, later(HOUR))).state, "expired");
+  await confirm(t, r);
+  assert.equal((await peek(t, r.confirm_url)).state, "confirming");
+  t.sql.exec("UPDATE bookings SET status = 'confirmed'");
+  assert.equal((await peek(t, r.confirm_url)).state, "confirmed");
+  t.sql.exec("UPDATE bookings SET status = 'cancelling'");
+  assert.equal((await peek(t, r.confirm_url)).state, "confirmed");
+  t.sql.exec("UPDATE bookings SET status = 'declined', status_reason = 'unavailable'");
+  assert.deepEqual([(await peek(t, r.confirm_url)).state, (await peek(t, r.confirm_url)).reason], ["declined", "unavailable"]);
+  t.sql.exec("UPDATE bookings SET status = 'cancelled'");
+  assert.equal((await peek(t, r.confirm_url)).state, "cancelled");
+  const w = await ask(t, { start: "2026-10-22T09:00:00.000Z" });
+  await agentCancel(t, w.booking_id);
+  assert.equal((await peek(t, w.confirm_url)).state, "cancelled");
+  const d = await ask(t, { start: "2026-10-22T09:00:00.000Z" });
+  t.sql.exec("UPDATE booking_requests SET state = 'declined', reason = 'day_full' WHERE id = ?", d.booking_id);
+  assert.deepEqual([(await peek(t, d.confirm_url)).state, (await peek(t, d.confirm_url)).reason], ["declined", "day_full"]);
+  const many = await ask(t, { start: "2026-10-23T09:00:00.000Z" });
+  for (let i = 0; i < 5; i++) await start(t, many.confirm_url);
+  assert.equal((await peek(t, many.confirm_url)).state, "too_many");
+  assert.equal((await peek(t, CONFIRM + "AAAAAAAAAAAAAAAAAAAAAA")).state, "unknown");
+  assert.ok(!JSON.stringify(p).includes("secret"));
+});
+
+test("F-002 peek: a cancel ticket's state (open; then still booked, started, cancelled, or out of tries)", async () => {
+  const t = setup();
+  const id = await booked(t);
+  const link = await agentCancel(t, id);
+  assert.deepEqual(await peek(t, link.confirm_url), { purpose: "cancel", state: "open", type: "consultation", start: SLOT, end: SLOT_END, expires_at: link.link_expires });
+  assert.equal((await peek(t, link.confirm_url, later(HOUR))).state, "still_booked", "expired, booking still confirmed before the start");
+  assert.equal((await peek(t, link.confirm_url, new Date(Date.parse(SLOT) + MINUTE))).state, "started");
+  for (let i = 0; i < 5; i++) await start(t, link.confirm_url);
+  assert.equal((await peek(t, link.confirm_url)).state, "too_many");
+  const again = await agentCancel(t, id);
+  await signinCancel(t, id, again);
+  assert.equal((await peek(t, again.confirm_url)).state, "cancelled");
+  assert.equal((await peek(t, link.confirm_url)).state, "cancelled");
+});
+
+// ---- Retention and pruning ------------------------------------------------------------------------
+
+test("F-002 retention: requests are deleted 30 days after they were used, withdrawn or declined, or 30 days after an unused one expired; lapsed sign-in transactions go at once", async () => {
+  const t = setup();
+  const DAY_MS = 24 * HOUR;
+  const used = await ask(t);
+  await confirm(t, used, JANE, { now: later(10 * MINUTE) });
+  const withdrawn = await ask(t);
+  await agentCancel(t, withdrawn.booking_id, { now: later(20 * MINUTE) });
+  const declined = await ask(t);
+  store.settleRequest(t.sql, declined.booking_id, { cfg, now: later(30 * MINUTE), busy: [], deps: t.deps });
+  const lapsed = await ask(t, { start: "2026-10-22T09:00:00.000Z" });
+  await start(t, lapsed.confirm_url);
+  const left = () => t.sql.exec("SELECT id FROM booking_requests").toArray().map((x) => x.id).sort();
+
+  store.prune(t.sql, later(10 * MINUTE + 1));
+  assert.equal(count(t, "SELECT count(*) c FROM signin_tx"), 0, "a lapsed transaction is pruned");
+  store.prune(t.sql, later(30 * DAY_MS + 10 * MINUTE - 1));
+  assert.equal(left().length, 4);
+  store.prune(t.sql, later(30 * DAY_MS + 10 * MINUTE));
+  assert.deepEqual(left(), [withdrawn, declined, lapsed].map((x) => x.booking_id).sort(), "used: gone (its booking lives on under F-001's retention)");
+  assert.ok(bookingRow(t, used.booking_id));
+  store.prune(t.sql, later(30 * DAY_MS + 30 * MINUTE));
+  assert.deepEqual(left(), [lapsed.booking_id], "withdrawn and declined: gone");
+  store.prune(t.sql, later(30 * DAY_MS + 60 * MINUTE));
+  assert.deepEqual(left(), [], "expired unused: 30 days after it expired");
+});
+
+test("F-002 retention: an identity is deleted 30 days after the later of its last sign-in and its last meeting's end", async () => {
+  const t = setup();
+  await booked(t);
+  const end = Date.parse(SLOT_END), DAY_MS = 24 * HOUR;
+  store.prune(t.sql, new Date(end + 30 * DAY_MS - 1));
+  assert.equal(count(t, "SELECT count(*) c FROM identities"), 1);
+  store.prune(t.sql, new Date(end + 30 * DAY_MS));
+  assert.equal(count(t, "SELECT count(*) c FROM identities"), 0);
+  // Signed in without booking (a cap, say): 30 days after the sign-in.
+  const t2 = setup();
+  const a = await booked(t2), b = await booked(t2, JANE, { start: "2026-10-22T09:00:00.000Z" });
+  assert.ok(a && b);
+  const later3 = later(DAY_MS);
+  const c3 = await ask(t2, { start: "2026-10-23T09:00:00.000Z" }, { now: later3 });
+  assert.equal((await confirm(t2, c3, JANE, { now: later3 })).error, "person_cap");
+  assert.equal(t2.sql.exec("SELECT delete_after FROM identities").one().delete_after, new Date(Date.parse("2026-10-22T09:30:00.000Z") + 30 * DAY_MS).toISOString(), "still the later meeting's end");
+});
+
+
