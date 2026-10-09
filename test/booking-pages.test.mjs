@@ -54,6 +54,18 @@ test("/privacy says what is stored, for how long, and who processes it", () => {
     assert.match(text, must);
 });
 
+test("F-002 /privacy: Google as identity provider, the 10-minute sign-in cookie, what a booking request and a signed-in person leave behind, and for how long", () => {
+  const text = textOf(read("public/privacy.html"));
+  for (const must of [
+    /sign in with Google/i, /Google tells the site your name, your email address and an ID for your Google account/,
+    /strictly necessary/, /expires after 10 minutes/, /no lasting cookie/i,
+    /A booking request keeps the meeting type, the time, your note and a keyed hash of the IP address it came from, and nothing about you/,
+    /deleted 30 days after it is used, withdrawn or declined, or 30 days after it expires/,
+    /the account's provider and ID, your verified email address and your name/,
+    /30 days after the later of your last sign-in and the end of your last meeting/,
+  ]) assert.match(text, must);
+});
+
 test("/privacy is in the sitemap and has exactly one CSP rule per path", () => {
   assert.match(read("public/sitemap.xml"), /<loc>https:\/\/patrickjv\.com\/privacy<\/loc>/);
   const headers = read("public/_headers");
