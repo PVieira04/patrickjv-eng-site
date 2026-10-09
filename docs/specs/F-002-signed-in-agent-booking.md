@@ -73,7 +73,7 @@ As **a visitor on patrickjv.com**, I want to **sign in once so `/book` and the h
 
 **Non-Goals**
 
-- **Booking for someone else.** A signed-in person books for themselves; the identity's address is the guest's.
+- **Booking for someone else (P1).** In P1 a signed-in person books for themselves; a different `email` is refused (`email_mismatch`). Delegated booking (an assistant booking for their manager) is planned for P3 (see below).
 - **Dynamic Client Registration.** Deprecated in MCP 2026-07-28 and a spam risk on the Free plan's KV write allowance (1,000 a day). Only clients that identify with a Client ID Metadata Document (CIMD) can connect. Revisit only if a needed client lacks CIMD (Cursor is unverified).
 - **Keeping Google's tokens.** Only the verified claims are read, once, at sign-in.
 - **Rescheduling** (still F-001's planned v2).
@@ -203,6 +203,7 @@ New Worker routes: `patrickjv.com/oauth/*` and `patrickjv.com/.well-known/oauth-
 ## Phases after P1
 
 - **P2, site sign-in:** "Sign in with Google" on `/book`, a `__Host-` session cookie (`Secure; HttpOnly; SameSite=Lax`), `GET /api/booking/me`, signed-in `/book` and WebMCP bookings confirmed directly. WebMCP asks for in-page confirmation before booking. Cookie-authenticated POSTs require an exact `Origin` and `Content-Type: application/json`. `/privacy` changes from "sets no cookies".
+- **P3, delegated booking:** a signed-in person may give another `email`. That booking falls back to F-001's hold-and-confirm, with the hold email sent to that address and naming who asked ("Jane Smith, jane@…, asked to book this on your behalf"). The other person still consents by clicking, but the request is attributed to a verified, capped identity instead of being anonymous. Counts against the requester's identity caps and the recipient's per-email cap.
 - **P3, more providers and consent:** Microsoft (key on tenant + object ID; email counted as verified only when Microsoft says so); Altimist ID (needs this site registered as a client, and its tokens to carry email verification and nothing internal); MCP elicitation for per-booking confirmation where clients support it; ChatGPT's per-tool security schemes; Dynamic Client Registration only if a needed client requires it.
 
 ---
