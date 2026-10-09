@@ -187,6 +187,8 @@ After booking was switched on, these were checked on the live site:
 
 Two read-only investigations for [F-002](../F-002-signed-in-agent-booking.md), checked against official docs that day.
 
+**Outcome (rewrite, 2026-10-09):** F-002 dropped the OAuth-server route for P1. Sign-in now confirms each booking, and the site is only a Google sign-in client (F-002 D2). The findings below are kept as the evidence for that decision, and for the optional OAuth phase (P3).
+
 **Design investigation:**
 
 - **MCP version:** the current MCP revision is **2026-07-28**. It deprecates Dynamic Client Registration in favour of Client ID Metadata Documents (CIMD), and adds a multi-round-trip mechanism through which a stateless server can use elicitation.
