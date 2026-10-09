@@ -15,7 +15,7 @@ const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046
 const ALIASES = ["www.patrickjv.com", "pvieira.co.uk", "www.pvieira.co.uk"];
 const TOOLS = ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"];
 // Listed only while booking is switched on (BOOKING_ENABLED, as patrickjv/health reports it).
-const BOOKING_TOOLS = ["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
+const BOOKING_TOOLS = ["get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"];
 
 // ---- arguments ----
 const FLAGS = new Set(["--aliases", "--mcp", "--registry", "--strict-https", "--dns"]);
@@ -206,12 +206,11 @@ if (flags.has("--mcp")) {
   let protocol = null;
   let first = true;
   // Rate limits on /mcp: the edge WAF rule allows 6 requests per 10 s per IP; the Worker allows
-  // 30 per minute and 10 tools/call per 10 s. This sequence is 5 requests, so it fits whatever the
-  // spacing; the 1.2 s gap is only margin. A longer sequence must keep any 10 s window to at most
-  // 6 requests (about 1.7 s apart) — and the deploy workflow's retries add another 5 per attempt
-  // (at least 20 s apart).
+  // 30 per minute and 10 tools/call per 10 s. With booking on (F-002) this sequence is 10 requests,
+  // so they are 1.8 s apart to keep any 10 s window to at most 6 — and the deploy workflow's
+  // retries add another run per attempt (at least 20 s apart).
   const mcp = async (msg) => {
-    if (!first) await sleep(1200);
+    if (!first) await sleep(1800);
     first = false;
     const headers = { "content-type": "application/json", accept: "application/json, text/event-stream" };
     if (protocol) headers["mcp-protocol-version"] = protocol;
@@ -265,6 +264,42 @@ if (flags.has("--mcp")) {
     const same = isDeepStrictEqual(items, faq);
     return expect(result?.isError !== true && same, `${items?.length ?? 0} items${same ? "" : ", differ from content.json"}${result?.isError ? ", isError" : ""}`);
   });
+  // F-002: with booking on, one booking request for the first free slot (it reserves nothing and
+  // emails nobody), withdrawn at once. No free slot in the horizon, the request allowance used up
+  // (rate_limited, 429) or the slot gone between the two calls (409) is reported as skipped, and
+  // passes. That a request reserves nothing is proved by the unit tests, not here.
+  if (bookingOn) {
+    const call = async (id, name, args) => {
+      const res = await mcp({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+      if (!envelope(res, id)) throw new Error(`${name}: status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
+      return res.json.result;
+    };
+    let type = null;
+    await check("mcp book_meeting -> a booking request for the first free slot, shaped as F-002 says, then cancel_booking reads cancelled", async () => {
+      type = JSON.parse(read("booking.json")).meetingTypes[0].id;
+      const av = await call(5, "get_availability", { type });
+      const slot = av?.structuredContent?.slots?.[0];
+      if (!slot) return PASS("skipped: no free slot in the horizon");
+      const b = await call(6, "book_meeting", { type, start: slot.start });
+      const e = b?.structuredContent;
+      if (b?.isError) {
+        const gone = e?.error === "slot_taken" || (e?.error === "invalid_slot" && ["notice", "horizon"].includes(e?.reason));
+        if (e?.error === "rate_limited" || gone || e?.error === "booking_disabled") return PASS(`skipped: ${e.error}`);
+        return FAIL(`refused: ${JSON.stringify(e).slice(0, 160)}`);
+      }
+      const shape = /^[0-9a-f]{32}$/.test(e?.booking_id ?? "") && e.status === "pending_confirmation" && /^https:\/\/patrickjv\.com\/book\/confirm\?t=[A-Za-z0-9_-]{22}$/.test(e.confirm_url ?? "")
+        && typeof e.link_expires === "string" && typeof e.next_step === "string";
+      if (!shape) return FAIL(`unexpected result ${JSON.stringify(e).slice(0, 160)}`);
+      const c = await call(7, "cancel_booking", { booking_id: e.booking_id });
+      const st = await call(8, "get_booking_status", { booking_id: e.booking_id });
+      return expect(c?.structuredContent?.status === "cancelled" && st?.structuredContent?.status === "cancelled",
+        `request made for ${slot.start}, withdrawn: ${c?.structuredContent?.status}, status ${st?.structuredContent?.status}`);
+    });
+    await check("mcp book_meeting with an email argument -> refused (invalid_input)", async () => {
+      const b = await call(9, "book_meeting", { type: type ?? "consultation", start: "2030-01-07T10:00:00+00:00", email: "smoke@example.com" });
+      return expect(b?.isError === true && b?.structuredContent?.error === "invalid_input", `refused: ${b?.structuredContent?.error ?? "no"}`);
+    });
+  }
 }
 
 // ---- MCP Registry ----
