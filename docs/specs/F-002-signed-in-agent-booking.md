@@ -88,12 +88,14 @@ As **a person who books often**, I want to **set up a key once that lets my agen
 |---|---|---|
 | D1 | **Signing in confirms the booking.** On MCP and WebMCP, `book_meeting` creates a hold and returns a single-use "Sign in to confirm" link; the meeting is made when the person signs in on it. Reading needs no sign-in. Decided with Patrick: authorisation is for the one booking request, not a session. | F-001's confirmation email: the reason for F-002. An optional fast lane beside it: keeps strangers' inboxes exposed. |
 | D2 | **The site is a sign-in client (OpenID Connect relying party), not an OAuth server.** | Making `/mcp` an OAuth 2.1 resource server with `@cloudflare/workers-oauth-provider`. Researched in depth (spikes and four review passes): it needs client registration and an allowlist, and works smoothly only in some clients (ChatGPT needs a different sign-in signal). The library also showed replayable refresh tokens, KV writes before consent and a non-atomic code exchange on KV's 1,000 writes a day. It can return later as one more proof (D6) if MCP clients converge on it. |
-| D3 | **Holds awaiting sign-in last 10 minutes**, and the confirm link is single-use and expires with the hold. The agent needs seconds; the time is for the person to open the link and sign in. | F-001's 2-hour hold: blocks a slot far longer than a sign-in takes. |
+| D3 | **Holds awaiting sign-in last 10 minutes** (a `booking.json` default), and the confirm link is single-use and expires with the hold. The agent needs seconds; the time is for the person to open the link and sign in. | F-001's 2-hour hold: blocks a slot far longer than a sign-in takes. |
 | D4 | **A separate Google Cloud project** (`patrickjv-signin`) with only `openid email profile`. | The calendar project: it would work (the user cap counts only sensitive scopes), but branding and the cap are per project, and a public sign-in shouldn't share risk with the project holding the calendar token. ([spike](F-001-spikes/README.md#f-002-research-2026-10-09)) |
 | D5 | **The agent never supplies the guest's address.** `book_meeting` on agent channels takes the type, start and an optional note; name and address come from the sign-in. | Accepting an `email` and checking it against the sign-in: invites mismatches and gives agents a field to misuse. |
-| D6 | **One confirmation core with interchangeable proofs.** `confirmHold(hold, person, proof)` is the only way a hold becomes a meeting. `person` is a verified identity (`provider`, `subject`, `email`, `name`); `proof` records how it was established (`signin:google` in P1; later `agent_key:<id>`, `email_link`, `oauth:<client>`, `delegation:<issuer>`). Caps, the free/busy re-check, claim-before-await and the "Booked" email live in the core, so a new proof only has to produce a verified person. | Separate booking code per channel: drift, and every new proof would need its own copy of the rules. |
-| D7 | **Caps.** Holds awaiting sign-in: at most 2 live per IP, F-001's 4 per IP a day, and the global 10 a day (taken when the hold is created). Confirmed bookings: at most 2 per person a day and 2 upcoming per person, plus F-001's 3 a day. None refunded. Values provisional (Open Questions). | Keying hold caps on email: there's no email until sign-in. |
+| D6 | **One confirmation core with interchangeable proofs.** `confirmHold(hold, person, grant)` is the only way a hold becomes a meeting, and `cancelMeeting(booking, person, grant)` the only way a confirmed one ends. `person` is the guest: `provider` and `subject` (the stable key), `email`, and `display_name`, which is asserted, not verified. `grant` is the authority to act: `proof` (`signin:google`, `email_link`; later `agent_key:<id>`, `oauth:<client>`, `delegation:<issuer>`), `actor` (who acted, if not the person), `scopes` (`book`, `cancel`), `expires_at`, and optional `limits`. **The core checks the grant in the same synchronous block as the claim:** scope, expiry, revocation and limits, then the person caps, then the slot. So a key's limits can't be overspent concurrently. Each proof's only job is to produce `person` and `grant`. P1's grant from a sign-in is one-shot: scope `book` (or `cancel`) for this ticket only. | Separate booking code per channel: drift, and every new proof would need its own copy of the rules. |
+| D7 | **Caps.** Holds awaiting sign-in: at most 2 live per IP, F-001's 4 per IP a day, and the global 10 a day (taken when the hold is created). Confirmed bookings: at most 2 per person a day and 2 upcoming per person, plus F-001's 3 a day. Two kinds of limit: **daily counters** (holds per IP a day, global a day, confirmations per person a day; UTC day; never refunded) and **occupancy limits** (live holds per IP, upcoming meetings per person; counted from current bookings in `confirming`, `confirmed` or `cancelling` with a future start, so they free up when a hold lapses or a meeting ends or is cancelled). All values live in `booking.json` as defaults Patrick can change without code. | Keying hold caps on email: there's no email until sign-in. |
 | D8 | **`/book` keeps the email path as a fallback until P4**, beside "Sign in with Google to confirm", for people without a Google account. Agent channels get no email path. | Removing it in P1: people without Google couldn't book until P2's providers arrive. |
+
+**Threat model for confirmation.** A sign-in proves that **whoever controls the Google account at that moment** approved the booking, not that a human clicked. An agent driving the person's own signed-in browser (WebDriver, or an in-browser agent such as Claude in Chrome) can complete the sign-in, and no website can tell the difference. The site treats that as the person's authority, because they let the agent act in their browser. The "Booked" email to the verified address is the backstop. The confirmation stops an agent from booking in the name of **someone else** (it can't sign in to an account it doesn't control), and from booking with an address it merely typed. It doesn't stop a person's own agent acting within that person's session. Agent keys (P3) make that delegation explicit and limited.
 
 ---
 
@@ -116,14 +118,17 @@ Maps to: US-1, US-2, US-3
 
 Maps to: US-1, US-3
 
-Same as Flow 1 from step 3: picking a slot creates the hold and shows the confirm page, with "Sign in with Google to confirm" and, until P4, "Confirm by email instead" (F-001's path).
+Same as Flow 1 from step 3: picking a slot creates the hold and shows the confirm page, with "Sign in with Google to confirm" and, until P4, "Confirm by email instead". Choosing email converts the **same** hold. The person types a name and email (`POST /api/booking/{id}/email`), F-001's per-email cap and one-live-hold-per-email rule are taken then, the hold's expiry extends to F-001's 2 hours, the sign-in ticket is spent, and F-001's Confirm/Decline email is sent. No second booking is created, and the hold caps already taken aren't charged again.
 
 ### Flow 3: Agent cancels a confirmed meeting
 
 Maps to: US-4
 
 1. The agent calls `cancel_booking({booking_id})`. For a confirmed meeting it returns a single-use `confirm_url` (10 minutes).
-2. The person signs in on it. If they're the booking's guest (same `provider` and `subject`), the meeting is cancelled; otherwise nothing changes ("This booking belongs to someone else").
+2. Which proofs can cancel depends on how the booking was confirmed:
+   - **Sign-in bookings (`signin:google`):** a sign-in whose `provider` and `subject` match the guest, or the cancel link in that booking's "Booked" email (it went to the verified address, so holding it proves the mailbox, as in F-001).
+   - **Email-confirmed bookings (`email_link`) and bookings from before F-002:** F-001's email links only. `cancel_booking`'s `confirm_url` page then says "Use the cancel link in your booking email", because there's no account to sign in with.
+   - Anyone else's sign-in changes nothing ("This booking belongs to someone else").
 3. A pending hold is still withdrawn directly by `booking_id`, as in F-001.
 
 ---
@@ -133,23 +138,37 @@ Maps to: US-4
 ### Functional
 
 - [ ] **(US-2)** `list_meeting_types`, `get_availability`, `get_booking_status` and the profile tools work with no sign-in on MCP, WebMCP and the HTTP API.
-- [ ] **(US-1, US-3)** Agent-channel `book_meeting` takes `type`, `start` and optional `note` only; an `email` or `name` argument is refused (`400`). It creates a 10-minute hold and returns `{booking_id, status: "pending_confirmation", confirm_url, hold_expires}`. No email is sent.
+- [ ] **(US-1, US-3)** Agent-channel `book_meeting` takes `type`, `start` and optional `note` only; an `email` or `name` argument is refused (HTTP API: `400 invalid_argument`; MCP: a tool result with `isError: true` and the same error code, as F-001's validation does). It creates a 10-minute hold and returns `{booking_id, status: "pending_confirmation", confirm_url, hold_expires}`. No email is sent.
 - [ ] **(US-1)** `confirm_url` carries a 128-bit random ticket, stored hashed, single-use, expiring with the hold. Opening it (GET) shows the meeting and the sign-in button and changes nothing.
-- [ ] **(US-1)** Sign-in uses Google's authorization code flow with PKCE (S256), a `state` and `nonce` bound to the ticket and to a `__Host-` cookie set when sign-in starts, and a server-side code exchange. A missing, mismatched or replayed `state`, a wrong `nonce`, a missing cookie, an expired ticket, or `email_verified` not true is refused, and nothing is booked (each tested with a fake Google).
-- [ ] **(US-1, D6)** A successful sign-in calls `confirmHold(hold, person, "signin:google")`, which reserves the per-person caps, re-checks free/busy, creates the event with the person's verified name and address, sets the booking `confirmed`, records `identity_id` and `proof`, and sends the "Booked" email to that address. Claim-before-await holds: 20 concurrent sign-ins on one ticket, or on overlapping holds, give exactly one meeting (tested).
-- [ ] **(US-1)** Failure after the claim follows F-001: Google refusing the insert or a clash ends the booking `declined` with the slot freed and the page saying so; an unknown outcome stays `confirming` for the alarm's recovery, and the page says "being finished — check your email" (tested).
-- [ ] **(US-1)** WebMCP's `book_meeting` returns the same result, and the homepage shows a "Sign in to confirm" prompt with the meeting details that opens Google sign-in in a popup on click. If the popup is blocked, it falls back to the `confirm_url` link (tested in headless Chromium).
+- [ ] **(US-1)** Sign-in: Google's authorization code flow with PKCE (S256). Transaction lifecycle:
+  - **Start** (`POST /book/confirm/google`) creates a `signin_tx` row bound to the ticket and to its purpose (`confirm` or `cancel`), and sets `__Host-pjv_signin` (`Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`). `Lax` so the cookie arrives on Google's top-level redirect back.
+  - **Callback** consumes `state` atomically before any outside call. It's single-use even if what follows fails, and a failed exchange means starting again from the confirm page while the ticket lasts.
+  - **ID token**, from Google's token endpoint over TLS, server to server, so the signature check can be skipped (OIDC Core 3.1.3.7): `iss` is `https://accounts.google.com` or `accounts.google.com`, `aud` is our client ID, `exp` hasn't passed, `iat` is within 5 minutes, `nonce` matches the transaction, `sub` is present, and `email_verified` is true.
+  - **Refused, with nothing booked or cancelled** (each tested with a fake Google): any check failing; a missing, mismatched or replayed `state`; a cookie that's missing or not this transaction's; an expired ticket; or a `cancel` transaction used to confirm, and the other way round. A real browser round trip (headless Chromium against a local fake Google) covers cookie delivery on the callback.
+- [ ] **(US-1, D6)** A successful sign-in calls `confirmHold(hold, person, grant)`. **In one synchronous block before any outside call** it checks the grant, upserts the identity, writes the guest onto the booking, takes the person caps and sets `confirming`, so the alarm's recovery has everything it needs if the Worker is evicted. Then it re-checks free/busy and creates the event with the person's address and display name (Google's `name` claim if present, otherwise the part of the email before `@`; never treated as verified), sets the booking `confirmed`, records `identity_id` and `proof`, and sends the "Booked" email to that address. Claim-before-await holds (tested): 20 concurrent sign-ins on one ticket, or on overlapping holds, give exactly one meeting; and one person confirming 5 different holds at once never exceeds their caps. Recovery of a booking cut off after the claim completes it using the stored guest, starting from a hold created with no guest details.
+- [ ] **(US-1)** Failures, deliberately different from F-001 because the hold is short and the agent can simply ask again (each tested):
+  - **Google refuses the insert (4xx), or the re-check finds a clash:** the booking ends `declined` (`unavailable`, `slot_taken` or `day_full`), the slot frees, and the page says so.
+  - **Free/busy unreachable before the claim:** nothing is claimed, the hold stays `pending_confirmation`, and the person can retry the sign-in while the ticket lasts.
+  - **Outcome unknown after the claim:** stays `confirming` for the alarm's recovery, and the page says it's being finished and to check email.
+  - **Sign-in denied, or the code exchange fails:** that transaction is spent, the ticket isn't, and the person can try again until the hold expires.
+  - **Caps:** person caps taken at the claim aren't refunded. The daily counters are never refunded; the occupancy limits free up as bookings end.
+- [ ] **(US-1)** WebMCP's `book_meeting` returns the same result, and the homepage shows a "Sign in to confirm" prompt with the meeting details that opens Google sign-in in a popup on click. If the popup is blocked, it falls back to the `confirm_url` link (tested in headless Chromium). This test checks the mechanics only. Per the threat model, a popup doesn't prove a human acted.
 - [ ] **(US-4)** `cancel_booking` on a confirmed meeting returns a single-use `confirm_url`. Signing in as the booking's guest cancels it, and Google notifies attendees; signing in as anyone else changes nothing. A pending hold is withdrawn directly.
-- [ ] **(US-5, D7)** Hold caps (2 live per IP, 4 per IP a day, 10 globally a day) are taken when the hold is created; person caps (2 a day, 2 upcoming) are taken at confirmation. None is refunded, and refused requests leave the counts unchanged (tested).
-- [ ] **(D8)** `/book` offers sign-in confirmation and, until P4, F-001's email confirmation as a fallback. F-001's tests for the email path stay green unchanged.
-- [ ] **(D6)** `confirmHold` is the only code path that turns a hold into a meeting. The email path (D8) and the sign-in path both call it, with proofs `email_link` and `signin:google` (tested).
+- [ ] **(US-5, D7)** Limits behave as D7 defines (tested):
+  - Daily counters are taken atomically and never refunded: holds per IP a day and globally a day when the hold is created, confirmations per person a day at the claim.
+  - Occupancy limits are counted from current bookings: live holds per IP, and upcoming meetings per person (`confirming`, `confirmed` or `cancelling` with a future start). They free up when a hold lapses or a meeting is cancelled.
+  - A refused request changes no count.
+  - Values come from `booking.json`.
+- [ ] **(US-1)** A forwarded link is handled as Edge Cases describe (tested): the first valid sign-in becomes the guest; later attempts on the same ticket get "already used"; cancellation recognises that guest.
+- [ ] **(D8)** `/book` offers sign-in confirmation and, until P4, F-001's email confirmation as a fallback. Converting a hold to email behaves as Flow 2 says: same booking, F-001's email caps taken then, 2-hour expiry, sign-in ticket spent, no double charge (tested). F-001's tests for the email path stay green.
+- [ ] **(D6)** `confirmHold` is the only code path that turns a hold into a meeting. The email path (D8) and the sign-in path both call it (tested). The email path's person is `{provider: "email", subject: <normalised address>, email, display_name: <typed>}` with grant `{proof: "email_link"}`, so person caps key on `provider` and `subject` for both.
 - [ ] **(US-1)** Manual check: a booking made through the Claude connector (link in chat → sign-in on a phone → "Booked"), and one through WebMCP in a browser.
 
 ### Non-functional
 
 - [ ] **Security:** no tokens are issued to agents. The ticket is the only bearer value, it's good for one hold, and it expires in 10 minutes. The confirm page can't be framed. Cookie-carrying POSTs require an exact `Origin`. The Google client secret is a Worker secret.
-- [ ] **Privacy:** `/privacy` adds Google as identity provider, the short-lived sign-in cookie (strictly necessary, expires in 10 minutes), and what's kept about a signed-in person: provider, subject, verified email and name, deleted 30 days after their last booking. The site sets no lasting cookie in P1.
-- [ ] **Observability:** health adds `signinReady` (Google client secrets set, Google's discovery document reachable). Smoke checks that an anonymous `book_meeting` returns a `confirm_url` and no email. Logs carry the subsystem only.
+- [ ] **Privacy:** `/privacy` adds Google as identity provider, the short-lived sign-in cookie (strictly necessary, expires in 10 minutes), and what's kept about a signed-in person: provider, subject, verified email and name, deleted 30 days after the latest of: their last sign-in, the end of their last meeting, and (from P3) the expiry of their last agent key. The site sets no lasting cookie in P1.
+- [ ] **Observability:** health adds `signinReady` (Google client secrets set, Google's discovery document reachable). The production smoke check creates no holds (quotas are scarce): it checks `book_meeting`'s input schema in `tools/list`, and that a call with an `email` argument is refused. Hold creation and "no email sent" are covered by tests with a fake mailer, plus the manual checks. Logs carry the subsystem only.
 - [ ] **Cost:** Free plan; storage only in `BookingStore` SQLite. No KV.
 
 ---
@@ -161,8 +180,9 @@ In `BookingStore` (SQLite):
 ```sql
 CREATE TABLE identities (
   id TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL,
-  email TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL,
-  delete_after TEXT NOT NULL, UNIQUE (provider, subject)
+  email TEXT NOT NULL, display_name TEXT NOT NULL, created_at TEXT NOT NULL,
+  delete_after TEXT NOT NULL,           -- 30 days after the latest of last sign-in, last meeting end, last agent-key expiry
+  UNIQUE (provider, subject)
 );
 CREATE TABLE signin_tx (                -- one per sign-in in progress; deleted when used or after 10 minutes
   state_hash TEXT PRIMARY KEY, ticket_hash TEXT NOT NULL, cookie_hash TEXT NOT NULL,
@@ -171,7 +191,7 @@ CREATE TABLE signin_tx (                -- one per sign-in in progress; deleted 
 );
 ```
 
-`bookings` gains `identity_id` and `proof` (`signin:google`, `email_link`; later `agent_key:<id>`, `oauth:<client>`, `delegation:<issuer>`). Hold tickets reuse F-001's `tokens` table with a new action, `confirm_signin`. P3 adds `agent_keys` (below).
+`bookings` gains `identity_id`, `proof` and `actor`. `guest_name`, `guest_email` and `email_key` become nullable: a sign-in hold has none until the claim fills them in. SQLite can't drop `NOT NULL` in place, so `migrate()` rebuilds the table by copying it, and is tested against a database holding live F-001 holds, confirmed meetings and unused tokens, all of which keep working. Hold tickets reuse F-001's `tokens` table with a new action, `confirm_signin`. P3 adds `agent_keys(id, identity_id, name, scopes, limits_json, expires_at, revoked_at, key_hash)`.
 
 ---
 
@@ -182,6 +202,7 @@ CREATE TABLE signin_tx (                -- one per sign-in in progress; deleted 
 | GET | `/book/confirm?t=` | Confirm page for a hold or a cancellation (no state change) |
 | POST | `/book/confirm/google` | Start Google sign-in for that ticket (sets the `__Host-` cookie) |
 | GET | `/book/callback/google` | Google returns here; verify, then `confirmHold` (or cancel) |
+| POST | `/api/booking/{id}/email` | `/book` only, until P4: convert this hold to F-001's email confirmation (`{name, email}`) |
 
 New route: `patrickjv.com/book/confirm*` and `/book/callback*` to the `patrickjv-mcp` Worker. MCP and WebMCP tool shapes change as in Functional above. `get_booking_status` is unchanged.
 
@@ -191,7 +212,7 @@ New route: `patrickjv.com/book/confirm*` and `/book/callback*` to the `patrickjv
 
 - **The person never signs in:** the hold lapses after 10 minutes and the slot frees; status reads `expired`.
 - **The link is opened on a different device:** fine. The ticket carries the hold; the cookie binds only the sign-in round trip on that device.
-- **Someone other than the intended person signs in:** they become the guest. The agent's person sees status `confirmed`, and the "Booked" email goes to whoever signed in. This is accepted: the link is handed to the person by their own agent.
+- **Someone other than the intended person signs in:** they become the guest. The agent's person sees status `confirmed`, and the "Booked" email goes to whoever signed in. This is accepted: the link is handed to the person by their own agent. Status `confirmed` means the booking was made, not that the agent's intended person made it. Later attempts on the ticket get "already used".
 - **Google's email is unverified:** refused, nothing booked.
 - **Caps reached at confirmation:** the page says so and the hold is released.
 - **Popup blocked (WebMCP):** the link fallback works.
@@ -226,9 +247,8 @@ In a **new** Google Cloud project `patrickjv-signin` owned by `hello@` (about 30
 
 ## Open Questions
 
-- [ ] **Caps (D7) are provisional:** 2 live holds per IP; 2 confirmed bookings per person a day; 2 upcoming per person. Owner: @PVieira04, before build.
-- [ ] **Hold length:** 10 minutes (D3). Owner: @PVieira04.
-- [ ] **WebMCP prompt:** confirm in the build that a page can open the Google popup from the person's click while an agent drives the tools, and that a browser agent can't click it on the person's behalf (unverified).
+- [ ] **Defaults to confirm** (all in `booking.json`, changeable without code): holds awaiting sign-in last 10 minutes; at most 2 live holds per IP; 2 confirmations per person a day; 2 upcoming meetings per person. Owner: @PVieira04. The build uses these unless changed.
+- [ ] **Threat model:** confirm Patrick accepts that an agent driving his guest's own signed-in browser counts as the guest (see the threat model under Decisions).
 
 ---
 
