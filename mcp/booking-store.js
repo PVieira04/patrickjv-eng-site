@@ -236,11 +236,17 @@ export async function act(sql, { token, now, cfg, deps }) {
     settle(sql, b.id, "declined", "guest_declined", now.toISOString());
     return { result: "declined" };
   }
-  if (tok.action === "cancel" || tok.action === "confirm_cancel") return cancelMeeting(sql, found, { now, deps });
+  // A sign-in booking (F-002) ends only through the core: the "Booked" email's link is its proof.
+  if (tok.action === "cancel" && b.proof) {
+    return cancelMeeting(sql, b.id, null, { proof: "booked_email_link", actor: null, scope: "cancel", ticket_hash: tok.hash, expires_at: tok.expires_at }, { now, deps });
+  }
+  if (tok.action === "cancel" || tok.action === "confirm_cancel") return cancelByLink(sql, found, { now, deps });
   return { error: "unknown" };
 }
 
-async function cancelMeeting(sql, { tok, booking: b }, { now, deps }) {
+// F-001's cancellation: claim cancelling and spend the link, delete the event, then cancelled; a
+// failed deletion puts the booking back to confirmed and the link works again until it expires.
+async function cancelByLink(sql, { tok, booking: b }, { now, deps }) {
   const nowIso = now.toISOString();
   if (b.status !== "confirmed") return { error: "used" };
   // ---- Claim: synchronous, no await. ----
@@ -262,7 +268,8 @@ async function cancelMeeting(sql, { tok, booking: b }, { now, deps }) {
 
 // cancel_booking. Withdrawing a hold needs no consent (nothing exists yet); cancelling a meeting
 // does, so the guest is emailed a link and only that link cancels it.
-export async function cancelByAgent(sql, { bookingId, now, deps }) {
+// F-002: a sign-in booking (proof set) gets a sign-in cancel link instead (signinCancelLink).
+export async function cancelByAgent(sql, { bookingId, now, cfg, ipKey, deps }) {
   const nowIso = now.toISOString();
   const link = await newToken();
   const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
@@ -274,6 +281,7 @@ export async function cancelByAgent(sql, { bookingId, now, deps }) {
     return { status: "cancelled" };
   }
   if (status !== "confirmed" || b.start_utc <= nowIso) return { error: "not_cancellable", status: callerStatus(status) };
+  if (b.proof) return signinCancelLink(sql, b, link, { now, cfg, ipKey, deps });
   const requested = { status: "confirmed", cancellation: "requested" };
   // One outstanding request at a time, so a booking ID can't be used to flood the guest's inbox.
   const outstanding = sql.exec(
@@ -686,4 +694,40 @@ async function finishSigninConfirm(sql, b, { now, cfg, deps }) {
     return { result: "confirming" };
   }
   return settleConfirmed(sql, b, { now, cfg, deps, meetLink: event?.meetLink ?? null });
+}
+
+// cancel_booking on a confirmed sign-in booking, before its start: a single-use sign-in link
+// lasting requestMinutes or until the start, whichever is sooner. It takes the request counters
+// (D7) and revokes the booking's previous sign-in cancel link (not the "Booked" email's link), so
+// a booking has at most one live sign-in cancel link. Synchronous after the token is made.
+function signinCancelLink(sql, b, link, { now, cfg, ipKey, deps }) {
+  const nowIso = now.toISOString();
+  const quota = reserveRequestQuota(sql, { day: deps.day(nowIso), ipKey, caps: cfg.caps });
+  if (!quota.ok) return { error: "rate_limited", reason: quota.which };
+  const lapse = plus(nowIso, cfg.requestMinutes * MINUTE);
+  const expires = lapse < b.start_utc ? lapse : b.start_utc;
+  sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND action = 'cancel_signin' AND used_at IS NULL", nowIso, b.id);
+  sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel_signin', ?)", link.hash, b.id, expires);
+  return { status: "confirmed", confirm_url: deps.confirmUrl(link.token), link_expires: expires };
+}
+
+// The only way a sign-in booking is cancelled, on either proof: a sign-in by the guest
+// (signin:google, on a cancel_signin ticket) or the "Booked" email's cancel link
+// (booked_email_link, on that F-001 token: holding it proves the verified mailbox). Caps and
+// availability never stop a cancellation. Once authorised it runs F-001's cancellation unchanged.
+const CANCEL_TICKET = { "signin:google": "cancel_signin", booked_email_link: "cancel" };
+export async function cancelMeeting(sql, bookingId, person, grant, { now, deps }) {
+  const nowIso = now.toISOString();
+  // ---- Synchronous from here to cancelByLink's claim. No await. ----
+  const b = typeof bookingId === "string" && sql.exec("SELECT * FROM bookings WHERE id = ?", bookingId).toArray()[0];
+  if (!b?.proof) return { error: "unknown" };
+  const tok = typeof grant?.ticket_hash === "string" && sql.exec("SELECT * FROM tokens WHERE hash = ? AND booking_id = ?", grant.ticket_hash, b.id).toArray()[0];
+  if (!tok || tok.action !== CANCEL_TICKET[grant.proof] || !grantAllows(grant, "cancel", tok.hash, now)) return { error: "forbidden" };
+  if (tok.used_at || b.status !== "confirmed") return { error: "used" };
+  if (tok.expires_at <= nowIso || b.start_utc <= nowIso) return { error: "expired" };
+  if (grant.proof === "signin:google") {
+    const guest = sql.exec("SELECT provider, subject FROM identities WHERE id = ?", b.identity_id).toArray()[0];
+    if (!guest || guest.provider !== person?.provider || guest.subject !== person?.subject) return { error: "not_guest" };
+  }
+  return cancelByLink(sql, { tok, booking: b }, { now, deps });
 }
