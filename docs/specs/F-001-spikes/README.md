@@ -201,4 +201,11 @@ Two read-only investigations for [F-002](../F-002-signed-in-agent-booking.md), c
 - **Branding:** branding and publishing status are per project. Brand verification (needed to show a name or logo) is automated, and works for basic-scope-only apps.
 - **Decision (D4):** a separate project for visitor sign-in, to keep its branding and risk apart from the calendar token's project.
 
-Sources are listed in F-002's References.
+**ChatGPT spike:**
+
+- **Registration:** CIMD is supported (`client_id` `https://chatgpt.com/oauth/client.json`, redirect `https://chatgpt.com/connector_platform_oauth_redirect`). The authorisation server must advertise S256 and `none`, and copy `resource` into the token's audience.
+- **Sign-in prompt:** ChatGPT shows its sign-in UI only when the tool declares per-tool `securitySchemes` and a call returns a tool error with `_meta["mcp/www_authenticate"]`. An HTTP 401 isn't documented as triggering it.
+- **Plans:** write-capable MCP is in beta for Business, Enterprise and Edu workspaces on the web, enabled by an admin.
+- **Outcome:** ChatGPT moved to P3 (F-002 D2).
+
+Sources: developers.openai.com/apps-sdk/build/auth and /apps-sdk/reference. The other sources are listed in F-002's References.
