@@ -423,22 +423,27 @@ test("BOOKING_ENABLED not \"true\": every write path is 503 booking_disabled; ty
   }
 });
 
-test("BOOKING_ENABLED not \"true\": MCP hides booking — tools/list omits the five tools, instructions don't mention it, calls say it isn't open", async () => {
+// F-002 (F-001 US-8 as F-002 restates it): with booking off, new requests and cancel links are
+// refused, but the read tools still work, so an agent holding a link can still check its status.
+test("BOOKING_ENABLED not \"true\": MCP lists and answers the read tools; book_meeting and cancel_booking say booking isn't open; instructions don't mention booking", async () => {
   for (const value of ["false", undefined, "TRUE", "1"]) {
     const h = harness({ env: { BOOKING_ENABLED: value } });
     const { result } = await mcp(h, rpc("tools/list"));
-    assert.deepEqual(result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"], String(value));
+    assert.deepEqual(result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro", "get_booking_guide", "list_meeting_types", "get_availability", "get_booking_status"], String(value));
     const init = await mcp(h, rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
     assert.doesNotMatch(init.result.instructions, /book|meeting/i, String(value));
     assert.match(init.result.instructions, /request_intro/);
-    for (const [name, args] of [["list_meeting_types", {}], ["get_availability", { type: "consultation" }], ["book_meeting", { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" }],
-      ["get_booking_status", { booking_id: "a".repeat(32) }], ["cancel_booking", { booking_id: "a".repeat(32) }]]) {
+    for (const [name, args] of [["book_meeting", { type: "consultation", start: SLOT }], ["cancel_booking", { booking_id: "a".repeat(32) }]]) {
       const r = await tool(h, name, args);
       assert.equal(r.isError, true, name);
       assert.equal(r.structuredContent.error, "booking_disabled", name);
       assert.match(r.content[0].text, /^Booking isn't open yet\./, name);
     }
-    assert.equal(h.storeCalls(), 0, "nothing reaches the BookingStore");
+    assert.equal(h.storeCalls(), 0, "no write reaches the BookingStore");
+    for (const [name, args] of [["get_booking_guide", {}], ["list_meeting_types", {}], ["get_availability", { type: "consultation" }]]) {
+      assert.equal((await tool(h, name, args)).isError, undefined, name);
+    }
+    assert.equal((await tool(h, "get_booking_status", { booking_id: "a".repeat(32) })).structuredContent.error, "not_found", "status is looked up, not refused");
   }
   // Switched on, all eleven are listed (F-002 adds get_booking_guide).
   assert.equal((await mcp(harness(), rpc("tools/list"))).result.tools.length, 11);

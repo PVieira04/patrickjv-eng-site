@@ -44,9 +44,10 @@ test("WebMCP: read tools register at once; booking tools only after GET /api/boo
   assert.deepEqual(on.names, [...READ_AND_INTRO, ...BOOKING_TOOLS]);
   assert.deepEqual(on.requests.map((r) => [r.url, r.init.method]), [["/api/booking/types", undefined]], "one same-origin GET");
 
+  // F-002: with booking off, the read tools still register (book_meeting and cancel_booking don't).
   for (const value of ["false", undefined]) {
     const off = await runPage(harness({ env: { BOOKING_ENABLED: value } }));
-    assert.deepEqual(off.names, READ_AND_INTRO, String(value));
+    assert.deepEqual(off.names, [...READ_AND_INTRO, "get_booking_guide", "list_meeting_types", "get_availability", "get_booking_status"], String(value));
   }
 });
 
@@ -101,6 +102,20 @@ test("WebMCP booking tools call the same-origin booking API and return what the 
   assert.equal(data(st).status, "pending_confirmation");
   const c = await byName.cancel_booking.execute({ booking_id }, {});
   assert.equal(data(c).status, "cancelled");
+});
+
+test("F-002 (review) WebMCP and MCP errors keep the server's next_step: cancelling a booking still being finished says to check again", async () => {
+  const h = harness();
+  const { byName } = await runPage(h);
+  const b = data(await byName.book_meeting.execute({ type: "consultation", start: SLOT }, {}));
+  h.f.opts.fail = { freebusy: true };
+  const e = console.error; console.error = () => {};
+  try { await h.signInOn(b.confirm_url); } finally { console.error = e; } // left confirming
+  for (const r of [await byName.cancel_booking.execute({ booking_id: b.booking_id }, {}), await h.tool("cancel_booking", { booking_id: b.booking_id })]) {
+    assert.equal(r.isError, true);
+    assert.match(r.content[0].text, /not_cancellable/);
+    assert.match(r.content[0].text, /This booking is still being finished\. Check again in a few minutes, then cancel if needed\./);
+  }
 });
 
 test("WebMCP booking tools: a server error is passed on as the server's message", async () => {

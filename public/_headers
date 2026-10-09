@@ -12,11 +12,11 @@
 
 # The page: "/" is negotiated (HTML, or Markdown for Accept: text/markdown), hence Vary.
 /
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-ngZnNMqFtjnwXqghbdBEYC99eR1n0nUztJOlhOjl1l8='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-glVEfIP59+vo7icEGI7Y1mev8KROpnv7y389zP5TxHQ='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
   Vary: Accept
 
 /index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-ngZnNMqFtjnwXqghbdBEYC99eR1n0nUztJOlhOjl1l8='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-glVEfIP59+vo7icEGI7Y1mev8KROpnv7y389zP5TxHQ='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
 
 # The CV: served at /cv (and /cv.html, which the asset server redirects to /cv). It names employers;
 # the page and agent surfaces do not.

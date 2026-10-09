@@ -127,9 +127,9 @@ test("client JSON-RPC responses: exactly one of result/error, and a well-formed 
   }
 });
 
-test("tools/list: four read-only tools, request_intro, then (only with BOOKING_ENABLED=true) the five booking tools", async () => {
+test("tools/list: four read-only tools, request_intro, the booking read tools, then (only with BOOKING_ENABLED=true) book_meeting and cancel_booking", async () => {
   const dark = await (await harness().call(rpc("tools/list"))).json();
-  assert.deepEqual(dark.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+  assert.deepEqual(dark.result.tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro", "get_booking_guide", "list_meeting_types", "get_availability", "get_booking_status"]); // F-002: reads work with booking off
   const h = harness();
   h.env.BOOKING_ENABLED = "true";
   const r = await (await h.call(rpc("tools/list"))).json();
@@ -461,7 +461,7 @@ test("MCP-Protocol-Version: unsupported (or empty) is 400; absent is accepted", 
   for (const v of ["2025-11-25", "2025-06-18"]) assert.equal((await call(rpc("tools/list"), { headers: { "mcp-protocol-version": v } })).status, 200, v);
   const absent = await call(rpc("tools/list"));
   assert.equal(absent.status, 200);
-  assert.equal((await absent.json()).result.tools.length, 5); // booking off: no booking tools
+  assert.equal((await absent.json()).result.tools.length, 9); // booking off: the four booking read tools, no book_meeting or cancel_booking (F-002)
 });
 
 test("security headers on every response branch", async () => {

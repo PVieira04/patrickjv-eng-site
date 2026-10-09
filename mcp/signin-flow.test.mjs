@@ -384,6 +384,17 @@ test("F-002 after a sign-in: caps reached says which limit and leaves the reques
   assert.equal((await g.tool("get_booking_status", { booking_id: b.booking_id })).structuredContent.status, "declined");
 });
 
+test("F-002 (review): a request that lapses during the sign-in shows 'expired', not a generic refusal", async () => {
+  const h = harness();
+  const b = (await h.tool("book_meeting", ask())).structuredContent;
+  h.clock.now = new Date(NOW.getTime() + 58 * MINUTE); // starts with 2 minutes left on the link
+  const start = await h.startSignin(h.ticketOf(b.confirm_url));
+  h.clock.now = new Date(NOW.getTime() + 61 * MINUTE); // the link lapses while on Google's page
+  const { code, state } = h.f.authorize(start.headers.get("location"), {}, h.clock.now);
+  const res = await h.callback({ code, state }, h.cookieOf(start));
+  assert.match(text(await res.text()), /This link has expired\. Nothing was booked\./);
+});
+
 test("F-002 forwarded link: the first sign-in that books becomes the guest; later attempts get 'already booked'; cancellation recognises that guest", async () => {
   const h = harness();
   const b = (await h.tool("book_meeting", ask())).structuredContent;

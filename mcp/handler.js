@@ -480,11 +480,12 @@ async function callTool(name, args, ctx) {
 // failure a tool error that names the error and asks agents not to retry.
 function bookingResult(r) {
   if (r.status < 300) return { content: [{ type: "text", text: JSON.stringify(r.body) }], structuredContent: r.body };
-  return { content: [{ type: "text", text: `${r.body.message} (${r.body.error}) Do not retry automatically.` }], structuredContent: r.body, isError: true };
+  return { content: [{ type: "text", text: `${r.body.message} (${r.body.error})${r.body.next_step ? ` ${r.body.next_step}` : ""} Do not retry automatically.` }], structuredContent: r.body, isError: true };
 }
-// Booking is hidden from MCP clients until launch (BOOKING_ENABLED): not listed, not described in
-// the instructions, and a call names the kill switch rather than "unknown tool".
-const BOOKING_TOOL_NAMES = new Set(["get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
+// With booking off (BOOKING_ENABLED), book_meeting and cancel_booking are not listed and a call
+// names the kill switch rather than "unknown tool"; the instructions don't describe booking. F-002:
+// the read tools stay listed and working, so agents can still research and check a link's status.
+const BOOKING_WRITE_TOOLS = new Set(["book_meeting", "cancel_booking"]);
 const INSTRUCTIONS = "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.";
 const BOOKING_INSTRUCTIONS = " To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it by signing in with Google on the link it returns.";
 // Tools that take no arguments: a non-empty arguments object is a protocol error.
@@ -701,10 +702,10 @@ const bookingOps = {
 const NEXT_STEP = {
   book: (expires) => `Give this link to the person you're booking for. They need to sign in with Google before ${expires} to book the call. Then call get_booking_status.`,
   status: {
-    pending_confirmation: "Not finished yet: the person may still be signing in, or the site may be finishing the booking. Wait and check again; don't book again.",
+    pending_confirmation: "Not finished yet: the person may still be signing in (or confirming from their email), or the site may be finishing the booking. Wait and check again; don't book again.",
     confirmed: "The call is booked. Google has sent the invite to the person's email address.",
     declined: "Not booked. Start again from get_availability and choose another time.",
-    expired: "The link expired before anyone signed in, so nothing was booked. Start again from get_availability.",
+    expired: "The link expired before the person confirmed, so nothing was booked. Start again from get_availability.",
     cancelled: "This booking was withdrawn or cancelled. Nothing more to do.",
   },
   withdrawn: "The request is withdrawn: nothing was booked, and its link no longer works.",
@@ -714,7 +715,7 @@ const NEXT_STEP = {
     finishing: "This booking is still being finished. Check again in a few minutes, then cancel if needed.",
     cancelling: "A cancellation is already in progress.",
     started: "This call has already started, so it can't be cancelled.",
-    finished: "This booking has already ended (see get_booking_status), so there's nothing to cancel.",
+    finished: "This booking or request has already ended (see get_booking_status), so there's nothing to cancel.",
   },
 };
 
@@ -962,6 +963,9 @@ async function signinResult(r) {
     }
     return signinUnavailable();
   }
+  // A ticket that lapsed (or a meeting that started) during the sign-in fails the grant's expiry
+  // check: show what happened to it. A grant refused for any other reason changes nothing.
+  if (r.error === "forbidden" && r.view && !["open", "too_many", "unknown"].includes(r.view.state)) return withCookie(ticketPage(r.view));
   if (r.error === "forbidden") return page(403, "This link can't do that", [para(nothing)], "", CLEAR_COOKIE);
   if ((r.error === "used" || r.error === "expired") && r.view) return withCookie(ticketPage(r.view));
   return notFinished(r.purpose ? nothing : "Nothing has changed.");
@@ -1156,12 +1160,12 @@ export async function handle(request, env, deps) {
       case "patrickjv/health":
         return ok({ ...introReadiness(env), ...(await bookingReadiness(env, deps)) });
       case "tools/list":
-        return ok({ tools: bookingEnabled(env) ? tools() : tools().filter((t) => !BOOKING_TOOL_NAMES.has(t.name)) });
+        return ok({ tools: bookingEnabled(env) ? tools() : tools().filter((t) => !BOOKING_WRITE_TOOLS.has(t.name)) });
       case "tools/call": {
         if (typeof params.name !== "string") return rpcError(msg.id, -32602, "tools/call requires params.name");
         const args = "arguments" in params ? params.arguments : {};
         if (!isPlainObject(args)) return rpcError(msg.id, -32602, "arguments must be an object");
-        if (BOOKING_TOOL_NAMES.has(params.name) && !bookingEnabled(env)) return ok(bookingResult(failed("booking_disabled")));
+        if (BOOKING_WRITE_TOOLS.has(params.name) && !bookingEnabled(env)) return ok(bookingResult(failed("booking_disabled")));
         if (NO_ARGUMENTS.has(params.name) && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
         const result = await callTool(params.name, args, {
           env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve, booking: deps.booking,

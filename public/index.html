@@ -980,7 +980,7 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
     };
     var answer = function (r, key) {
       if (r.ok && r.data) return reply(key ? r.data[key] : r.data);
-      if (r.data && typeof r.data.message === "string") return reply(r.data.message + " (" + r.data.error + ") Do not retry automatically.", true);
+      if (r.data && typeof r.data.message === "string") return reply(r.data.message + " (" + r.data.error + ")" + (typeof r.data.next_step === "string" ? " " + r.data.next_step : "") + " Do not retry automatically.", true);
       return reply("Unexpected response (HTTP " + r.status + ")", true);
     };
     var str = function (x) { return typeof x === "string" ? x : ""; };
@@ -1065,6 +1065,8 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
     });
     var always = tools.filter(function (t) { return !BOOKING[t.name]; });
     var booking = tools.filter(function (t) { return !!BOOKING[t.name]; });
+    // F-002: with booking off, its read tools still register; book_meeting and cancel_booking don't.
+    var bookingReads = booking.filter(function (t) { return t.name !== "book_meeting" && t.name !== "cancel_booking"; });
     // registerTool returns a promise in the current draft: contain each rejection. provideContext
     // (earlier drafts) replaces the whole set, so it is given every tool registered so far.
     var quiet = function () {};
@@ -1073,13 +1075,13 @@ footer { padding: 1.5rem var(--gutter) 2rem; }
       else if (typeof mc.provideContext === "function") Promise.resolve(mc.provideContext({ tools: all })).catch(quiet);
     };
     provide(always, always);
-    // Booking stays hidden until launch: its tools are registered only once the booking API says
-    // it is open (BOOKING_ENABLED). Any failure leaves them unregistered.
+    // book_meeting and cancel_booking are registered only once the booking API says booking is open
+    // (BOOKING_ENABLED); its read tools once it answers at all (F-002). Any failure leaves them all unregistered.
     api("/api/booking/types").then(function (r) {
-      if (r.ok && r.data && r.data.enabled === true) {
-        (r.data.types || []).forEach(function (m) { typeTitles[m.id] = m.title; });
-        provide(booking, always.concat(booking));
-      }
+      if (!(r.ok && r.data && typeof r.data.enabled === "boolean")) return;
+      (r.data.types || []).forEach(function (m) { typeTitles[m.id] = m.title; });
+      var on = r.data.enabled ? booking : bookingReads;
+      provide(on, always.concat(on));
     }).catch(quiet);
   } catch (e) {}
 })();

@@ -247,7 +247,8 @@ if (flags.has("--mcp")) {
     return expect(v.ok, v.detail);
   });
   await check(`mcp tools/list = {${TOOLS.join(", ")}}, plus the booking tools if booking is enabled, each with icons`, async () => {
-    const want = bookingOn ? [...TOOLS, ...BOOKING_TOOLS] : TOOLS;
+    // F-002: the booking read tools are listed whether or not booking is on.
+    const want = bookingOn ? [...TOOLS, ...BOOKING_TOOLS] : [...TOOLS, ...BOOKING_TOOLS.filter((n) => n !== "book_meeting" && n !== "cancel_booking")];
     const res = await mcp({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     if (!envelope(res, 2)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     const tools = res.json.result?.tools ?? [];

@@ -49,10 +49,10 @@ test("WebMCP registers all eleven tools (F-002 adds get_booking_guide), in the M
     "get_booking_guide", "list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
 });
 
-test("WebMCP registers only the read tools and request_intro while booking is closed", async () => {
+test("WebMCP registers the read tools, request_intro and the booking read tools (F-002), but not book_meeting or cancel_booking, while booking is closed", async () => {
   const { tools } = runPage({ respond: ok });
   await settle();
-  assert.deepEqual(tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro"]);
+  assert.deepEqual(tools.map((t) => t.name), ["get_profile", "list_work", "list_skills", "list_faq", "request_intro", "get_booking_guide", "list_meeting_types", "get_availability", "get_booking_status"]);
 });
 
 test("request_intro: normalised exactly as the server does, before the confirm dialog; sends what was shown", async () => {
