@@ -327,3 +327,33 @@ test("withOffset: an instant with milliseconds still gets a whole-minute offset"
   assert.equal(withOffset("2026-10-09T00:13:21.997Z", "Europe/London"), "2026-10-09T01:13:21+01:00");
   assert.equal(withOffset("2026-10-26T10:00:00.500Z", "Europe/London"), "2026-10-26T10:00:00+00:00");
 });
+
+// ---- F-002: sign-in booking settings (D3, D7) --------------------------------------------------
+
+test("F-002 booking.json: request links last 60 minutes; request, sign-in and per-person caps have the approved defaults", () => {
+  const cfg = validateConfig(realConfig());
+  assert.equal(cfg.requestMinutes, 60);
+  assert.deepEqual(
+    (({ requestsPerIpPerDay, requestsPerDay, signinAttemptsPerTicket, confirmationsPerPersonPerDay, upcomingPerPerson }) =>
+      ({ requestsPerIpPerDay, requestsPerDay, signinAttemptsPerTicket, confirmationsPerPersonPerDay, upcomingPerPerson }))(cfg.caps),
+    { requestsPerIpPerDay: 20, requestsPerDay: 200, signinAttemptsPerTicket: 5, confirmationsPerPersonPerDay: 2, upcomingPerPerson: 2 },
+  );
+});
+
+test("F-002 validateConfig: bad sign-in settings are refused, naming the field", () => {
+  const bad = (fn) => { const c = realConfig(); fn(c); return c; };
+  for (const [field, cfg] of [
+    ...[0, -1, 1.5, "60", undefined].map((v) => ["requestMinutes", bad((c) => { c.requestMinutes = v; })]),
+    ...["requestsPerIpPerDay", "requestsPerDay", "signinAttemptsPerTicket", "confirmationsPerPersonPerDay", "upcomingPerPerson"].flatMap((k) =>
+      [0, 2.5, "4", undefined].map((v) => [`caps.${k}`, bad((c) => { c.caps[k] = v; })])),
+  ]) {
+    assert.throws(() => validateConfig(cfg), (e) => e instanceof Error && e.message.includes(field), `${field}: ${JSON.stringify(cfg)?.slice(0, 120)}`);
+  }
+});
+
+test("F-002 validateConfig (D3): a request can never outlive its slot: requestMinutes must be less than minNoticeHours × 60", () => {
+  const at = (minutes, hours) => { const c = realConfig(); c.requestMinutes = minutes; c.minNoticeHours = hours; return c; };
+  assert.throws(() => validateConfig(at(24 * 60, 24)), /requestMinutes must be less than minNoticeHours × 60 \(1440\)/);
+  assert.throws(() => validateConfig(at(181, 3)), /requestMinutes/);
+  assert.equal(validateConfig(at(24 * 60 - 1, 24)).requestMinutes, 1439);
+});
