@@ -57,6 +57,11 @@ export function fakeFetch(opts = {}) {
   return { fetch, calls, events, opts, mails: () => calls.filter((c) => c.url.startsWith("https://api.resend.com")).map((c) => c.body) };
 }
 
+// F-002: an unsigned ID token with these claims, as Google's token endpoint returns one (its
+// signature is never checked: the token comes straight from Google over TLS).
+export const idToken = (claims) => [{ alg: "RS256", kid: "fake" }, claims, "sig"]
+  .map((p) => Buffer.from(typeof p === "string" ? p : JSON.stringify(p)).toString("base64url")).join(".");
+
 // In-memory Durable Object alarm storage.
 export function alarmStorage() {
   let at = null;
