@@ -559,11 +559,12 @@ test("mcp/wrangler.jsonc: booking route, BookingStore Durable Object (migration 
 
 // ---- Server metadata ----
 
-// Launch (8 Oct 2026): 1.2.0 mentions booking, published to the Registry right after the deploy
-// that sets BOOKING_ENABLED=true, because the monitor checks serverInfo.version against the Registry.
-test("server.json: 1.2.0 at launch, mentions booking; description fits the Registry's 100 characters", async () => {
+// Launch (8 Oct 2026): 1.2.0 mentions booking. F-002: 1.3.0, because book_meeting's shape changed
+// (no name or email; sign-in confirms). Published to the Registry right after the deploy, because
+// the monitor checks serverInfo.version against the Registry.
+test("server.json: 1.3.0 for F-002, mentions booking; description fits the Registry's 100 characters", async () => {
   const s = JSON.parse(readFileSync(new URL("./server.json", import.meta.url), "utf8"));
-  assert.equal(s.version, "1.2.0");
+  assert.equal(s.version, "1.3.0");
   assert.ok(s.description.length <= 100, `${s.description.length}`);
   assert.match(s.description, /book/i);
   const init = await mcp(harness(), rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } }));
