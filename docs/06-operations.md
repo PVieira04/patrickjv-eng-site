@@ -29,7 +29,7 @@ GitHub Actions no longer deploys and holds **no secrets**. Both workflows use ac
 | Workflow | When | What |
 |---|---|---|
 | `test.yml` | Every push and pull request | `npm ci --ignore-scripts`, `npm test`. No secrets. (Workers Builds runs the same `npm test` again before each deploy.) |
-| `monitor.yml` | Every 6 hours, on demand, and on every completed `Workers Builds: …` check run | Scheduled/dispatch: live smoke against the last deployed commit, plus "main is deployed". Check run: build-failure alert and post-deploy smoke (see [Monitoring](#monitoring)). Permissions `contents: read`, `checks: read` only. |
+| `monitor.yml` | Every 6 hours, on demand, and on every completed `Workers Builds: …` check run **for `main`** (branch builds fail by design and deploy nothing, so they are ignored; 9 Oct 2026) | Scheduled/dispatch: live smoke against the last deployed commit, plus "main is deployed". Check run: build-failure alert and post-deploy smoke (see [Monitoring](#monitoring)). Permissions `contents: read`, `checks: read` only. |
 
 **Stale SHAs and races (reviews Codex-1, Codex-6).** Workers Builds builds the commit that was pushed; there is no GitHub re-run that could redeploy an old SHA. Rollback is a deliberate `wrangler rollback`. Two residuals, both **unverified**: whether Workers Builds cancels or serialises a build that a newer push supersedes, and whether two quick pushes can finish out of order (leaving the older commit live). The monitor covers both: the post-deploy smoke is skipped if a newer `main` commit has its own site build, and the scheduled "deployed = repo" checks compare production with the newest successfully built commit, so an out-of-order finish FAILs there.
 

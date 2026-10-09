@@ -70,6 +70,9 @@ test("monitor.yml: 'main is deployed' ignores exactly the site watch-path exclud
 test("monitor.yml: the check_run job is gated on the Workers Builds app and alerts on any non-success", () => {
   const job = jobOf(monitor, "build-result");
   assert.match(job, /github\.event_name == 'check_run' &&\n\s+github\.event\.check_run\.app\.slug == 'cloudflare-workers-and-pages' &&\n\s+startsWith\(github\.event\.check_run\.name, 'Workers Builds: '\)/);
+  // Branch builds (any branch but main) fail by design here and deploy nothing; alerting on them
+  // emailed Patrick for every feature-branch push (9 Oct 2026). Only main's builds deploy.
+  assert.match(job, /startsWith\(github\.event\.check_run\.name, 'Workers Builds: '\) &&\n\s+github\.event\.check_run\.check_suite\.head_branch == 'main'/);
   assert.match(job, /group: monitor-build-\$\{\{ github\.event\.check_run\.head_sha \}\}-\$\{\{ github\.event\.check_run\.name \}\}/);
   const result = stepOf(job, "Workers Builds result");
   assert.match(result, /if \[ "\$CONCLUSION" != success \]; then\n\s+echo "::error title=Workers Builds failed: \$worker::/);
