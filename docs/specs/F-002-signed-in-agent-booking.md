@@ -1,6 +1,6 @@
 # Feature Spec: Confirm bookings by signing in
 
-> **Purpose:** Replace F-001's "please confirm" email with a sign-in by the person the booking is for, on every channel, through one core that can later accept other proofs of who that person is (a standing agent key, a provider-asserted delegation, an OAuth token).
+> **Purpose:** Replace F-001's "please confirm" email with a sign-in by the person the booking is for, on every channel, through one core that also accepts an agent signing in with an identity set up for it (its person's own account, or its own account that its person has authorised at the identity provider).
 > **Update when:** Requirements shift, acceptance criteria change, or scope moves during the build.
 > **Related:** [F-001 Booking](F-001-booking.md) (this builds on it), [`../04-mcp-and-webmcp.md`](../04-mcp-and-webmcp.md), [`../06-operations.md`](../06-operations.md), [research](F-001-spikes/README.md#f-002-research-2026-10-09).
 
@@ -26,7 +26,7 @@ Today a booking is a 2-hour hold that becomes a meeting when the guest clicks a 
 
 Reading stays anonymous: an agent can look up meeting types and free times and relay them without anyone signing in. Only the act of booking (and cancelling a confirmed meeting) needs the person.
 
-The confirmation step is one core operation: **confirm this hold for this verified person**. P1 proves the person by an interactive sign-in. Later phases can add other proofs, notably an **agent key** a person creates once so their agent can book without a sign-in each time. The booking logic doesn't change when they're added. The long-term aim is to retire anonymous booking and anonymous intro messages altogether (P4).
+The confirmation step is one core operation: **confirm this hold for this verified person**. P1 proves the person by an interactive sign-in. An agent may complete that sign-in itself, if its identity is set up for it: either it has access to its person's own account, or it has its own account that its person has authorised at the identity provider. That depends on how the identity is set up, not on anything the site builds (P3). The long-term aim is to retire anonymous booking and anonymous intro messages altogether (P4).
 
 ---
 
@@ -56,9 +56,11 @@ As **a guest**, I want **my agent to ask to cancel and me to confirm it by signi
 
 As **Patrick**, I want **unconfirmed holds to be short and capped, and confirmed bookings capped per person**, so that **nobody can block my calendar or fill it**.
 
-### US-6 (P3): Standing permission for my agent
+### US-6 (P3): My agent signs in with an identity I've set up
 
-As **a person who books often**, I want to **set up a key once that lets my agent book and cancel for me without signing in each time**, so that **my agent can act on my behalf within limits I choose**.
+As **a person with an agent**, I want **my agent to confirm a booking by signing in with an identity I've set up for it**, so that **it can book for me without handing me a link each time**. That identity is either my own account, which my agent has access to, or the agent's own account, which I've authorised at the identity provider to act for me.
+
+**Why this matters:** Whether an agent can act for someone is a property of its identity, and the identity provider manages it. The site only needs to accept that sign-in correctly.
 
 ---
 
@@ -69,14 +71,15 @@ As **a person who books often**, I want to **set up a key once that lets my agen
 - Every agent booking (MCP and WebMCP) is confirmed by the guest signing in; no confirmation email on those channels.
 - The guest's name and address come only from the sign-in.
 - Reading tools stay anonymous.
-- One confirmation core that later proofs (agent keys, delegation, OAuth tokens) plug into without changing booking logic.
+- One confirmation core that accepts a sign-in by the person, or by an agent using an identity set up for it, without changing booking logic.
 - Cost stays at £0.
 - **P4:** retire anonymous booking (the email path on `/book`) and anonymous `request_intro`.
 
 **Non-Goals**
 
-- **Being an OAuth authorisation server in P1.** The site is a Google sign-in *client* only. Issuing tokens to agents was researched and rejected for P1 (D2). Agent keys (P3) are the planned standing-permission mechanism.
-- **Booking for someone else.** The guest is whoever proves their identity. The site never builds delegation itself; accepting a provider-asserted "acts for" claim would be a new decision (see Watch).
+- **Being an OAuth authorisation server in P1.** The site is a Google sign-in *client* only. Issuing tokens to agents was researched and rejected (D2).
+- **Issuing agent credentials or managing delegation ourselves.** No site-issued agent keys or API tokens, and no record here of who may act for whom. Whether an agent can act for a person is set up at the identity provider (P3).
+- **Booking for someone else.** The guest is whoever proves their identity, or the person an identity provider says the signed-in agent acts for (P3). The site never records delegation itself.
 - **Keeping Google's tokens.** Only the verified claims are read, once, at sign-in.
 - **Rescheduling** (still F-001's planned v2).
 
@@ -91,11 +94,11 @@ As **a person who books often**, I want to **set up a key once that lets my agen
 | D3 | **Holds awaiting sign-in last 10 minutes** (a `booking.json` default), and the confirm link is single-use and expires with the hold. The agent needs seconds; the time is for the person to open the link and sign in. | F-001's 2-hour hold: blocks a slot far longer than a sign-in takes. |
 | D4 | **A separate Google Cloud project** (`patrickjv-signin`) with only `openid email profile`. | The calendar project: it would work (the user cap counts only sensitive scopes), but branding and the cap are per project, and a public sign-in shouldn't share risk with the project holding the calendar token. ([spike](F-001-spikes/README.md#f-002-research-2026-10-09)) |
 | D5 | **The agent never supplies the guest's address.** `book_meeting` on agent channels takes the type, start and an optional note; name and address come from the sign-in. | Accepting an `email` and checking it against the sign-in: invites mismatches and gives agents a field to misuse. |
-| D6 | **One confirmation core with interchangeable proofs.** `confirmHold(hold, person, grant)` is the only way a hold becomes a meeting, and `cancelMeeting(booking, person, grant)` the only way a confirmed one ends. `person` is the guest: `provider` and `subject` (the stable key), `email`, and `display_name`, which is asserted, not verified. `grant` is the authority to act: `proof` (`signin:google`, `email_link`; later `agent_key:<id>`, `oauth:<client>`, `delegation:<issuer>`), `actor` (who acted, if not the person), `scopes` (`book`, `cancel`), `expires_at`, and optional `limits`. **The core checks the grant in the same synchronous block as the claim:** scope, expiry, revocation and limits, then the person caps, then the slot. So a key's limits can't be overspent concurrently. Each proof's only job is to produce `person` and `grant`. P1's grant from a sign-in is one-shot: scope `book` (or `cancel`) for this ticket only. | Separate booking code per channel: drift, and every new proof would need its own copy of the rules. |
+| D6 | **One confirmation core with interchangeable proofs.** `confirmHold(hold, person, grant)` is the only way a hold becomes a meeting, and `cancelMeeting(booking, person, grant)` the only way a confirmed one ends. `person` is the guest: `provider` and `subject` (the stable key), `email`, and `display_name`, which is asserted, not verified. `grant` is the authority to act: `proof` (`signin:google`, `email_link`; later `signin:<provider>` for more providers), `actor` (the agent's identity, when the identity provider says an agent signed in for the person), `scopes` (`book`, `cancel`), `expires_at`, and optional `limits`. **The core checks the grant in the same synchronous block as the claim:** scope, expiry, revocation and limits, then the person caps, then the slot. So a grant's limits can't be overspent concurrently. Each proof's only job is to produce `person` and `grant`. P1's grant from a sign-in is one-shot: scope `book` (or `cancel`) for this ticket only. | Separate booking code per channel: drift, and every new proof would need its own copy of the rules. |
 | D7 | **Caps.** Holds awaiting sign-in: at most 2 live per IP, F-001's 4 per IP a day, and the global 10 a day (taken when the hold is created). Confirmed bookings: at most 2 per person a day and 2 upcoming per person, plus F-001's 3 a day. Two kinds of limit: **daily counters** (holds per IP a day, global a day, confirmations per person a day; UTC day; never refunded) and **occupancy limits** (live holds per IP, upcoming meetings per person; counted from current bookings in `confirming`, `confirmed` or `cancelling` with a future start, so they free up when a hold lapses or a meeting ends or is cancelled). All values live in `booking.json` as defaults Patrick can change without code. | Keying hold caps on email: there's no email until sign-in. |
 | D8 | **`/book` keeps the email path as a fallback until P4**, beside "Sign in with Google to confirm", for people without a Google account. Agent channels get no email path. | Removing it in P1: people without Google couldn't book until P2's providers arrive. |
 
-**Threat model for confirmation.** A sign-in proves that **whoever controls the Google account at that moment** approved the booking, not that a human clicked. An agent driving the person's own signed-in browser (WebDriver, or an in-browser agent such as Claude in Chrome) can complete the sign-in, and no website can tell the difference. The site treats that as the person's authority, because they let the agent act in their browser. The "Booked" email to the verified address is the backstop. The confirmation stops an agent from booking in the name of **someone else** (it can't sign in to an account it doesn't control), and from booking with an address it merely typed. It doesn't stop a person's own agent acting within that person's session. Agent keys (P3) make that delegation explicit and limited.
+**Threat model for confirmation.** A sign-in proves that **whoever controls the Google account at that moment** approved the booking, not that a human clicked. An agent driving the person's own signed-in browser (WebDriver, or an in-browser agent such as Claude in Chrome) can complete the sign-in, and no website can tell the difference. The site treats that as the person's authority, because they let the agent act in their browser. The "Booked" email to the verified address is the backstop. The confirmation stops an agent from booking in the name of **someone else** (it can't sign in to an account it doesn't control), and from booking with an address it merely typed. It doesn't stop a person's own agent acting within that person's session. A person who wants that delegation explicit can give their agent its own account and authorise it at the identity provider (P3).
 
 ---
 
@@ -167,7 +170,7 @@ Maps to: US-4
 ### Non-functional
 
 - [ ] **Security:** no tokens are issued to agents. The ticket is the only bearer value, it's good for one hold, and it expires in 10 minutes. The confirm page can't be framed. Cookie-carrying POSTs require an exact `Origin`. The Google client secret is a Worker secret.
-- [ ] **Privacy:** `/privacy` adds Google as identity provider, the short-lived sign-in cookie (strictly necessary, expires in 10 minutes), and what's kept about a signed-in person: provider, subject, verified email and name, deleted 30 days after the latest of: their last sign-in, the end of their last meeting, and (from P3) the expiry of their last agent key. The site sets no lasting cookie in P1.
+- [ ] **Privacy:** `/privacy` adds Google as identity provider, the short-lived sign-in cookie (strictly necessary, expires in 10 minutes), and what's kept about a signed-in person: provider, subject, verified email and name, deleted 30 days after the later of their last sign-in and the end of their last meeting. The site sets no lasting cookie in P1.
 - [ ] **Observability:** health adds `signinReady` (Google client secrets set, Google's discovery document reachable). The production smoke check creates no holds (quotas are scarce): it checks `book_meeting`'s input schema in `tools/list`, and that a call with an `email` argument is refused. Hold creation and "no email sent" are covered by tests with a fake mailer, plus the manual checks. Logs carry the subsystem only.
 - [ ] **Cost:** Free plan; storage only in `BookingStore` SQLite. No KV.
 
@@ -181,7 +184,7 @@ In `BookingStore` (SQLite):
 CREATE TABLE identities (
   id TEXT PRIMARY KEY, provider TEXT NOT NULL, subject TEXT NOT NULL,
   email TEXT NOT NULL, display_name TEXT NOT NULL, created_at TEXT NOT NULL,
-  delete_after TEXT NOT NULL,           -- 30 days after the latest of last sign-in, last meeting end, last agent-key expiry
+  delete_after TEXT NOT NULL,           -- 30 days after the later of last sign-in and last meeting end
   UNIQUE (provider, subject)
 );
 CREATE TABLE signin_tx (                -- one per sign-in in progress; deleted when used or after 10 minutes
@@ -191,7 +194,7 @@ CREATE TABLE signin_tx (                -- one per sign-in in progress; deleted 
 );
 ```
 
-`bookings` gains `identity_id`, `proof` and `actor`. `guest_name`, `guest_email` and `email_key` become nullable: a sign-in hold has none until the claim fills them in. SQLite can't drop `NOT NULL` in place, so `migrate()` rebuilds the table by copying it, and is tested against a database holding live F-001 holds, confirmed meetings and unused tokens, all of which keep working. Hold tickets reuse F-001's `tokens` table with a new action, `confirm_signin`. P3 adds `agent_keys(id, identity_id, name, scopes, limits_json, expires_at, revoked_at, key_hash)`.
+`bookings` gains `identity_id`, `proof` and `actor`. `guest_name`, `guest_email` and `email_key` become nullable: a sign-in hold has none until the claim fills them in. SQLite can't drop `NOT NULL` in place, so `migrate()` rebuilds the table by copying it, and is tested against a database holding live F-001 holds, confirmed meetings and unused tokens, all of which keep working. Hold tickets reuse F-001's `tokens` table with a new action, `confirm_signin`.
 
 ---
 
@@ -222,17 +225,15 @@ New route: `patrickjv.com/book/confirm*` and `/book/callback*` to the `patrickjv
 ## Phases after P1
 
 - **P2, more ways to sign in and better hand-off:** Microsoft (key on tenant plus object ID; email counted only when Microsoft marks it verified) and Altimist ID, as more buttons on the confirm page; MCP URL-mode elicitation on 2026-07-28 connections.
-- **P3, agent keys: standing permission (US-6).** A signed-in person creates a key at `patrickjv.com/agents`. They name it, choose its scope (`book`, `cancel`), set an expiry of at most 90 days, and can set limits below the person caps. The key is shown once, stored hashed, and revocable at any time. An agent presents it as `Authorization: Bearer` on `/mcp` or the HTTP API. With a valid key, `book_meeting` calls `confirmHold(hold, keyOwner, "agent_key:<id>")` straight away, with no link. Every booking still sends the "Booked" email, so the person sees what their agent did. This is a deliberate, person-chosen exception to per-request sign-in, and it needs its own acceptance criteria and `/privacy` text when planned. It works with any MCP client that can send a custom header, with no OAuth needed.
-- **P3, OAuth for MCP (optional):** if MCP clients converge on OAuth sign-in, a token can become one more proof (`oauth:<client>`) through the same core. The [research](F-001-spikes/README.md#f-002-research-2026-10-09) records what that route needs.
-- **P4, retire anonymous paths:** remove `/book`'s email confirmation and make `request_intro` require a sign-in or an agent key. Reading stays anonymous.
+- **P3, agents signing in with their own identity (US-6): nothing to build here.** Two set-ups work through the same confirm page:
+  - **The agent has access to its person's own account** (credentials or a signed-in session). It completes the sign-in itself, and the booking is the person's. P1 already handles this (threat model).
+  - **The agent has its own account, and its person has authorised that account at the identity provider to act for them.** When a provider's sign-in states the person the agent acts for (for example an `act` actor claim, as in OAuth token exchange, RFC 8693), the core books for that person and records the agent as `actor`. Accepting a provider's assertion is a per-provider check (D6), not a delegation feature of the site.
+
+  What P3 needs is watching: which identity providers offer agent identities with a verifiable "acts for" statement, and the MCP and IETF work on agents acting for users. When a provider the site already uses offers it, adding it is small and gets its own acceptance criteria. If MCP clients converge on OAuth sign-in instead, the [research](F-001-spikes/README.md#f-002-research-2026-10-09) records what that route needs.
+- **P4, retire anonymous paths:** remove `/book`'s email confirmation and make `request_intro` require a sign-in. Reading stays anonymous.
 
 ---
 
-## Watch: agent identities that act for several people
-
-Not a planned feature. If an identity provider ever issues a verifiable "agent X acts for person Y, approved by Y" (OAuth token exchange's `act` claim, IETF drafts on AI agents acting on behalf of users, enterprise agent identities, or verifiable credentials), it would plug in as a `delegation:<issuer>` proof under D6, with Y as the guest. Accepting it would be a new decision revisiting the "booking for someone else" non-goal. These points weren't spiked; check them before relying on any.
-
----
 
 ## Google setup (manual, P1)
 
