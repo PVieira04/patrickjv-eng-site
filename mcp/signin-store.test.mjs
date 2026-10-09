@@ -447,3 +447,129 @@ test("F-002 recovery: an F-001 email booking whose recovery insert is refused st
   await assert.rejects(recover(t, h.booking_id));
   assert.equal(bookingRow(t, h.booking_id).status, "confirming");
 });
+
+// ---- Cancelling (Flow 3, D6): cancel_booking and cancelMeeting(booking, person, grant) ---------
+
+const agentCancel = (t, id, { now = NOW, ipKey = "ipX", c = cfg } = {}) => store.cancelByAgent(t.sql, { bookingId: id, now, cfg: c, ipKey, deps: t.deps });
+const cancelGrant = async (url, over = {}) => ({ proof: "signin:google", actor: null, scope: "cancel", ticket_hash: await store.hashToken(ticketOf(url)), ...over });
+const signinCancel = async (t, id, link, person = JANE, { now = NOW, grant = {} } = {}) =>
+  store.cancelMeeting(t.sql, id, person, await cancelGrant(link.confirm_url, { expires_at: link.link_expires, ...grant }), { now, deps: t.deps });
+async function booked(t, person = JANE, over = {}) {
+  const r = await ask(t, over);
+  assert.equal((await confirm(t, r, person)).result, "confirmed");
+  return r.booking_id;
+}
+const bookedEmailCancelToken = (t) => t.calls.emails.find((m) => m.kind === "booked").links.cancelUrl.split("?t=")[1];
+
+test("F-002 cancel_booking on a sign-in booking: a single-use confirm_url lasting requestMinutes; it takes the request counters and revokes the previous sign-in cancel link only", async () => {
+  const t = setup();
+  const id = await booked(t);
+  const first = await agentCancel(t, id, { ipKey: "ipC" });
+  assert.equal(first.status, "confirmed");
+  assert.ok(first.confirm_url.startsWith(CONFIRM));
+  assert.equal(first.link_expires, "2026-10-19T10:00:00.000Z");
+  const tokens = () => t.sql.exec("SELECT action, expires_at, used_at FROM tokens WHERE booking_id = ? ORDER BY action, expires_at", id).toArray();
+  assert.deepEqual(tokens().map((k) => [k.action, k.used_at]), [["cancel", null], ["cancel_signin", null]]);
+  const second = await agentCancel(t, id, { ipKey: "ipC" });
+  assert.notEqual(second.confirm_url, first.confirm_url);
+  const sign = tokens().filter((k) => k.action === "cancel_signin");
+  assert.deepEqual(sign.map((k) => !!k.used_at).sort(), [false, true], "the first sign-in cancel link is revoked");
+  assert.equal(tokens().find((k) => k.action === "cancel").used_at, null, "the 'Booked' email's link is untouched");
+  assert.deepEqual(await signinCancel(t, id, first), { error: "used" }, "the revoked link cancels nothing");
+  assert.deepEqual(t.sql.exec("SELECT kind, key, n FROM quota WHERE kind LIKE 'request%' AND key IN ('', 'ipC') ORDER BY kind").toArray().map((q) => [q.kind, q.n]), [["request_global", 3], ["request_ip", 2]]);
+  const capped = { ...cfg, caps: { ...cfg.caps, requestsPerIpPerDay: 2 } };
+  assert.deepEqual(await agentCancel(t, id, { ipKey: "ipC", c: capped }), { error: "rate_limited", reason: "ip" });
+  assert.equal(t.calls.emails.filter((m) => m.kind === "cancel_request").length, 0, "no email: the sign-in is the proof");
+});
+
+test("F-002 cancelMeeting: a sign-in by the guest (same provider and subject) cancels; Google tells the attendees; the link is spent", async () => {
+  const t = setup();
+  const id = await booked(t);
+  const link = await agentCancel(t, id);
+  // Same account, even with a changed address and name.
+  assert.deepEqual(await signinCancel(t, id, link, { ...JANE, email: "jane.new@gmail.com", display_name: "J" }), { result: "cancelled" });
+  assert.deepEqual(t.calls.deleted, [id]);
+  assert.equal(store.getStatus(t.sql, id, NOW).status, "cancelled");
+  assert.deepEqual(await signinCancel(t, id, link), { error: "used" }, "a second sign-in on a used link changes nothing");
+  assert.equal(t.calls.deleted.length, 1);
+});
+
+test("F-002 cancelMeeting: anyone else's sign-in, a book-scope grant or another ticket's grant changes nothing", async () => {
+  const t = setup();
+  const id = await booked(t);
+  const link = await agentCancel(t, id);
+  assert.deepEqual(await signinCancel(t, id, link, { ...JANE, subject: "someone-else" }), { error: "not_guest" });
+  assert.deepEqual(await signinCancel(t, id, link, { ...JANE, provider: "microsoft" }), { error: "not_guest" });
+  assert.deepEqual(await signinCancel(t, id, link, JANE, { grant: { scope: "book" } }), { error: "forbidden" });
+  assert.deepEqual(await signinCancel(t, id, link, JANE, { grant: { ticket_hash: "0".repeat(64) } }), { error: "forbidden" });
+  assert.deepEqual(await signinCancel(t, id, link, JANE, { grant: { proof: "booked_email_link" } }), { error: "forbidden" }, "a sign-in ticket isn't the email's link");
+  assert.equal(bookingRow(t, id).status, "confirmed");
+  assert.equal(t.calls.deleted.length, 0);
+  assert.deepEqual(await signinCancel(t, id, link), { result: "cancelled" }, "the guest still can");
+});
+
+test("F-002 cancelMeeting: the 'Booked' email's cancel link cancels a sign-in booking through the core, with the booked_email_link grant", async () => {
+  const t = setup();
+  const id = await booked(t);
+  await agentCancel(t, id); // a sign-in cancel link outstanding doesn't matter
+  assert.deepEqual(await store.act(t.sql, { token: bookedEmailCancelToken(t), now: NOW, cfg, deps: t.deps }), { result: "cancelled" });
+  assert.deepEqual(t.calls.deleted, [id]);
+  // And directly, as the core: possession of that link is the proof.
+  const t2 = setup();
+  const id2 = await booked(t2);
+  const tok = t2.sql.exec("SELECT * FROM tokens WHERE booking_id = ? AND action = 'cancel'", id2).one();
+  const grant = { proof: "booked_email_link", actor: null, scope: "cancel", ticket_hash: tok.hash, expires_at: tok.expires_at };
+  assert.deepEqual(await store.cancelMeeting(t2.sql, id2, null, grant, { now: NOW, deps: t2.deps }), { result: "cancelled" });
+});
+
+test("F-002 cancel: a link issued 30 minutes before the start stops working at the start; after the start cancel_booking is not_cancellable", async () => {
+  const t = setup();
+  const id = await booked(t);
+  const at = new Date(Date.parse(SLOT) - 30 * MINUTE);
+  const link = await agentCancel(t, id, { now: at });
+  assert.equal(link.link_expires, SLOT, "the start, not 60 minutes on");
+  assert.deepEqual(await signinCancel(t, id, link, JANE, { now: new Date(Date.parse(SLOT)) }), { error: "forbidden" });
+  assert.deepEqual(await agentCancel(t, id, { now: new Date(Date.parse(SLOT) + MINUTE) }), { error: "not_cancellable", status: "confirmed" });
+  assert.equal(bookingRow(t, id).status, "confirmed");
+});
+
+test("F-002 cancel: a guest who has reached their booking caps can still cancel", async () => {
+  const t = setup();
+  const a = await booked(t), b = await booked(t, JANE, { start: "2026-10-22T09:00:00.000Z" });
+  const c3 = await ask(t, { start: "2026-10-23T09:00:00.000Z" });
+  assert.equal((await confirm(t, c3)).error, "person_cap");
+  assert.deepEqual(await signinCancel(t, a, await agentCancel(t, a)), { result: "cancelled" });
+  assert.equal(bookingRow(t, b).status, "confirmed");
+});
+
+test("F-002 cancel: once authorised, a failed deletion puts the booking back to confirmed and the link works again until it expires", async () => {
+  const t = setup();
+  const id = await booked(t);
+  const link = await agentCancel(t, id);
+  t.fail.delete = true;
+  assert.deepEqual(await signinCancel(t, id, link), { error: "unavailable" });
+  assert.equal(bookingRow(t, id).status, "confirmed");
+  t.fail.delete = false;
+  assert.deepEqual(await signinCancel(t, id, link), { result: "cancelled" });
+});
+
+test("F-002 cancel_booking: a booking in confirming (live or left by an eviction) or cancelling is not_cancellable with its public status, and nothing changes", async () => {
+  const t = setup({ fail: { freeBusy: true } });
+  const r = await ask(t);
+  await confirm(t, r); // left confirming, as if evicted
+  assert.deepEqual(await agentCancel(t, r.booking_id), { error: "not_cancellable", status: "pending_confirmation" });
+  assert.equal(bookingRow(t, r.booking_id).status, "confirming");
+  t.sql.exec("UPDATE bookings SET status = 'cancelling' WHERE id = ?", r.booking_id);
+  assert.deepEqual(await agentCancel(t, r.booking_id), { error: "not_cancellable", status: "confirmed" });
+  assert.equal(t.sql.exec("SELECT count(*) c FROM tokens WHERE action = 'cancel_signin'").one().c, 0);
+});
+
+test("F-002 cancel_booking: an email-form (F-001) booking still gets F-001's confirm-cancellation email and no confirm_url", async () => {
+  const t = setup();
+  const h = await holdFor(t, SLOT, "guest@example.com");
+  t.sql.exec("UPDATE bookings SET status = 'confirmed' WHERE id = ?", h.booking_id);
+  assert.deepEqual(await agentCancel(t, h.booking_id), { status: "confirmed", cancellation: "requested" });
+  assert.equal(t.calls.emails.at(-1).kind, "cancel_request");
+  assert.equal(t.calls.emails.at(-1).booking.email, "guest@example.com");
+});
+
