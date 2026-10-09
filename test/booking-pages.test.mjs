@@ -470,7 +470,7 @@ test("/book CSP allows the page's own script by hash and same-origin fetch only"
   for (const p of ["/book", "/book.html"]) {
     const [rule] = rulesFor(read("public/_headers"), p);
     assert.match(rule, /script-src 'sha256-[A-Za-z0-9+/=]+'; connect-src 'self';/);
-    assert.match(rule, /form-action 'none'/);
+    assert.match(rule, /form-action 'self' https:\/\/accounts\.google\.com;/, "F-002 (D8): the sign-in POST, which goes on to Google");
   }
 });
 

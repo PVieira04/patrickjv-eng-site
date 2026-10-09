@@ -1011,7 +1011,7 @@ async function handleSigninHttp(request, env, deps, url) {
 
 // The HTTP API. The same rejection order as /mcp: path, Origin, method, media type, declared size,
 // rate limits, then the capped body read.
-const BOOKING_ROUTES = {
+export const BOOKING_ROUTES = {
   "/api/booking": ["POST"], "/api/booking/request": ["POST"], "/api/booking/types": ["GET"], "/api/booking/availability": ["GET"], "/api/booking/act": ["GET", "POST"],
   // For the page's WebMCP tools (the MCP server has get_booking_status and cancel_booking).
   "/api/booking/status": ["GET"], "/api/booking/cancel": ["POST"],

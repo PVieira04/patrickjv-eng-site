@@ -576,6 +576,9 @@ button { margin-top: 20px; padding: 10px 18px; border: 0; border-radius: 4px; ba
 button:disabled { opacity: 0.6; cursor: progress; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
 #status { min-height: 1.65em; font-weight: 600; }
+#how .choices button { margin-top: 0; }
+#how #by-email { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); font-weight: 400; }
+.guide { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.875rem; }
 :root { --line-strong: #b9b6ab; --signal-soft: rgba(166, 75, 0, 0.08); }
 @media (prefers-color-scheme: dark) { :root { --line-strong: #3a414c; --signal-soft: rgba(255, 181, 71, 0.12); } }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
@@ -693,7 +696,7 @@ const bookScript = (copy) => `
 
   function pickDay(k) {
     picked = k; start = null;
-    show("details", false); $("times").textContent = "";
+    show("how", false); show("details", false); $("times").textContent = "";
     Object.keys(cells).forEach(function (c) { if (byDay[c]) cells[c].setAttribute("aria-pressed", c === k ? "true" : "false"); });
     moveStop(k);
     $("time-legend").textContent = t.labels.timeOn.replace("{day}", nameOf(k));
@@ -701,13 +704,34 @@ const bookScript = (copy) => `
     show("time-set", true);
   }
 
-  // Hand-off: the picker ends here, with \`type\` and a chosen \`start\`. Everything after (the details
-  // form, POST /api/booking and its result) is the F-001 flow and does not depend on how they were picked.
-  function slotChosen(s) { start = s; show("details", true); }
+  // Hand-off: the picker ends here, with \`type\` and a chosen \`start\`. F-002 (D8): the visitor then
+  // chooses how to book. "Sign in with Google to book" makes a booking request and starts its
+  // sign-in straight away; "Book with email instead" opens the F-001 form (POST /api/booking),
+  // unchanged. Nothing is created until one is chosen, and nothing turns one into the other.
+  function slotChosen(s) { start = s; show("details", false); show("how", true); }
+  $("by-email").addEventListener("click", function () { show("details", true); $("name").focus(); });
+  $("by-signin").addEventListener("click", function () {
+    if (!start) return;
+    $("by-signin").disabled = true;
+    say(t.messages.signingIn);
+    call("/api/booking/request", { type: type, start: start, source: "page" }).then(function (r) {
+      if (!r.ok || typeof r.data.confirm_url !== "string") {
+        $("by-signin").disabled = false;
+        if (r.status === 409) return loadSlots(t.messages.slotGone);
+        return failed(r);
+      }
+      // The confirm page's own POST, made here so there's no extra page: it sets the sign-in
+      // cookie and sends the browser on to Google.
+      var f = document.createElement("form"), i = document.createElement("input");
+      f.method = "post"; f.action = "/book/confirm/google";
+      i.type = "hidden"; i.name = "t"; i.value = new URL(r.data.confirm_url).searchParams.get("t");
+      f.appendChild(i); document.body.appendChild(f); f.submit();
+    }, function () { $("by-signin").disabled = false; broken(); });
+  });
 
   function loadSlots(done) {
     start = null; byDay = {}; picked = null; months = [];
-    show("day-set", false); show("time-set", false); show("details", false);
+    show("day-set", false); show("time-set", false); show("how", false); show("details", false);
     $("cal-body").textContent = ""; $("times").textContent = "";
     say(t.messages.loadingSlots);
     var want = type;
@@ -797,7 +821,8 @@ const bookScript = (copy) => `
 })();
 `;
 
-export function renderBook(c) {
+// \`guide\`: the booking guide (F-002, US-7), shown verbatim in a "For AI agents" note.
+export function renderBook(c, guide) {
   const b = c.pages.book, l = b.labels, email = c.person.links.email;
   const field = (id, label, control) => `<label class="field" for="${id}">${attr(label)}</label>\n${control}`;
   return sitePage({
@@ -813,6 +838,8 @@ export function renderBook(c) {
 <table id="days" class="cal" role="grid" aria-labelledby="cal-month"><thead id="cal-cols"></thead><tbody id="cal-body"></tbody></table>
 </fieldset>
 <fieldset id="time-set" hidden><legend id="time-legend">${attr(l.time)}</legend><div id="times" class="choices chips"></div></fieldset>
+<fieldset id="how" hidden><legend>${attr(l.how)}</legend><p class="meta">${attr(l.howHint)}</p>
+<div class="choices"><button id="by-signin" type="button">${attr(l.signin)}</button><button id="by-email" type="button">${attr(l.byEmail)}</button></div></fieldset>
 <div id="details" hidden>
 ${field("name", l.name, '<input id="name" name="name" type="text" autocomplete="name" required maxlength="100">')}
 ${field("email", l.email, '<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">')}
@@ -822,16 +849,19 @@ ${field("note", l.note, '<textarea id="note" name="note" rows="4" maxlength="500
 </div>
 </form>
 <p id="status" role="status" aria-live="polite"></p>
-<p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>`,
+<p id="closed" hidden><a href="/#contact">${attr(b.messages.closedLink)}</a></p>
+<section id="for-agents" aria-labelledby="for-agents-h"><h2 id="for-agents-h">${attr(b.agents.heading)}</h2>
+<p class="meta">${attr(b.agents.intro.replace("/book.md", ""))}<a href="/book.md">/book.md</a></p>
+<pre class="guide">${attr(guide)}</pre></section>`,
     script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, labels: { minutes: l.minutes, noteCount: l.noteCount, freeOne: l.freeOne, freeMany: l.freeMany, freeNone: l.freeNone, timeOn: l.timeOn }, messages: b.messages }),
   });
 }
 
 // The CSP for a generated page: its inline <style> (and <script>, which may fetch same-origin) by hash.
-const pageCsp = (ic) => [
+const pageCsp = (ic, formAction = "'none'") => [
   "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${ic.styles.map(cspHash).join(" ")}`,
   ...(ic.scripts.length ? [`script-src ${ic.scripts.map(cspHash).join(" ")}`, "connect-src 'self'"] : []),
-  "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
+  "base-uri 'none'", `form-action ${formAction}`, "frame-ancestors 'none'", "upgrade-insecure-requests",
 ].join("; ");
 
 // ---------------------------------------------------------------------------------------------
@@ -995,9 +1025,9 @@ Sitemap: ${SITE}sitemap.xml
   const privacyHtml = renderPrivacy(c);
   const privacyPage = inlineCode(privacyHtml, { styles: 1, scripts: 0 });
   const privacyCsp = pageCsp(privacyPage);
-  const bookHtml = renderBook(c);
+  const bookHtml = renderBook(c, guide);
   const bookPage = inlineCode(bookHtml, { styles: 1, scripts: 1 });
-  const bookCsp = pageCsp(bookPage);
+  const bookCsp = pageCsp(bookPage, "'self' https://accounts.google.com"); // F-002: the sign-in POST goes on to Google
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${page.styles.map(cspHash).join(" ")}`,

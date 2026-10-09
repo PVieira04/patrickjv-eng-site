@@ -202,7 +202,7 @@
     "book": {
       "title": "Book a meeting",
       "description": "Book a consultation or a recruiter intro with Patrick Vieira at a time he is free.",
-      "intro": "Choose a meeting type and a time. I'll email you a link to confirm, and nothing is booked until you click it.",
+      "intro": "Choose a meeting type and a time, then sign in with Google to book it in your name. No Google account? You can book with email instead, and confirm from your inbox.",
       "noscript": "This page needs JavaScript. You can also email me at hello@patrickjv.com.",
       "labels": {
         "type": "Meeting type",
@@ -219,7 +219,11 @@
         "freeOne": "{day}, 1 free time",
         "freeMany": "{day}, {n} free times",
         "freeNone": "{day}, no free times",
-        "timeOn": "Time on {day}"
+        "timeOn": "Time on {day}",
+        "how": "How to book",
+        "howHint": "Signing in books the call straight away. We use your name and email address from Google for the invite, and nothing else.",
+        "signin": "Sign in with Google to book",
+        "byEmail": "Book with email instead"
       },
       "zone": "Times shown in {zone}.",
       "zoneFallback": "Times shown in Europe/London, because your browser didn't say which time zone you're in.",
@@ -235,7 +239,12 @@
         "rateLimited": "Too many booking requests. Please try again tomorrow.",
         "invalid": "Please check your name and email address.",
         "unavailable": "Booking is unavailable right now. Please try again later.",
-        "error": "Something went wrong. Please try again, or email me at hello@patrickjv.com."
+        "error": "Something went wrong. Please try again, or email me at hello@patrickjv.com.",
+        "signingIn": "Taking you to Google to sign in…"
+      },
+      "agents": {
+        "heading": "For AI agents",
+        "intro": "The booking steps, also as Markdown at /book.md:"
       }
     }
   },
