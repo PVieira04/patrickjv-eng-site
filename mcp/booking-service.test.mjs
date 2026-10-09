@@ -138,8 +138,9 @@ test("service: a request that writes quota but holds nothing still sets the alar
 });
 
 test("service: health pings Google with a fresh token refresh", async () => {
-  assert.deepEqual(await service().svc.health(), { google: true, email: true });
-  assert.deepEqual(await service({ fetchOpts: { fail: { token: true } } }).svc.health(), { google: false, email: true });
+  // signin: F-002's sign-in client (its secrets set, Google's discovery document reachable).
+  assert.deepEqual(await service().svc.health(), { google: true, email: true, signin: true });
+  assert.deepEqual(await service({ fetchOpts: { fail: { token: true } } }).svc.health(), { google: false, email: true, signin: true });
 });
 
 // Recovery: a confirm (or cancel) whose Durable Object was evicted mid-call leaves the row in

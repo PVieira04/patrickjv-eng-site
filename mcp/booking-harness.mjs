@@ -23,7 +23,7 @@ export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 
   const clock = { now: NOW };
   // Each harness has its own copy of booking.json, so a test may change its caps.
   const sql = openSql(), ownCfg = structuredClone(cfg);
-  const svc = createBookingService({ sql, storage: alarmStorage(), env: { ...ENV, ...over }, cfg: ownCfg, fetch: f.fetch, sleep: async () => {}, now: () => clock.now });
+  const svc = createBookingService({ sql, storage: alarmStorage(), env: { QUOTA_SALT: SALT, ...ENV, ...over }, cfg: ownCfg, fetch: f.fetch, sleep: async () => {}, now: () => clock.now });
   let storeCalls = 0;
   // Like a Durable Object stub: every method is async and results are structured-cloned.
   const stub = new Proxy(svc, { get: (o, k) => async (...a) => { storeCalls++; if (storeDown) throw new Error("DO unreachable"); return structuredClone(await o[k](...a)); } });
@@ -59,9 +59,11 @@ export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 
     headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, ...headers }, body: `t=${encodeURIComponent(ticket)}` });
   const cookieOf = (res) => res.headers.get("set-cookie")?.match(/__Host-pjv_signin=([^;]*)/)?.[1];
   const callback = (query, cookie) => call(`/book/callback/google?${new URLSearchParams(query)}`, { headers: cookie ? { cookie: `__Host-pjv_signin=${cookie}` } : {} });
-  // Signs in on a confirm_url (as `claims` says) and returns the callback's page.
+  // Signs in on a confirm_url (as `claims` says) and returns the callback's page, or the start's
+  // page if the ticket started no sign-in.
   const signInOn = async (url, claims = {}) => {
     const start = await startSignin(ticketOf(url));
+    if (start.status !== 303) return { res: start, html: await start.text(), start };
     const cookie = cookieOf(start);
     const { code, state } = f.authorize(start.headers.get("location"), claims, clock.now);
     const res = await callback({ code, state }, cookie);

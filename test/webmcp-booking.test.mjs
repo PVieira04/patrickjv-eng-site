@@ -81,25 +81,31 @@ test("WebMCP booking tools call the same-origin booking API and return what the 
   assert.equal(data(av).slots[0].start, SLOT);
   assert.equal(requests.at(-1).url, "/api/booking/availability?type=consultation&from=2026-10-21&to=2026-10-21");
 
-  const booked = await byName.book_meeting.execute({ type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com", source: "page", extra: 1 }, {});
+  // F-002: a booking request, as MCP's book_meeting makes; the person signs in to book.
+  const booked = await byName.book_meeting.execute({ type: "consultation", start: SLOT, note: "Hi", source: "page", extra: 1 }, {});
   assert.equal(booked.isError, undefined, JSON.stringify(booked));
   const sent = JSON.parse(requests.at(-1).init.body);
-  assert.equal(requests.at(-1).url, "/api/booking");
-  assert.deepEqual(sent, { type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com", source: "webmcp" }, "only known fields, source always webmcp");
-  assert.match(h.f.mails()[0].text, /An AI agent asked to book/);
+  assert.equal(requests.at(-1).url, "/api/booking/request");
+  assert.deepEqual(sent, { type: "consultation", start: SLOT, note: "Hi", source: "webmcp" }, "only known fields, source always webmcp");
+  assert.deepEqual(Object.keys(data(booked)).sort(), ["booking_id", "confirm_url", "link_expires", "next_step", "status"]);
+  assert.equal(h.f.mails().length, 0, "nothing is emailed");
+  assert.deepEqual(h.rows("SELECT source FROM booking_requests"), [{ source: "webmcp" }]);
+  // A name or email given anyway is not sent, so it can't be used (they come from the sign-in).
+  await byName.book_meeting.execute({ type: "consultation", start: "2026-10-22T10:00:00+01:00", name: "Jane", email: "jane@example.com" }, {});
+  assert.deepEqual(Object.keys(JSON.parse(requests.at(-1).init.body)).sort(), ["source", "start", "type"]);
 
   const { booking_id } = data(booked);
   const st = await byName.get_booking_status.execute({ booking_id }, {});
   assert.equal(data(st).status, "pending_confirmation");
   const c = await byName.cancel_booking.execute({ booking_id }, {});
-  assert.deepEqual(data(c), { status: "cancelled" });
+  assert.equal(data(c).status, "cancelled");
 });
 
 test("WebMCP booking tools: a server error is passed on as the server's message", async () => {
   const h = harness();
   const { byName } = await runPage(h);
   h.env.BOOKING_ENABLED = "false"; // switched off after the page loaded
-  const r = await byName.book_meeting.execute({ type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" }, {});
+  const r = await byName.book_meeting.execute({ type: "consultation", start: SLOT }, {});
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /^Booking isn't open yet\./);
   assert.match(r.content[0].text, /booking_disabled/);
@@ -107,7 +113,7 @@ test("WebMCP booking tools: a server error is passed on as the server's message"
 
 test("WebMCP book_meeting: no readable answer after sending is reported as uncertain, never 'not booked'", async () => {
   const { byName } = await runPage(harness(), { respond: () => ({ status: 502, json: async () => { throw new SyntaxError("Unexpected token <"); } }) });
-  const r = await byName.book_meeting.execute({ type: "consultation", start: SLOT, name: "Jane", email: "jane@example.com" }, {});
+  const r = await byName.book_meeting.execute({ type: "consultation", start: SLOT }, {});
   assert.equal(r.isError, true);
-  assert.match(r.content[0].text, /may or may not have been held\. Do not retry/);
+  assert.match(r.content[0].text, /may or may not have been made\. Do not retry/);
 });

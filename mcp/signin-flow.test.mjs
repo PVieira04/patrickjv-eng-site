@@ -266,6 +266,7 @@ test("F-002 callback refusals, each with nothing booked: missing, mismatched or 
   const h = harness();
   const b = (await h.tool("book_meeting", ask())).structuredContent;
   const t = h.ticketOf(b.confirm_url);
+  h.cfg.caps.signinAttemptsPerTicket = 50; // many sign-ins on one ticket here; admission is tested above
   const begin = async (claims = {}) => {
     const start = await h.startSignin(t);
     return { ...h.f.authorize(start.headers.get("location"), claims, h.clock.now), cookie: h.cookieOf(start) };
@@ -288,8 +289,7 @@ test("F-002 callback refusals, each with nothing booked: missing, mismatched or 
   later(h, 10 * MINUTE);
   await refused(await h.callback({ code: s.code, state: s.state }, s.cookie), "transaction past its 10 minutes");
   h.clock.now = NOW;
-  h.cfg.caps = { ...h.cfg.caps, signinAttemptsPerTicket: 50 };
-  try {
+  {
     s = await begin();
     await refused(await h.callback({ error: "access_denied", state: s.state }, s.cookie), "denied");
     h.f.opts.fail = { exchange: true };
@@ -305,7 +305,7 @@ test("F-002 callback refusals, each with nothing booked: missing, mismatched or 
     const ok = await h.callback({ code: s.code, state: s.state }, s.cookie);
     assert.match(text(await ok.text()), /Booked/);
     await refused(await h.callback({ code: s.code, state: s.state }, s.cookie), "replay after success");
-  } finally { h.cfg.caps = { ...h.cfg.caps, signinAttemptsPerTicket: 5 }; }
+  }
   assert.equal(h.f.mails().length, 1, "only the one real booking was emailed");
 });
 
@@ -471,7 +471,7 @@ test("F-002 (D6): only confirmRequest makes a request a meeting and only cancelM
   assert.ok(fn("confirmRequest").includes("identity_id, proof, actor)"));
   // Sign-in bookings reach F-001's cancellation only through cancelMeeting.
   assert.match(fn("act"), /tok\.action === "cancel" && b\.proof\) \{\s*return cancelMeeting\(/);
-  assert.equal([...src.matchAll(/cancelByLink\(sql/g)].length, 2, "act (email bookings) and cancelMeeting");
+  assert.equal([...src.matchAll(/return cancelByLink\(sql/g)].length, 2, "act (email bookings) and cancelMeeting");
   // The service's callback reaches the core; the alarm reaches recoverConfirm/finishCancel; the HTTP
   // API reaches the service.
   const svc = readFileSync(new URL("./booking-service.js", import.meta.url), "utf8");

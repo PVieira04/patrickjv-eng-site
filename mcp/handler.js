@@ -114,16 +114,14 @@ export function tools() {
       name: "book_meeting",
       title: "Book a meeting",
       description:
-        "Hold a time with Patrick Vieira for a person. Nothing is booked and no invite is sent until that person clicks the confirmation link this emails them; the hold lapses after 2 hours. Only use this when the person has asked for this meeting at this time and given you their name and email address. One pending hold per person at a time, and a few requests a day. Do not retry on error. Use get_booking_status to see whether they confirmed. Privacy: the site keeps the name, email address, time and note until 30 days after the meeting (or after an unconfirmed hold lapses); rate-limit counters are hashed. See https://patrickjv.com/privacy.",
+        `Step 4 of the booking guide (get_booking_guide). Ask to book a time with Patrick Vieira for a person: returns a confirm_url to give them. Nothing is reserved yet, and nothing is emailed: the call is booked, in their name, when they open the link and sign in with Google (within ${BOOKING_CONFIG.requestMinutes} minutes). Don't send their name or email address: those come from their sign-in. Only use this when the person has asked for this meeting at this time. Do not retry on error. Then use get_booking_status. Privacy: until the person signs in, the site keeps only the type, time and note; see https://patrickjv.com/privacy.`,
       inputSchema: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "start", "name", "email"],
+        required: ["type", "start"],
         properties: {
           type: { type: "string", enum: BOOKING_TYPE_IDS, description: "A meeting type id from list_meeting_types." },
           start: { type: "string", maxLength: 40, description: "Start time exactly as given by get_availability (ISO 8601 with offset)." },
-          name: { type: "string", minLength: 1, maxLength: 100, description: "The person's full name." },
-          email: { type: "string", maxLength: 254, description: "The person's email address (ASCII). The confirmation link goes here." },
           note: { type: "string", maxLength: 500, description: "Optional: what the meeting is about, in plain text." },
         },
       },
@@ -133,7 +131,7 @@ export function tools() {
     {
       name: "get_booking_status",
       title: "Booking status",
-      description: "The state of a booking by its ID: pending_confirmation, confirmed, declined, expired or cancelled, with a reason where there is one, the time and the meeting type. Never returns the guest's details.",
+      description: "Step 6 of the booking guide (get_booking_guide). The state of a booking by its ID: pending_confirmation, confirmed, declined, expired or cancelled, with a reason where there is one, the time, the meeting type and a next_step saying what to do. Never returns the guest's details.",
       inputSchema: BOOKING_ID_SCHEMA,
       annotations: READ_ONLY,
       icons: ICONS,
@@ -141,7 +139,7 @@ export function tools() {
     {
       name: "cancel_booking",
       title: "Cancel a booking",
-      description: "Withdraw a booking. A hold that hasn't been confirmed is withdrawn at once. A confirmed meeting is not cancelled by this call: the guest is emailed a link, and only that link cancels it. Only use this when the person has asked to cancel. Do not retry on error.",
+      description: "Cancelling, in the booking guide (get_booking_guide). A request the person hasn't signed in on yet is withdrawn at once. A booked call is not cancelled by this call: you get a confirm_url for the person to sign in on and cancel it (or, for a call booked by email, the person is emailed a link). Only use this when the person has asked to cancel. Do not retry on error.",
       inputSchema: BOOKING_ID_SCHEMA,
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       icons: ICONS,
@@ -461,7 +459,8 @@ async function callTool(name, args, ctx) {
     }
     case "list_meeting_types": return result(meetingTypes());
     case "get_availability": return bookingResult(await bookingOps.availability(ctx, args));
-    case "book_meeting": return bookingResult(await bookingOps.book(ctx, args, "mcp"));
+    // F-002: a booking request, confirmed by the person signing in (no email path on MCP).
+    case "book_meeting": return bookingResult(await bookingOps.request(ctx, args, "mcp"));
     case "get_booking_status": return bookingResult(await bookingOps.status(ctx, args));
     case "cancel_booking": return bookingResult(await bookingOps.cancel(ctx, args));
     default:
@@ -479,7 +478,7 @@ function bookingResult(r) {
 // the instructions, and a call names the kill switch rather than "unknown tool".
 const BOOKING_TOOL_NAMES = new Set(["list_meeting_types", "get_availability", "book_meeting", "get_booking_status", "cancel_booking"]);
 const INSTRUCTIONS = "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.";
-const BOOKING_INSTRUCTIONS = " To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it from their own inbox.";
+const BOOKING_INSTRUCTIONS = " To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it by signing in with Google on the link it returns.";
 // Tools that take no arguments: a non-empty arguments object is a protocol error.
 const NO_ARGUMENTS = new Set(["get_profile", "list_work", "list_skills", "list_faq", "list_meeting_types"]);
 
@@ -493,6 +492,10 @@ export const bookingEnabled = (env) => env.BOOKING_ENABLED === "true";
 // Secrets (and the BOOKING_FROM var) booking needs, plus each blocking calendar's ID secret.
 export const BOOKING_SECRETS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RESEND_API_KEY", "BOOKING_OWNER_EMAIL", "BOOKING_FROM",
   ...BOOKING_CONFIG.calendars.filter((c) => c.blocks && c.idSecret).map((c) => c.idSecret)];
+// F-002: the sign-in client's secrets (its own Google Cloud project, D4). Whether Google answers
+// is health's signinReady.
+export const SIGNIN_SECRETS = ["SIGNIN_GOOGLE_CLIENT_ID", "SIGNIN_GOOGLE_CLIENT_SECRET"];
+export const signinConfigured = (env) => SIGNIN_SECRETS.every((k) => typeof env[k] === "string" && env[k] !== "");
 export function bookingConfigured(env) {
   return saltConfigured(env) && BOOKING_SECRETS.every((k) => typeof env[k] === "string" && env[k] !== "")
     && typeof env.BOOKING?.idFromName === "function" && typeof env.BOOKING?.get === "function";
@@ -538,6 +541,21 @@ export function validateBooking(args) {
   return { value: { type: args.type, start: new Date(Date.parse(args.start)).toISOString(), name, email, ...(note ? { note } : {}) } };
 }
 
+// F-002 (D5): a booking request takes the type, the start and an optional note. The guest's name
+// and address come only from their sign-in, so an agent is never given a field to put one in.
+export function validateRequest(args) {
+  if (isPlainObject(args) && ("name" in args || "email" in args)) {
+    return { error: "don't send name or email: the person's name and email address come from their Google sign-in. Send only type, start and an optional note" };
+  }
+  const bad = fieldsError(args, ["type", "start", "note"]);
+  if (bad) return { error: bad };
+  // The same rules as F-001's form for the fields they share.
+  const { value, error } = validateBooking({ ...args, name: "-", email: "a@example.com" });
+  if (error) return { error };
+  const { name, email, ...v } = value;
+  return { value: v };
+}
+
 export function validateAvailability(args) {
   const bad = fieldsError(args, ["type", "from", "to"]);
   if (bad) return { error: bad };
@@ -563,7 +581,7 @@ const BOOKING_ERRORS = {
   not_cancellable: [409, "This booking can't be cancelled: it isn't a pending hold or a meeting still to come."],
 };
 function bookingFailure(r) {
-  const out = (status, message) => ({ status, body: { error: r.error, message, ...(r.reason ? { reason: r.reason } : {}), ...(r.status ? { status: r.status } : {}) } });
+  const out = (status, message) => ({ status, body: { error: r.error, message, ...(r.reason ? { reason: r.reason } : {}), ...(r.status ? { status: r.status } : {}), ...(r.next_step ? { next_step: r.next_step } : {}) } });
   if (r.error === "invalid_input") return out(400, r.message);
   if (r.error === "rate_limited") {
     return out(429, r.reason === "global" ? "Booking is closed for today. Please try again tomorrow."
@@ -626,13 +644,31 @@ const bookingOps = {
     });
   },
 
+  // F-002: a booking request (book_meeting on MCP and WebMCP, /book's sign-in button). Nothing is
+  // reserved or emailed; the person books by signing in on confirm_url.
+  async request(ctx, args, source) {
+    if (!bookingEnabled(ctx.env)) return failed("booking_disabled");
+    const { value: v, error } = validateRequest(args);
+    if (error) return invalid(error);
+    if (!bookingConfigured(ctx.env) || !signinConfigured(ctx.env)) { logFailure("config"); return failed("unavailable"); }
+    return viaStore(ctx, "booking_store", async (store) => {
+      const r = await store.signinRequest({ ...v, source }, await quotaHash(ctx.env, "booking-ip", ctx.ipKey));
+      if (r.error) {
+        if (r.error === "rate_limited") console.log(JSON.stringify({ event: "booking_quota_rejected", which: `request_${r.reason}` }));
+        return bookingFailure(r);
+      }
+      const expires = withOffset(r.link_expires, TZ);
+      return { status: 202, body: { booking_id: r.booking_id, status: r.status, confirm_url: r.confirm_url, link_expires: expires, next_step: NEXT_STEP.book(expires) } };
+    });
+  },
+
   async status(ctx, args) {
     const { value: id, error } = validateBookingId(args);
     if (error) return invalid(error);
     return viaStore(ctx, "booking_store", async (store) => {
-      const s = await store.status(id);
+      const s = await store.readStatus(id);
       if (!s) return failed("not_found");
-      return { status: 200, body: { status: s.status, ...(s.status_reason ? { status_reason: s.status_reason } : {}), start: withOffset(s.start, TZ), end: withOffset(s.end, TZ), type: s.type } };
+      return { status: 200, body: { status: s.status, ...(s.status_reason ? { status_reason: s.status_reason } : {}), start: withOffset(s.start, TZ), end: withOffset(s.end, TZ), type: s.type, next_step: NEXT_STEP.status[s.status] } };
     });
   },
 
@@ -642,9 +678,35 @@ const bookingOps = {
     if (error) return invalid(error);
     if (!bookingConfigured(ctx.env)) { logFailure("config"); return failed("unavailable"); }
     return viaStore(ctx, "booking_store", async (store) => {
-      const r = await store.cancel(id);
-      return r.error ? bookingFailure(r) : { status: 200, body: r };
+      const { why, ...r } = await store.cancel(id, await quotaHash(ctx.env, "booking-ip", ctx.ipKey));
+      if (r.error) return bookingFailure(r.error === "not_cancellable" ? { ...r, next_step: NEXT_STEP.notCancellable[why] } : r);
+      if (r.confirm_url) {
+        const expires = withOffset(r.link_expires, TZ);
+        return { status: 200, body: { status: r.status, confirm_url: r.confirm_url, link_expires: expires, next_step: NEXT_STEP.cancelLink(expires) } };
+      }
+      return { status: 200, body: { ...r, next_step: r.cancellation ? NEXT_STEP.cancelEmailed : NEXT_STEP.withdrawn } };
     });
+  },
+};
+
+// F-002 (US-7): every booking result says what to do next, in the booking guide's words.
+const NEXT_STEP = {
+  book: (expires) => `Give this link to the person you're booking for. They need to sign in with Google before ${expires} to book the call. Then call get_booking_status.`,
+  status: {
+    pending_confirmation: "Not finished yet: the person may still be signing in, or the site may be finishing the booking. Wait and check again; don't book again.",
+    confirmed: "The call is booked. Google has sent the invite to the person's email address.",
+    declined: "Not booked. Start again from get_availability and choose another time.",
+    expired: "The link expired before anyone signed in, so nothing was booked. Start again from get_availability.",
+    cancelled: "This booking was withdrawn or cancelled. Nothing more to do.",
+  },
+  withdrawn: "The request is withdrawn: nothing was booked, and its link no longer works.",
+  cancelLink: (expires) => `Give this link to the person the call is booked for. They need to sign in with Google before ${expires} to cancel it; until then it stays booked.`,
+  cancelEmailed: "A cancellation email was sent to the person. They cancel using the link in it; until then it stays booked.",
+  notCancellable: {
+    finishing: "This booking is still being finished. Check again in a few minutes, then cancel if needed.",
+    cancelling: "A cancellation is already in progress.",
+    started: "This call has already started, so it can't be cancelled.",
+    finished: "This booking has already ended (see get_booking_status), so there's nothing to cancel.",
   },
 };
 
@@ -653,15 +715,18 @@ const bookingOps = {
 // and a fresh Google token refresh succeeds (cached in the store for a minute), and guest email
 // hasn't failed 3 times in a row. Independent of the flag, so readiness can be checked before
 // launch. Booleans only.
+// F-002: signinReady says sign-in would work: its client ID and secret set, and Google's discovery
+// document reachable (checked in the store, at most once a minute).
 async function bookingReadiness(env, deps) {
-  let ready = false;
+  let ready = false, signin = false;
   if (bookingConfigured(env)) {
     try {
       const h = await deps.booking().health();
       ready = h.google === true && h.email === true;
+      signin = h.signin === true;
     } catch { logFailure("booking_store"); }
   }
-  return { bookingEnabled: bookingEnabled(env), bookingReady: ready };
+  return { bookingEnabled: bookingEnabled(env), bookingReady: ready, signinReady: signin };
 }
 
 // Patrick's alert when the global cap is first reached (the store reports that once a day): to
@@ -725,7 +790,9 @@ function when(start, end) {
   return `${d.weekday} ${d.day} ${d.month} ${d.year}, ${s.time}–${clock(end, TZ).time} ${s.zone} (${clock(start, "UTC").time}–${clock(end, "UTC").time} UTC)`;
 }
 
-async function actPage(status, title, paragraphs, form = "") {
+// F-002's confirm pages pass their own CSP (a script, and a form that redirects to Google), the
+// script and any extra headers (the sign-in cookie).
+async function actPage(status, title, paragraphs, form = "", { csp, script = "", headers = {} } = {}) {
   const html = `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -741,15 +808,16 @@ async function actPage(status, title, paragraphs, form = "") {
 <h1>${esc(title)}</h1>
 ${paragraphs.join("\n")}
 ${form}</main>
-</body>
+${script ? `<script>${script}</script>\n` : ""}</body>
 </html>
 `;
   return new Response(html, { status, headers: {
     "content-type": "text/html; charset=utf-8", ...SECURITY_HEADERS,
-    "content-security-policy": await actPolicy(),
+    "content-security-policy": csp ?? await actPolicy(),
     // The form's POST must carry Origin: https://patrickjv.com; no-referrer would make it "null".
     "referrer-policy": "same-origin",
     "cache-control": "no-store", // the URL carries a token
+    ...headers,
   } });
 }
 const para = (s) => `<p>${s}</p>`;
@@ -799,10 +867,144 @@ async function doLink(ctx, token) {
   return linkError(r.error);
 }
 
+// ---- F-002: the confirm page and the Google sign-in round trip (/book/confirm*, /book/callback*) ----
+// GET /book/confirm?t= shows what a ticket is for and its state (changing nothing, except settling
+// a request whose slot has gone); its button POSTs to /book/confirm/google, which sets the sign-in
+// cookie and redirects to Google; Google returns to /book/callback/google. Copy is in the spec's
+// "Instructions for agents and people"; public copy is approved by Patrick before release.
+const SIGNIN_COOKIE = "__Host-pjv_signin";
+const COOKIE_ATTRS = "Secure; HttpOnly; SameSite=Lax; Path=/";
+// Fills in the meeting in the visitor's own time zone (the server only knows London's).
+const LOCAL_TIME_SCRIPT = 'document.querySelectorAll("[data-start]").forEach(function (el) { var f = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }); el.textContent = "In your time zone: " + f.format(new Date(el.getAttribute("data-start"))) + "."; el.hidden = false; });';
+let confirmCsp = null;
+async function confirmPolicy() {
+  if (!confirmCsp) {
+    const hash = async (s) => `'sha256-${b64(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))))}'`;
+    // form-action covers the redirect the sign-in form's POST answers with.
+    confirmCsp = `default-src 'none'; style-src ${await hash(ACT_CSS)}; script-src ${await hash(LOCAL_TIME_SCRIPT)}; font-src 'self'; form-action 'self' https://accounts.google.com; base-uri 'none'; frame-ancestors 'none'`;
+  }
+  return confirmCsp;
+}
+const page = async (status, title, paragraphs, form = "", headers = {}) => actPage(status, title, paragraphs, form, { csp: await confirmPolicy(), script: LOCAL_TIME_SCRIPT, headers });
+// "Mon 19 Oct 2026, 11:00 BST": a link's expiry, in London time.
+function whenAt(iso) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" })
+    .formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.weekday} ${p.day} ${p.month} ${p.year}, ${p.hour}:${p.minute} ${p.timeZoneName}`;
+}
+const BOOK_LINK = '<a href="/book">patrickjv.com/book</a>';
+const AGAIN = `Ask your assistant to book again, or go to ${BOOK_LINK}.`;
+const DECLINED = {
+  slot_taken: `This time has just been taken. Ask your assistant to find another, or go to ${BOOK_LINK}.`,
+  day_full: `Patrick's day is full. Ask your assistant to find another time, or go to ${BOOK_LINK}.`,
+  unavailable: `Google couldn't add this call, so nothing was booked. Ask your assistant to find another time, or go to ${BOOK_LINK}.`,
+};
+const NEW_CANCEL_LINK = "Ask your assistant for a new cancel link, or use the cancel link in your booking email.";
+// The page for a ticket's state (peekTicket's view), as the confirm page and the sign-in results show it.
+async function ticketPage(view, token) {
+  const type = BOOKING_CONFIG.meetingTypes.find((t) => t.id === view.type)?.title ?? view.type;
+  const meeting = () => [para(`${esc(type)} with Patrick Vieira, ${esc(when(view.start, view.end))}.`), `<p class="muted" data-start="${esc(view.start)}" hidden></p>`];
+  const button = (label) => `<form method="post" action="/book/confirm/google">\n<input type="hidden" name="t" value="${esc(token)}">\n<button type="submit">${esc(label)}</button>\n</form>\n`;
+  const expiry = () => `<p class="muted">This link works until ${esc(whenAt(view.expires_at))}.</p>`;
+  if (view.purpose === "book") {
+    switch (view.state) {
+      case "open": return page(200, "Book your call", [...meeting(), para("Sign in with Google to book this call. We use your name and email address from Google for the invite, and nothing else."), expiry()], button("Sign in with Google to book"));
+      case "too_many": return page(429, "Too many tries", [para("Too many tries. Ask your assistant for a new link.")]);
+      case "declined": return page(409, "Not booked", [...meeting(), para(DECLINED[view.reason] ?? DECLINED.slot_taken)]);
+      case "confirming": return page(202, "Being finished", [...meeting(), para("Your call is being finished. Check your email in a few minutes, and don't book again.")]);
+      case "confirmed": return page(200, "Already booked", [...meeting(), para("This call is already booked. Your invite is in your email.")]);
+      case "expired": return page(410, "Link expired", [para(`This link has expired. Nothing was booked. ${AGAIN}`)]);
+      case "cancelled": return page(410, "Not booked", [para(view.reason === "agent_withdrew" ? `This request was withdrawn. ${AGAIN}` : `This call was cancelled. ${AGAIN}`)]);
+    }
+  }
+  if (view.purpose === "cancel") {
+    switch (view.state) {
+      case "open": return page(200, "Cancel your call", [...meeting(), para("Sign in with Google to cancel this call. Only the person it's booked for can cancel it."), expiry()], button("Sign in with Google to cancel"));
+      case "too_many": return page(429, "Too many tries", [para(`Too many tries. ${NEW_CANCEL_LINK}`)]);
+      case "still_booked": return page(410, "Link expired", [...meeting(), para(`This call is still booked. ${NEW_CANCEL_LINK}`)]);
+      case "started": return page(410, "Already started", [para("This call has already started, so it can't be cancelled here.")]);
+      case "cancelling": return page(202, "Being cancelled", [para("This call is being cancelled. Check your email in a few minutes.")]);
+      case "cancelled": return page(200, "Already cancelled", [para("This call is already cancelled.")]);
+    }
+  }
+  return page(404, "This link isn't valid", [para("Check that you copied the whole link.")]);
+}
+
+const CLEAR_COOKIE = { "set-cookie": `${SIGNIN_COOKIE}=; ${COOKIE_ATTRS}; Max-Age=0` };
+const signinUnavailable = () => page(503, "Sign-in is unavailable right now", [para("Nothing has changed. Please try the link again in a few minutes.")]);
+const notFinished = (what) => page(400, "Sign-in didn't finish", [para(`${what} Open the link from your assistant again to try once more, before it expires.`)], "", CLEAR_COOKIE);
+// The callback's result (the service's), as a page. The sign-in cookie is cleared either way.
+async function signinResult(r) {
+  const withCookie = async (resPromise) => { const res = await resPromise; res.headers.set("set-cookie", CLEAR_COOKIE["set-cookie"]); return res; };
+  const nothing = r.purpose === "cancel" ? "Nothing has changed." : "Nothing was booked.";
+  if (r.result === "confirmed") return page(200, "Booked", [para("Google Calendar will send you an invite from hello@patrickjv.com with the Google Meet link. I've also emailed you a link to cancel if you need to.")], "", CLEAR_COOKIE);
+  if (r.result === "cancelled") return page(200, "Cancelled", [para("Cancelled. Google has told everyone invited.")], "", CLEAR_COOKIE);
+  if (r.result === "confirming") return page(202, "Your call is being finished", [para("Your call is being finished. Check your email in a few minutes, and don't book again.")], "", CLEAR_COOKIE);
+  if (r.result === "declined") return withCookie(ticketPage({ ...r.view, state: "declined", reason: r.reason }));
+  if (r.error === "not_authoritative") return page(403, "Google can't vouch for this address", [para(`Google can't vouch for this address. Sign in with a Gmail or Google Workspace account, or book at ${BOOK_LINK} with email instead.`), para(nothing)], "", CLEAR_COOKIE);
+  if (r.error === "not_guest") return page(403, "This booking belongs to someone else", [para("This booking belongs to someone else. Nothing has changed.")], "", CLEAR_COOKIE);
+  if (r.error === "person_cap") {
+    const limit = r.which === "daily" ? `You can book at most ${BOOKING_CONFIG.caps.confirmationsPerPersonPerDay} calls a day.` : `You can have at most ${BOOKING_CONFIG.caps.upcomingPerPerson} calls booked at once.`;
+    return page(429, "Booking limit reached", [para(`${limit} Nothing was booked.`)], "", CLEAR_COOKIE);
+  }
+  if (r.error === "unavailable") {
+    if (r.purpose === "cancel") {
+      const tail = r.view?.state === "too_many" ? NEW_CANCEL_LINK : "Nothing has changed: open the cancel link again in a few minutes.";
+      return page(503, "Couldn't cancel just now", [para(`Couldn't cancel just now. ${tail}`)], "", CLEAR_COOKIE);
+    }
+    return signinUnavailable();
+  }
+  if (r.error === "forbidden") return page(403, "This link can't do that", [para(nothing)], "", CLEAR_COOKIE);
+  if ((r.error === "used" || r.error === "expired") && r.view) return withCookie(ticketPage(r.view));
+  return notFinished(r.purpose ? nothing : "Nothing has changed.");
+}
+
+async function handleSigninHttp(request, env, deps, url) {
+  const routes = { "/book/confirm": "GET", "/book/confirm/google": "POST", "/book/callback/google": "GET" };
+  const method = routes[url.pathname];
+  if (request.method !== method) return new Response("Method not allowed", { status: 405, headers: { ...SECURITY_HEADERS, allow: method } });
+  const post = method === "POST";
+  // The sign-in POST sets a cookie: it must come from this exact origin (a missing Origin too).
+  if (post && request.headers.get("origin") !== ALLOWED_ORIGIN) return page(403, "Requests from other sites aren't accepted", [para("Open the link from your assistant and use its button.")]);
+  if (post && (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase() !== "application/x-www-form-urlencoded") return page(415, "Unsupported request", [para("Use the button on the confirm page.")]);
+  if (Number(request.headers.get("content-length") || 0) > LIMITS.maxBodyBytes) return page(413, "Request too large", [para("Use the button on the confirm page.")]);
+  const ipKey = clientKey(request.headers.get("cf-connecting-ip"));
+  try {
+    if (!(await env.RL_MCP.limit({ key: ipKey })).success || (post && !(await env.RL_BURST.limit({ key: ipKey })).success)) {
+      return page(429, "Too many requests", [para("Slow down and try again in a minute.")]);
+    }
+  } catch { logFailure("ratelimit"); return signinUnavailable(); }
+
+  const store = () => deps.booking();
+  try {
+    if (url.pathname === "/book/confirm") {
+      const t = url.searchParams.get("t");
+      if (!TOKEN.test(t ?? "")) return ticketPage({ state: "unknown" });
+      return ticketPage(await store().confirmPage(t), t);
+    }
+    if (post) {
+      let raw;
+      try { raw = await readCapped(request, LIMITS.maxBodyBytes); } catch { raw = null; }
+      const t = raw === null ? null : new URLSearchParams(raw).get("t");
+      if (!TOKEN.test(t ?? "")) return ticketPage({ state: "unknown" });
+      const r = await store().startSignin(t);
+      if (r.error === "unavailable") return signinUnavailable();
+      if (r.error) return r.error === "too_many" ? ticketPage({ ...r.view, state: "too_many" }, t) : ticketPage(r.view, t);
+      return new Response(null, { status: 303, headers: { ...SECURITY_HEADERS, location: r.location, "set-cookie": `${SIGNIN_COOKIE}=${r.cookie}; ${COOKIE_ATTRS}; Max-Age=600`, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+    }
+    const cookie = (request.headers.get("cookie") || "").match(new RegExp(`(?:^|;\\s*)${SIGNIN_COOKIE}=([^;]*)`))?.[1] ?? null;
+    const q = url.searchParams;
+    return signinResult(await store().callback({ state: q.get("state"), cookie, code: q.get("code"), error: q.get("error") }));
+  } catch {
+    logFailure("booking_store");
+    return signinUnavailable();
+  }
+}
+
 // The HTTP API. The same rejection order as /mcp: path, Origin, method, media type, declared size,
 // rate limits, then the capped body read.
 const BOOKING_ROUTES = {
-  "/api/booking": ["POST"], "/api/booking/types": ["GET"], "/api/booking/availability": ["GET"], "/api/booking/act": ["GET", "POST"],
+  "/api/booking": ["POST"], "/api/booking/request": ["POST"], "/api/booking/types": ["GET"], "/api/booking/availability": ["GET"], "/api/booking/act": ["GET", "POST"],
   // For the page's WebMCP tools (the MCP server has get_booking_status and cancel_booking).
   "/api/booking/status": ["GET"], "/api/booking/cancel": ["POST"],
 };
@@ -856,7 +1058,8 @@ async function handleBookingHttp(request, env, deps, url) {
   } else {
     let args = body, source = "page";
     if (isPlainObject(body)) ({ source = "page", ...args } = body);
-    r = HTTP_SOURCES.includes(source) ? await bookingOps.book(ctx, args, source) : invalid(`source must be one of: ${HTTP_SOURCES.join(", ")}`);
+    const op = url.pathname === "/api/booking/request" ? bookingOps.request : bookingOps.book; // F-002: the sign-in path
+    r = HTTP_SOURCES.includes(source) ? await op(ctx, args, source) : invalid(`source must be one of: ${HTTP_SOURCES.join(", ")}`);
   }
   return json(r.status, r.body);
 }
@@ -865,6 +1068,7 @@ export async function handle(request, env, deps) {
   const url = new URL(request.url);
   const text = (body, status, headers = {}) => new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, ...headers } });
   if (url.pathname === "/api/booking" || url.pathname.startsWith("/api/booking/")) return handleBookingHttp(request, env, deps, url);
+  if (url.pathname === "/book/confirm" || url.pathname === "/book/confirm/google" || url.pathname === "/book/callback/google") return handleSigninHttp(request, env, deps, url);
   if (url.pathname !== "/mcp") return text("Not found", 404);
 
   // Browsers always send Origin on cross-origin requests; server-side MCP clients send none.

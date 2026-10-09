@@ -240,7 +240,7 @@ if (flags.has("--mcp")) {
   // sends nothing; delivery itself is never exercised here. Runs before tools/list, which expects
   // the booking tools only when this reports bookingEnabled.
   let bookingOn = false;
-  await check("mcp patrickjv/health -> introReady, and bookingReady if booking is enabled", async () => {
+  await check("mcp patrickjv/health -> introReady, and bookingReady and signinReady if booking is enabled", async () => {
     const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
     if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     bookingOn = res.json.result?.bookingEnabled === true;

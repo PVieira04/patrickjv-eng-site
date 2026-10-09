@@ -49,20 +49,24 @@ test("redirectVerdict: GET/HEAD 301, everything else 308, exact location", () =>
   assert.equal(redirectVerdict("GET", 301, t + "&y", t).ok, false);
 });
 
-test("healthVerdict: exactly seven booleans; introReady, and bookingReady when booking is enabled; anything else fails", () => {
-  const ready = { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false };
+test("healthVerdict: exactly eight booleans; introReady, and bookingReady and signinReady (F-002) when booking is enabled; anything else fails", () => {
+  const ready = { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false, signinReady: false };
   assert.equal(healthVerdict(ready).ok, true, "booking off: its readiness doesn't matter");
   assert.equal(healthVerdict({ ...ready, bookingReady: true }).ok, true);
-  assert.equal(healthVerdict({ ...ready, bookingEnabled: true, bookingReady: true }).ok, true);
-  const notReady = healthVerdict({ ...ready, bookingEnabled: true });
+  assert.equal(healthVerdict({ ...ready, bookingEnabled: true, bookingReady: true, signinReady: true }).ok, true);
+  const notReady = healthVerdict({ ...ready, bookingEnabled: true, signinReady: true });
   assert.equal(notReady.ok, false, "booking on but not ready");
   assert.match(notReady.detail, /bookingReady false/);
-  assert.equal(healthVerdict({ ...ready, introReady: false, salt: false, bookingEnabled: true, bookingReady: true }).ok, false);
-  const { bookingEnabled, bookingReady, ...five } = ready;
-  assert.equal(healthVerdict(five).ok, false, "the old five-key shape");
+  // Sign-in is required whenever booking is: without it no agent can book (F-002 Observability).
+  const noSignin = healthVerdict({ ...ready, bookingEnabled: true, bookingReady: true });
+  assert.equal(noSignin.ok, false, "booking on, sign-in not ready");
+  assert.match(noSignin.detail, /signinReady false/);
+  assert.equal(healthVerdict({ ...ready, introReady: false, salt: false, bookingEnabled: true, bookingReady: true, signinReady: true }).ok, false);
+  const { signinReady, ...seven } = ready;
+  assert.equal(healthVerdict(seven).ok, false, "the old seven-key shape");
   assert.equal(healthVerdict({ ...ready, introReady: false, salt: false }).ok, false);
   assert.match(healthVerdict({ ...ready, introReady: false, salt: false }).detail, /not configured: salt/);
-  for (const bad of [undefined, null, {}, [], { ...ready, saltLength: 40 }, { ...ready, email: "yes" }, { introReady: true }])
+  for (const bad of [undefined, null, {}, [], { ...ready, saltLength: 40 }, { ...ready, email: "yes" }, { ...ready, signinReady: "yes" }, { introReady: true }])
     assert.equal(healthVerdict(bad).ok, false, JSON.stringify(bad));
 });
 

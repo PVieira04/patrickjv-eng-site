@@ -6,11 +6,15 @@
 import { checkSlot, availableSlots } from "./booking-config.js";
 import {
   migrate, requestBooking, act, cancelByAgent, peekToken, getStatus, liveBookings, expireHolds, prune, nextAlarmAt, recoverConfirm, emailFailures,
+  createRequest, settleRequest, findTicket, startSignin, consumeSignin, peekTicket, confirmRequest, cancelMeeting, hashToken,
 } from "./booking-store.js";
 import { createGoogle, assertNoErrors, meetLinkOf } from "./booking-google.js";
 import { createMailer, holdEmail, bookedEmail, cancelRequestEmail } from "./booking-email.js";
+import { createSignin, authUrl, pkceChallenge, randomValue, verifyIdToken } from "./booking-signin.js";
+import { quotaHash, senderQuotaKey, signinConfigured } from "./handler.js";
 
 export const ACT_URL = "https://patrickjv.com/api/booking/act";
+export const CONFIRM_URL = "https://patrickjv.com/book/confirm";
 const MINUTE = 60e3, DAY = 864e5;
 // A confirm or cancel left in confirming/cancelling for longer than this, with nothing in this
 // instance working on it, was cut off (the Durable Object was evicted mid-call): the alarm
@@ -51,9 +55,13 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     if (!mail) throw new Error(`unknown email kind ${kind}`);
     await mailer.send({ to: b.email, ...mail });
   };
+  const signin = createSignin({ clientId: env.SIGNIN_GOOGLE_CLIENT_ID, clientSecret: env.SIGNIN_GOOGLE_CLIENT_SECRET, fetch });
   const deps = {
     checkSlot, freeBusy, sendEmail,
     actUrl: (token) => `${ACT_URL}?t=${token}`,
+    confirmUrl: (token) => `${CONFIRM_URL}?t=${token}`,
+    // F-001's email key, for a sign-in booking's verified address (QUOTA_SALT is checked first).
+    emailKey: (email) => quotaHash(env, "booking-email", senderQuotaKey(email)),
     day: (iso) => iso.slice(0, 10), // quota days are UTC days, like request_intro's
     insertEvent: (e) => google.insertEvent(e),
     // Null if there is no such event; otherwise just its Meet link (all the store needs).
@@ -79,8 +87,42 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     try { return await fn(); } finally { inflight.delete(key); }
   }
 
-  let availabilityCache = null; // { at, busy, timeMin, timeMax }
+  // The shared free/busy answer for the whole horizon, at most a minute old: availability, and
+  // (F-002) booking requests and the "is this request's slot still free?" reads use it, so none of
+  // them can make the Worker hammer Google. One refresh at a time; a failed one isn't kept.
+  let availabilityCache = null; // { at, busy: Promise }
+  function cachedBusy() {
+    const t = now();
+    if (!availabilityCache || t.getTime() - availabilityCache.at >= AVAILABILITY_CACHE_MS) {
+      const timeMin = t.toISOString(), timeMax = new Date(t.getTime() + (cfg.horizonDays + 1) * DAY).toISOString();
+      const entry = { at: t.getTime(), busy: freeBusy(timeMin, timeMax).then((r) => r.busy) };
+      entry.busy.catch(() => { if (availabilityCache === entry) availabilityCache = null; });
+      availabilityCache = entry;
+    }
+    return availabilityCache.busy;
+  }
+  // For settling a request on a read: if the cache can't be had, only the local checks apply.
+  const busyOrNone = () => cachedBusy().catch(() => []);
   let pingCache = null; // { at, ok }
+  let signinCache = null; // { at, ok }
+
+  // F-002: the callback, after its transaction is consumed: the code exchange and the ID token
+  // checks give the person; the ticket gives the grant; then the core decides.
+  async function finishSignin(tx, { code, error }) {
+    if (error || !code) return { error: "denied", purpose: tx.purpose };
+    let jwt;
+    try { jwt = await signin.exchange(code, tx.code_verifier); } catch { logFailure("signin_exchange"); return { error: "exchange", purpose: tx.purpose }; }
+    const v = verifyIdToken(jwt, { clientId: env.SIGNIN_GOOGLE_CLIENT_ID, nonce: tx.nonce, now: now() });
+    if (v.error) return { error: v.error === "not_authoritative" ? "not_authoritative" : "id_token", purpose: tx.purpose };
+    const found = findTicket(sql, tx.ticket_hash);
+    if (!found || found.purpose !== tx.purpose) return { error: "forbidden", purpose: tx.purpose };
+    const grant = { proof: "signin:google", actor: null, scope: tx.purpose };
+    if (found.purpose === "book") {
+      const r = found.request;
+      return { purpose: "book", ...(await confirmRequest(sql, r.id, v.person, { ...grant, ticket_hash: r.ticket_hash, expires_at: r.expires_at }, { cfg, now: now(), deps })) };
+    }
+    return { purpose: "cancel", ...(await cancelMeeting(sql, found.booking.id, v.person, { ...grant, ticket_hash: found.tok.hash, expires_at: found.tok.expires_at }, { now: now(), deps })) };
+  }
 
   async function finishCancel(b, t) {
     await deps.deleteEvent(b.event_id ?? b.id); // already gone is fine
@@ -119,8 +161,15 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     act(token) {
       return tracked(() => act(sql, { token, now: now(), cfg, deps }));
     },
-    cancel(bookingId) {
-      return tracked(() => cancelByAgent(sql, { bookingId, now: now(), deps }));
+    // `ipKey` (keyed hash) counts a sign-in cancel link against the request caps (F-002).
+    // A refusal says why (`why`), decided on the internal state, so the agent is told what to do.
+    cancel(bookingId, ipKey) {
+      return tracked(async () => {
+        const r = await cancelByAgent(sql, { bookingId, now: now(), cfg, ipKey, deps });
+        if (r.error !== "not_cancellable") return r;
+        const status = sql.exec("SELECT status FROM bookings WHERE id = ?", bookingId).toArray()[0]?.status;
+        return { ...r, why: { confirming: "finishing", cancelling: "cancelling", confirmed: "started" }[status] ?? "finished" };
+      });
     },
     peek(token) {
       return peekToken(sql, token, now());
@@ -128,22 +177,72 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     status(bookingId) {
       return getStatus(sql, bookingId, now());
     },
+    // get_booking_status (F-002): as status, but an open request whose slot has gone is settled
+    // declined here, the first time it's seen.
+    async readStatus(bookingId) {
+      if (getStatus(sql, bookingId, now())?.status === "pending_confirmation") {
+        const busy = await busyOrNone();
+        settleRequest(sql, bookingId, { cfg, now: now(), busy, deps });
+      }
+      return getStatus(sql, bookingId, now());
+    },
+    // ---- F-002: the sign-in path ----
+    // book_meeting (MCP, WebMCP) and /book's sign-in button: a booking request, checked against
+    // the shared free/busy cache. If that is stale and Google can't be reached: unavailable.
+    async signinRequest(input, ipKey) {
+      let busy;
+      try { busy = await cachedBusy(); } catch { logFailure("google_freebusy"); return { error: "unavailable" }; }
+      const r = await createRequest(sql, { cfg, now: now(), input, ipKey, busy, deps });
+      await alarmBy(nextAlarmAt(sql, now())); // counters and the request are pruned by the alarm
+      return r;
+    },
+    // GET /book/confirm: what the ticket is for and its state, settling a request whose slot has gone.
+    async confirmPage(token) {
+      const hash = typeof token === "string" && token ? await hashToken(token) : null;
+      const found = hash && findTicket(sql, hash);
+      if (found?.purpose === "book") {
+        const busy = await busyOrNone();
+        settleRequest(sql, found.request.id, { cfg, now: now(), busy, deps });
+      }
+      return peekTicket(sql, token, { now: now(), cfg });
+    },
+    // POST /book/confirm/google: a sign-in transaction, and where to send the browser.
+    async startSignin(token) {
+      if (!signinConfigured(env)) return { error: "unavailable" };
+      const busy = await busyOrNone();
+      const [state, nonce, cookie, verifier] = [randomValue(), randomValue(), randomValue(), randomValue()];
+      const [stateHash, cookieHash, challenge] = await Promise.all([hashToken(state), hashToken(cookie), pkceChallenge(verifier)]);
+      const r = await startSignin(sql, { token, now: now(), cfg, busy, tx: { stateHash, cookieHash, nonce, codeVerifier: verifier }, deps });
+      if (r.error) return { ...r, view: await peekTicket(sql, token, { now: now(), cfg }) };
+      await alarmBy(nextAlarmAt(sql, now()));
+      return { purpose: r.purpose, cookie, location: authUrl({ clientId: env.SIGNIN_GOOGLE_CLIENT_ID, state, nonce, codeChallenge: challenge }) };
+    },
+    // GET /book/callback/google: the transaction is consumed before any outside call, then the
+    // sign-in is finished. `view` is the ticket's state afterwards, for the page.
+    callback({ state, cookie, code, error }) {
+      return tracked(async () => {
+        const [stateHash, cookieHash] = await Promise.all([hashToken(String(state ?? "")), typeof cookie === "string" && cookie ? hashToken(cookie) : null]);
+        const c = consumeSignin(sql, { stateHash: state ? stateHash : null, cookieHash, now: now() });
+        if (c.error) return { error: `signin_${c.error}` };
+        const r = await finishSignin(c.tx, { code, error });
+        return { ...r, view: await peekTicket(sql, null, { now: now(), cfg, hash: c.tx.ticket_hash }) };
+      });
+    },
     // Free slots (UTC) for a type on London days from..to. Throws if Google can't answer.
     async availability(type, from, to) {
+      const busy = await cachedBusy();
       const t = now();
-      if (!availabilityCache || t.getTime() - availabilityCache.at >= AVAILABILITY_CACHE_MS) {
-        const timeMin = t.toISOString(), timeMax = new Date(t.getTime() + (cfg.horizonDays + 1) * DAY).toISOString();
-        availabilityCache = { at: t.getTime(), ...(await freeBusy(timeMin, timeMax)) };
-      }
-      const slots = availableSlots({ cfg, typeId: type, now: t, from, to, busy: availabilityCache.busy, bookings: liveBookings(sql, t) });
+      const slots = availableSlots({ cfg, typeId: type, now: t, from, to, busy, bookings: liveBookings(sql, t) });
       return { slots };
     },
     // Health: a fresh token refresh (so a revoked token shows), at most once a minute; and whether
-    // guest email is failing (EMAIL_FAILURES_DOWN in a row).
+    // guest email is failing (EMAIL_FAILURES_DOWN in a row). F-002: whether sign-in would work
+    // (its secrets set and Google's discovery document reachable), also at most once a minute.
     async health() {
       const t = now().getTime();
       if (!pingCache || t - pingCache.at >= PING_CACHE_MS) pingCache = { at: t, ok: await google.ping() };
-      return { google: pingCache.ok, email: emailFailures(sql) < EMAIL_FAILURES_DOWN };
+      if (!signinCache || t - signinCache.at >= PING_CACHE_MS) signinCache = { at: t, ok: signinConfigured(env) && (await signin.ready()) };
+      return { google: pingCache.ok, email: emailFailures(sql) < EMAIL_FAILURES_DOWN, signin: signinCache.ok };
     },
     async alarm() {
       const t = now();

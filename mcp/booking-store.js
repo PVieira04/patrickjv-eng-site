@@ -806,9 +806,10 @@ export function consumeSignin(sql, { stateHash, cookieHash, now }) {
 // What the confirm page shows for a ticket (GET: changes nothing; the caller settles a request
 // whose slot has gone first). No guest details.
 const BOOKING_PAGE_STATE = { confirming: "confirming", confirmed: "confirmed", cancelling: "confirmed", declined: "declined", cancelled: "cancelled" };
-export async function peekTicket(sql, token, { now, cfg }) {
-  if (typeof token !== "string" || token === "") return { state: "unknown" };
-  const hash = await hashToken(token);
+// `hash` instead of a token: the callback knows only its transaction's ticket hash.
+export async function peekTicket(sql, token, { now, cfg, hash: known }) {
+  if (!known && (typeof token !== "string" || token === "")) return { state: "unknown" };
+  const hash = known ?? (await hashToken(token));
   const nowIso = now.toISOString();
   const found = findTicket(sql, hash);
   if (!found) return { state: "unknown" };
@@ -823,7 +824,7 @@ export async function peekTicket(sql, token, { now, cfg }) {
       return view(shown, r, r.expires_at, shown === "declined" ? { reason: b.status_reason } : {});
     }
     if (state === "open" && attempts(sql, hash, r.expires_at) >= cfg.caps.signinAttemptsPerTicket) return view("too_many", r, r.expires_at);
-    return view(state, r, r.expires_at);
+    return view(state, r, r.expires_at, state === "cancelled" ? { reason: "agent_withdrew" } : {});
   }
   const { tok, booking: b } = found;
   if (b.status === "cancelled" || b.status === "cancelling") return view(b.status, b, tok.expires_at);
