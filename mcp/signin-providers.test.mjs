@@ -23,7 +23,7 @@ function launched(providers = PROVIDERS, trial = [], opts = {}) {
   return h;
 }
 const request = async (h, args = ask()) => (await h.tool("book_meeting", args)).structuredContent;
-const page = async (h, path) => { const res = await h.call(path); return { res, html: await res.text(), t: text(await res.clone().text()) }; };
+const page = async (h, path) => { const res = await h.call(path); const html = await res.text(); return { res, html, t: text(html) }; };
 const confirmPage = (h, url, extra = "") => page(h, `/book/confirm?t=${h.ticketOf(url)}${extra}`);
 const buttons = (html) => [...html.matchAll(/<form method="post" action="\/book\/confirm\/([a-z]+)">/g)].map((m) => m[1]);
 const status = async (h, id) => (await h.tool("get_booking_status", { booking_id: id })).structuredContent.status;

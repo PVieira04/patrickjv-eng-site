@@ -51,7 +51,9 @@ test("redirectVerdict: GET/HEAD 301, everything else 308, exact location", () =>
 });
 
 test("healthVerdict: exactly eight booleans; introReady, and bookingReady and signinReady (F-002) when booking is enabled; anything else fails", () => {
-  const ready = { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false, signinReady: false };
+  // F-004: plus providers (see the F-004 test below).
+  const ready = { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false, signinReady: false,
+    providers: { google: { ready: true, reachable: true }, microsoft: "off", altimist: "off" } };
   assert.equal(healthVerdict(ready).ok, true, "booking off: its readiness doesn't matter");
   assert.equal(healthVerdict({ ...ready, bookingReady: true }).ok, true);
   assert.equal(healthVerdict({ ...ready, bookingEnabled: true, bookingReady: true, signinReady: true }).ok, true);
@@ -69,6 +71,32 @@ test("healthVerdict: exactly eight booleans; introReady, and bookingReady and si
   assert.match(healthVerdict({ ...ready, introReady: false, salt: false }).detail, /not configured: salt/);
   for (const bad of [undefined, null, {}, [], { ...ready, saltLength: 40 }, { ...ready, email: "yes" }, { ...ready, signinReady: "yes" }, { introReady: true }])
     assert.equal(healthVerdict(bad).ok, false, JSON.stringify(bad));
+});
+
+test("F-004 healthVerdict: providers is google, microsoft and altimist, each \"off\" or {ready, reachable}; with booking on, every launched provider must be ready and reachable; others are ignored", () => {
+  const on = { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: true, bookingReady: true, signinReady: true };
+  const up = { ready: true, reachable: true };
+  const v = (providers, launched) => healthVerdict({ ...on, providers }, launched);
+  assert.equal(v({ google: up, microsoft: "off", altimist: "off" }).ok, true, "default: Google launched");
+  assert.equal(v({ google: up, microsoft: up, altimist: "off" }, ["google", "microsoft"]).ok, true);
+  for (const [providers, launched, why] of [
+    [{ google: up, microsoft: { ready: false, reachable: true }, altimist: "off" }, ["google", "microsoft"], /microsoft not ready/],
+    [{ google: up, microsoft: { ready: true, reachable: false }, altimist: "off" }, ["google", "microsoft"], /microsoft not reachable/],
+    [{ google: up, microsoft: "off", altimist: "off" }, ["google", "microsoft"], /microsoft off/],
+    [{ google: { ready: true, reachable: false }, microsoft: "off", altimist: "off" }, ["google"], /google not reachable/],
+  ]) {
+    const r = v(providers, launched);
+    assert.equal(r.ok, false, JSON.stringify(providers));
+    assert.match(r.detail, why);
+  }
+  // Not launched (on trial, or with secrets set): ignored whatever its state.
+  assert.equal(v({ google: up, microsoft: { ready: false, reachable: false }, altimist: { ready: true, reachable: false } }, ["google"]).ok, true);
+  // Booking off: passes as in F-002.
+  assert.equal(healthVerdict({ ...on, bookingEnabled: false, providers: { google: { ready: false, reachable: false }, microsoft: "off", altimist: "off" } }, ["google", "microsoft"]).ok, true);
+  for (const bad of [undefined, null, [], { google: up }, { google: up, microsoft: "off", altimist: "off", github: "off" }, { google: "on", microsoft: "off", altimist: "off" },
+    { google: { ready: "yes", reachable: true }, microsoft: "off", altimist: "off" }, { google: { ready: true }, microsoft: "off", altimist: "off" }]) {
+    assert.equal(healthVerdict({ ...on, providers: bad }).ok, false, JSON.stringify(bad));
+  }
 });
 
 test("nelVerdict: NEL or Report-To present fails", () => {

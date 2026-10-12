@@ -23,10 +23,10 @@ test("GET /api/booking/types: whether booking is open, and the meeting types fro
   const res = await harness().call("/api/booking/types");
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "application/json");
-  assert.deepEqual(await res.json(), { enabled: true, types });
+  assert.deepEqual(await res.json(), { enabled: true, types, signin_providers: ["google"] }); // F-004: signin_providers
   // The page and the WebMCP script read `enabled` to stay hidden until launch.
   for (const value of ["false", undefined, "TRUE"]) {
-    assert.deepEqual(await (await harness({ env: { BOOKING_ENABLED: value } }).call("/api/booking/types")).json(), { enabled: false, types }, String(value));
+    assert.deepEqual(await (await harness({ env: { BOOKING_ENABLED: value } }).call("/api/booking/types")).json(), { enabled: false, types, signin_providers: ["google"] }, String(value));
   }
 });
 
