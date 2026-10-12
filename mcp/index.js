@@ -36,10 +36,10 @@ export class BookingStore extends DurableObject {
   cancel(bookingId, ipKey) { return this.svc.cancel(bookingId, ipKey); }
   status(bookingId) { return this.svc.status(bookingId); }
   readStatus(bookingId) { return this.svc.readStatus(bookingId); }
-  // F-002: booking requests, the confirm page and the Google sign-in round trip.
+  // F-002: booking requests, the confirm page and the sign-in round trip (F-004: with its provider).
   signinRequest(input, ipKey) { return this.svc.signinRequest(input, ipKey); }
   confirmPage(token) { return this.svc.confirmPage(token); }
-  startSignin(token) { return this.svc.startSignin(token); }
+  startSignin(token, provider) { return this.svc.startSignin(token, provider); }
   callback(params) { return this.svc.callback(params); }
   availability(type, from, to) { return this.svc.availability(type, from, to); }
   health() { return this.svc.health(); }

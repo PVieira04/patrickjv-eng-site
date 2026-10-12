@@ -770,7 +770,7 @@ const bookScript = (copy) => `
         if (!t.names[p]) return; // launched since this page was built: offered once it's rebuilt
         var b = document.createElement("button");
         b.type = "button"; b.id = "by-signin-" + p; b.textContent = t.labels.signin.replace("{provider}", t.names[p]);
-        b.addEventListener("click", function () { signIn(p, b); });
+        b.addEventListener("click", function () { signIn(p); });
         box.appendChild(b);
       });
     }, function () {});
@@ -783,21 +783,24 @@ const bookScript = (copy) => `
     i.type = "hidden"; i.name = "t"; i.value = tk;
     f.appendChild(i); document.body.appendChild(f); f.submit();
   }
-  function signIn(p, b) {
-    if (!start) return;
-    b.disabled = true;
+  // Every sign-in choice waits while the request is being made, so there is only ever one.
+  var pending = false;
+  function waiting(on) { pending = on; var c = $("signin-choices").children; for (var i = 0; i < c.length; i++) c[i].disabled = on; }
+  function signIn(p) {
+    if (!start || pending) return;
     $("how-hint").textContent = t.labels.howHintChosen.replace("{provider}", t.names[p]);
     say(t.messages.signingIn.replace("{provider}", t.names[p]));
     if (ticket) return go(p, ticket);
+    waiting(true);
     call("/api/booking/request", { type: type, start: start, source: "page" }).then(function (r) {
+      waiting(false);
       if (!r.ok || typeof r.data.confirm_url !== "string") {
-        b.disabled = false;
         if (r.status === 409) return loadSlots(t.messages.slotGone);
         return failed(r);
       }
       ticket = new URL(r.data.confirm_url).searchParams.get("t");
       go(p, ticket);
-    }, function () { b.disabled = false; broken(); });
+    }, function () { waiting(false); broken(); });
   }
   $("by-email").addEventListener("click", function () { show("details", true); $("name").focus(); });
 
