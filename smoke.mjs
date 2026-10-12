@@ -243,7 +243,8 @@ if (flags.has("--mcp")) {
     const res = await mcp({ jsonrpc: "2.0", id: 4, method: "patrickjv/health" });
     if (!envelope(res, 4)) return FAIL(`status ${res.status} ${JSON.stringify(res.json?.error ?? null)}`);
     bookingOn = res.json.result?.bookingEnabled === true;
-    const v = healthVerdict(res.json.result);
+    // F-004: every launched sign-in provider (booking.json) must be ready and reachable.
+    const v = healthVerdict(res.json.result, JSON.parse(read("booking.json")).signin?.providers ?? ["google"]);
     return expect(v.ok, v.detail);
   });
   await check(`mcp tools/list = {${TOOLS.join(", ")}}, plus the booking tools if booking is enabled, each with icons`, async () => {
