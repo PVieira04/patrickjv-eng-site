@@ -69,8 +69,9 @@ test("Chromium /book: a booking made by keyboard alone, through the calendar, un
     assert.notEqual(ring, "none", "the focused time shows a focus ring");
     // F-002 (D8): choosing a time offers "Sign in with Google to book" first, then "Book with email instead".
     assert.equal(await page.isVisible("#how"), true, "choosing a time offers how to confirm");
+    await page.waitForSelector("#by-signin-google"); // F-004: the buttons follow signin_providers, fetched at this point
     await page.keyboard.press("Tab");
-    assert.equal(await focused(page), "by-signin");
+    assert.equal(await focused(page), "by-signin-google");
     await page.keyboard.press("Tab");
     assert.equal(await focused(page), "by-email");
     await page.keyboard.press("Enter");
