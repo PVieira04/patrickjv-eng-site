@@ -11,7 +11,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | F-004 |
-| Status | Draft |
+| Status | Approved |
 | Owner | @PVieira04 |
 | Created | 2026-10-12 |
 | Depends on | F-002 P1 (live since 9 Oct 2026); an Entra app registration with a verified publisher; an Altimist ID client registration |
