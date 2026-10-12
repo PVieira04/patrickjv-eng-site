@@ -182,6 +182,15 @@ All guest email goes through `createMailer` in `mcp/booking-email.js` (one `send
 3. `wrangler secret put <NEW_KEY> -c mcp/wrangler.jsonc`, deploy, check `bookingReady`, then send one test booking and check SPF, DKIM and DMARC in the headers.
 4. Delete the old key at the old provider, and `wrangler secret delete RESEND_API_KEY -c mcp/wrangler.jsonc` if renamed.
 
+### Rotate the Microsoft sign-in secret
+
+F-004 D6. While `microsoft` is in `booking.json`'s `signin.providers`, the build fails from 30 days before `signin.microsoftSecretExpires` (and if that date is missing or not `YYYY-MM-DD`). A lapsed secret makes every Microsoft code exchange fail, so Microsoft sign-in stops working.
+
+1. In the Entra app registration "patrickjv.com" (Certificates & secrets), add a new client secret, 24 months. Note its expiry date.
+2. `npx wrangler secret put SIGNIN_MICROSOFT_CLIENT_SECRET -c mcp/wrangler.jsonc` and paste the new value. Secrets take effect without a code deploy.
+3. Set `signin.microsoftSecretExpires` in `booking.json` to the new expiry date and push (it redeploys both Workers once `booking.json` is in `patrickjv-mcp`'s watch paths).
+4. Check with `npm run smoke -- --mcp` that Microsoft is ready and reachable, sign in with Microsoft once on a test booking, then delete the old secret in Entra.
+
 ### Turn booking off
 
 Set `"BOOKING_ENABLED": "false"` in `mcp/wrangler.jsonc` and deploy (or, faster, change the variable in the dashboard: Workers → `patrickjv-mcp` → Settings → Variables, then put it back in the repo so the next deploy doesn't undo it). New bookings and agent cancellations are refused with 503 `booking_disabled` and `/book` says booking isn't open; links already emailed keep working (confirm, decline, cancel), as the spec requires. Smoke passes while it's off. To stop everything, including confirms of existing holds, roll the Worker back ([Rollback](#rollback)) or remove the `/api/booking*` route, and say so in the decision log. Meetings already booked stay in Google Calendar; cancel them there if needed.
@@ -217,6 +226,7 @@ mcp-publisher publish
 | Item | When | Guard |
 |---|---|---|
 | `security.txt` `Expires` | 2027-10-06 | Build fails from 2027-09-06 |
+| Microsoft sign-in secret (F-004) | `booking.json` `signin.microsoftSecretExpires` | Only while Microsoft is launched: build fails from 30 days before ([runbook](#rotate-the-microsoft-sign-in-secret)) |
 | Domain `patrickjv.com` | 2027-04-03 | Check auto-renew and payment method in Cloudflare Registrar |
 | Domain `pvieira.co.uk` | 2027-06-14 | As above |
 | `did.json` | Never edit | Build + 6-hourly monitor |

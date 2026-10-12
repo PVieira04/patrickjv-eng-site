@@ -17,6 +17,7 @@ import { pathToFileURL } from "node:url";
 import { marked } from "marked";
 import { agentData } from "./lib/agent-data.mjs";
 import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
+import { validateConfig, launchedProviders } from "./mcp/booking-config.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
 
 export const SITE = "https://patrickjv.com/";
@@ -25,6 +26,22 @@ const DISAMBIGUATION = "Patrick Vieira, platform engineer based in London — no
 // A denylist of names this site must never mention. It catches known slips; it cannot detect every
 // possible employer, so new copy still needs a human read.
 const BANNED = /altimist|the company|fintech|\bceo\b|wimbledon/i;
+// F-004 (D8): the site may name the sign-in provider Altimist ID, and nothing else from Altimist.
+// These exact forms are removed before the denylist is applied: the product name (case-sensitive),
+// its host and URLs on it, the sign-in paths, the provider id as a quoted string, and the trial
+// parameter, raw or percent-encoded. Anything else naming Altimist still fails.
+const ALLOWED_MENTIONS = [
+  /Altimist ID(?![\w-])/g,
+  /(?:https:\/\/)?altimist\.id(?![\w-]|\.\w)/g,
+  /\/book\/(?:confirm|callback)\/altimist(?![\w-])/g,
+  /"altimist"/g,
+  /try(?:=|%3D)altimist(?![\w-])/g,
+];
+// The denylisted name `text` mentions, or null. Used for every page the build writes, and by the
+// Worker's tests for its confirm and cancel pages.
+export function employerMention(text) {
+  return ALLOWED_MENTIONS.reduce((t, re) => t.replace(re, " "), text).match(BANNED)?.[0] ?? null;
+}
 // The page's WebMCP read tools serve these agentData() keys; the MCP server's tools() supplies
 // their names, descriptions and schemas, so the two surfaces cannot drift.
 const TOOL_DATA = { get_profile: "profile", list_work: "work", list_skills: "skills", list_faq: "faq" };
@@ -264,6 +281,22 @@ export function checkSecurityTxt(text, now) {
   const days = (t - now) / DAY;
   if (days <= 30) return [`public/.well-known/security.txt expires ${raw} (in ${Math.floor(days)} days): bump Expires to within one year from now`];
   if (days > 366) return [`public/.well-known/security.txt expires ${raw}, more than a year ahead (RFC 9116 recommends less than a year)`];
+  return [];
+}
+
+// F-004 (D6): while Microsoft sign-in is launched, its client secret's expiry (booking.json
+// signin.microsoftSecretExpires, YYYY-MM-DD) must be set and more than 30 days ahead, like
+// security.txt's Expires. Ignored while Microsoft isn't launched.
+export function checkMicrosoftSecret(cfg, now) {
+  if (!launchedProviders(cfg).includes("microsoft")) return [];
+  const runbook = 'docs/06-operations.md, "Rotate the Microsoft sign-in secret"';
+  const raw = cfg.signin.microsoftSecretExpires;
+  const t = typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? Date.parse(`${raw}T00:00:00Z`) : NaN;
+  if (!Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== raw) {
+    return [`booking.json signin.microsoftSecretExpires must be the Microsoft sign-in secret's expiry date, YYYY-MM-DD (got ${JSON.stringify(raw ?? null)}); see ${runbook}`];
+  }
+  const days = (t - now) / DAY;
+  if (days <= 30) return [`the Microsoft sign-in secret expires ${raw} (in ${Math.floor(days)} days): rotate it (${runbook})`];
   return [];
 }
 
@@ -1182,6 +1215,8 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const fontFiles = readdirSync(p("public/fonts")).filter((f) => !f.startsWith(".")).sort();
   // booking.json at the root (the build checks the guide against it), or the Worker's own copy.
   const bookingCfg = readOr("booking.json") ? JSON.parse(read("booking.json")) : BOOKING_CONFIG;
+  // F-004 (D7): the same validation as the Worker's, before anything is rendered from it.
+  try { validateConfig(bookingCfg); } catch (e) { return { errors: [e.message], stale: [], date: null }; }
   const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00", bookingCfg).files;
   // Images the page references by path (src, srcset, icons, og:image / twitter:image).
   const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
@@ -1202,7 +1237,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   errors.push(...inlineErrors);
   errors.push(...checkPage(files["public/index.html"], c).map((e) => "index.html: " + e));
   const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
-  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["book.md", files["public/book.md"]], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (BANNED.test(t)) errors.push(`${f} names an employer: ${t.match(BANNED)[0]}`);
+  for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["book.md", files["public/book.md"]], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (employerMention(t)) errors.push(`${f} names an employer: ${employerMention(t)}`);
   const nf = parseHtml(html404);
   if (elements(nf, { visible: false }).filter((e) => e.tag === "h1").length !== 1) errors.push("404.html must have exactly one <h1>");
   if (!elements(nf, { visible: false }).some((e) => e.tag === "meta" && e.attrs.name === "robots" && /noindex/.test(e.attrs.content ?? ""))) errors.push("404.html must carry <meta name=\"robots\" content=\"noindex\">");
@@ -1210,6 +1245,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const did = sha256(readFileSync(p("public/.well-known/did.json"))).toString("hex");
   if (did !== DID_SHA256) errors.push(`public/.well-known/did.json changed (sha256 ${did}); it backs did:web sign-in`);
   errors.push(...checkSecurityTxt(read("public/.well-known/security.txt"), now));
+  errors.push(...checkMicrosoftSecret(bookingCfg, now));
 
   const stale = Object.entries(files).filter(([f, t]) => readOr(f) !== t).map(([f]) => f);
   if (check && stale.length) errors.push(`out of date (run npm run build): ${stale.join(", ")}`);
