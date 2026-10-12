@@ -674,7 +674,7 @@ test("/book times: start times only, and picking another day scrolls the list ba
 // ---- F-004: more sign-in providers on /book, its CSP and /privacy ----------------------------------
 
 const bookingCfg = JSON.parse(read("booking.json"));
-const withSignin = (providers, trial = []) => ({ ...structuredClone(bookingCfg), signin: { providers, trial } });
+const withSignin = (providers, trial = []) => ({ ...structuredClone(bookingCfg), signin: { providers, trial, ...(providers.includes("microsoft") ? { microsoftSecretExpires: "2099-01-01" } : {}) } });
 const bookHtml = (providers, trial) => renderBook(content, bookingGuide(content, withSignin(providers, trial)), withSignin(providers, trial));
 const signinButtons = (v) => walk(v.$("how")).filter((e) => e.tag === "button" && /^by-signin-/.test(e.id ?? "")).map((b) => [b.id, visible(b)]);
 async function toChoice(v, times = 0) {

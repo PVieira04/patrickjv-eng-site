@@ -138,6 +138,17 @@
       "title": "Privacy",
       "description": "What patrickjv.com stores about you, for how long, and who processes it on my behalf.",
       "updated": "9 October 2026",
+      "_providers": "F-004: added to the sign-in section ({provider_paragraphs}) and the processors ({provider_items}) for each provider launched or on trial in booking.json. Draft text, to be approved by Patrick as public copy before release.",
+      "providers": {
+        "microsoft": {
+          "paragraph": "If you sign in with Microsoft, Microsoft tells the site your name, your email address and IDs for your Microsoft account and its organisation. The site uses the address only if your organisation (or Microsoft, for a personal account) says the account holds it. The site reads these once, when you sign in, and keeps none of Microsoft's sign-in tokens.",
+          "item": "If you sign in with Microsoft to book or cancel, Microsoft is the identity provider that confirms who you are."
+        },
+        "altimist": {
+          "paragraph": "If you sign in with Altimist ID, Altimist ID tells the site your name, your email address and an ID for your Altimist ID account, whose address it confirmed with a code when the account was made. The site reads these once, when you sign in, and keeps none of Altimist ID's sign-in tokens.",
+          "item": "If you sign in with Altimist ID to book or cancel, Altimist ID is the identity provider that confirms who you are."
+        }
+      },
       "intro": [
         "This is my personal website, and I am responsible for any personal data it handles. Two parts of it collect personal data: introductions, and booking a meeting with me. This page explains what each one keeps and for how long.",
         "If anything here is unclear, email me at hello@patrickjv.com."
@@ -167,9 +178,10 @@
           ]
         },
         {
-          "heading": "Booking by signing in with Google",
+          "heading": "Booking by signing in with {enabled_providers}",
           "paragraphs": [
-            "Instead of the confirmation email, you can book (or cancel) a meeting by signing in with Google on a link the site gives you or your AI agent. Google tells the site your name, your email address and an ID for your Google account, and confirms the address is yours. The site reads these once, when you sign in, and keeps none of Google's sign-in tokens.",
+            "Instead of the confirmation email, you can book (or cancel) a meeting by signing in with {enabled_providers} on a link the site gives you or your AI agent. Google tells the site your name, your email address and an ID for your Google account, and confirms the address is yours. The site reads these once, when you sign in, and keeps none of Google's sign-in tokens.",
+            "{provider_paragraphs}",
             "While you sign in, the site sets one cookie, which is strictly necessary for signing in securely and expires after 10 minutes. The site sets no lasting cookie.",
             "A booking request keeps the meeting type, the time, your note and a keyed hash of the IP address it came from, and nothing about you. It is deleted 30 days after it is used, withdrawn or declined, or 30 days after it expires.",
             "When you sign in, the site keeps the account's provider and ID, your verified email address and your name, so that only you can cancel your meeting. It deletes them 30 days after the later of your last sign-in and the end of your last meeting. Your booking itself is kept as above."
@@ -188,6 +200,7 @@
           "items": [
             "Cloudflare hosts the site and the booking service, stores booking records and the daily counts, and forwards email sent to hello@patrickjv.com.",
             "Google holds booked meetings in Google Calendar and sends the invitations. If you sign in with Google to book or cancel, Google is also the identity provider that confirms who you are. Introductions and email to hello@patrickjv.com arrive in my Gmail mailbox.",
+            "{provider_items}",
             "Resend sends the booking emails: the confirmation link, the booking confirmation and any cancellation request. They are plain text, with no tracking of opens or clicks, and Resend keeps a record of each email it sends under its own retention rules."
           ]
         },
@@ -202,7 +215,7 @@
     "book": {
       "title": "Book a meeting",
       "description": "Book a consultation or a recruiter intro with Patrick Vieira at a time he is free.",
-      "intro": "Choose a meeting type and a time, then sign in with Google to book it in your name. No Google account? You can book with email instead, and confirm from your inbox.",
+      "intro": "Choose a meeting type and a time, then sign in with {sign_in_providers} to book it in your name. No {sign_in_providers} account? You can book with email instead, and confirm from your inbox.",
       "noscript": "This page needs JavaScript. You can also email me at hello@patrickjv.com.",
       "labels": {
         "type": "Meeting type",
@@ -221,8 +234,9 @@
         "freeNone": "{day}, no free times",
         "timeOn": "Time on {day}",
         "how": "How to book",
-        "howHint": "Signing in books the call straight away. We use your name and email address from Google for the invite, and nothing else.",
-        "signin": "Sign in with Google to book",
+        "howHint": "Signing in books the call straight away. We use your name and email address from the account you sign in with for the invite, and nothing else.",
+        "howHintChosen": "Signing in books the call straight away. We use your name and email address from {provider} for the invite, and nothing else.",
+        "signin": "Sign in with {provider} to book",
         "byEmail": "Book with email instead"
       },
       "zone": "Times shown in {zone}.",
@@ -240,7 +254,7 @@
         "invalid": "Please check your name and email address.",
         "unavailable": "Booking is unavailable right now. Please try again later.",
         "error": "Something went wrong. Please try again, or email me at hello@patrickjv.com.",
-        "signingIn": "Taking you to Google to sign in…"
+        "signingIn": "Taking you to {provider} to sign in…"
       },
       "agents": {
         "heading": "For AI agents",
@@ -256,7 +270,7 @@
       "Call `get_availability` with a type. It lists free times in London working hours, each with its UTC offset. Steps 1 and 2 need no sign-in.",
       "Agree a time with your person.",
       "Call `book_meeting` with the type, the start time and an optional note. Don't send their name or email address: those come from their sign-in. This doesn't reserve the time yet.",
-      "Give your person the `confirm_url` from the result. They open it and sign in with Google before `link_expires` (within {request_minutes} minutes). That books the call in their name, and Google sends them the invite. If someone else has taken the time in the meantime, the page tells them.",
+      "Give your person the `confirm_url` from the result. They open it and sign in with {sign_in_providers} before `link_expires` (within {request_minutes} minutes). That books the call in their name, and Google sends them the invite. If someone else has taken the time in the meantime, the page tells them.",
       "Call `get_booking_status` to check it's confirmed. Its status is one of `pending_confirmation`, `confirmed`, `declined`, `expired` or `cancelled`. If it says `pending_confirmation`, the booking isn't finished yet (your person may still be signing in, or the site may be finishing it): wait and check again, and don't book again. If it says `declined` or `expired`, start again from step 2."
     ],
     "cancel": "To cancel, call `cancel_booking`. A request your person hasn't signed in on yet is withdrawn at once. If it returns a `confirm_url`, give it to your person: they sign in to cancel. If it says a cancellation email was sent, your person uses the link in that email. If it says the booking is still being finished, check again in a few minutes and cancel then. People can also book at https://patrickjv.com/book."

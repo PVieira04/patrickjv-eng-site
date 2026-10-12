@@ -17,7 +17,8 @@ import { pathToFileURL } from "node:url";
 import { marked } from "marked";
 import { agentData } from "./lib/agent-data.mjs";
 import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
-import { validateConfig, launchedProviders } from "./mcp/booking-config.js";
+import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROVIDER_NAMES } from "./mcp/booking-config.js";
+import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
 
 export const SITE = "https://patrickjv.com/";
@@ -577,13 +578,20 @@ ${script ? `<script>${script}</script>\n` : ""}</body>
 // Plain text with the contact address made a mailto link.
 const linkEmail = (text, email) => attr(text).split(attr(email)).join(`<a href="mailto:${attr(email)}">${attr(email)}</a>`);
 
-export function renderPrivacy(c) {
+// F-004: every provider enabled in booking.json (launched or on trial, since a trial sign-in still
+// sends data to it) is named as an identity provider, with what the site keeps from it.
+export function renderPrivacy(c, cfg = BOOKING_CONFIG) {
   const p = c.pages.privacy, email = c.person.links.email;
+  const enabled = enabledProviders(cfg);
+  const others = enabled.filter((x) => x !== "google").map((x) => p.providers[x]);
+  const named = (t) => t.replaceAll("{enabled_providers}", signInPhrase(enabled));
+  // "{provider_paragraphs}" / "{provider_items}" become the other enabled providers' own entries.
+  const fill = (list, key) => list.flatMap((t) => (t === `{provider_${key}s}` ? others.map((o) => o[key]) : [named(t)]));
   const para = (t) => `<p>${linkEmail(t, email)}</p>`;
   const sections = p.sections.map((s) => [
-    `<h2>${attr(s.heading)}</h2>`,
-    ...(s.paragraphs ?? []).map(para),
-    ...(s.items ? [`<ul>\n${s.items.map((i) => `<li>${linkEmail(i, email)}</li>`).join("\n")}\n</ul>`] : []),
+    `<h2>${attr(named(s.heading))}</h2>`,
+    ...fill(s.paragraphs ?? [], "paragraph").map(para),
+    ...(s.items ? [`<ul>\n${fill(s.items, "item").map((i) => `<li>${linkEmail(i, email)}</li>`).join("\n")}\n</ul>`] : []),
   ].join("\n")).join("\n");
   return sitePage({
     title: `${p.title} — ${c.person.name}`, description: p.description, path: PRIVACY_PATH,
@@ -612,6 +620,7 @@ button:disabled { opacity: 0.6; cursor: progress; }
 #status { min-height: 1.65em; font-weight: 600; }
 #how .choices button { margin-top: 0; }
 #how #by-email { background: transparent; color: var(--ink); border: 1px solid var(--line-strong); font-weight: 400; }
+#signin-choices { display: contents; }
 .guide { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.875rem; }
 :root { --line-strong: #b9b6ab; --signal-soft: rgba(166, 75, 0, 0.08); }
 @media (prefers-color-scheme: dark) { :root { --line-strong: #3a414c; --signal-soft: rgba(255, 181, 71, 0.12); } }
@@ -744,29 +753,53 @@ const bookScript = (copy) => `
   function more() { var l = $("times"); l.setAttribute("data-more", l.scrollHeight - l.scrollTop - l.clientHeight > 1 ? "true" : "false"); }
 
   // Hand-off: the picker ends here, with \`type\` and a chosen \`start\`. F-002 (D8): the visitor then
-  // chooses how to book. "Sign in with Google to book" makes a booking request and starts its
+  // chooses how to book. "Sign in with <provider> to book" makes a booking request and starts its
   // sign-in straight away; "Book with email instead" opens the F-001 form (POST /api/booking),
   // unchanged. Nothing is created until one is chosen, and nothing turns one into the other.
-  function slotChosen(s) { start = s; show("details", false); show("how", true); }
-  $("by-email").addEventListener("click", function () { show("details", true); $("name").focus(); });
-  $("by-signin").addEventListener("click", function () {
+  // F-004: one button per provider the Worker says is ready (signin_providers), asked for now, not
+  // at page load. The request is made once, on the first sign-in click, and its ticket kept for
+  // this time: a start refused because its provider isn't ready lands on that request's confirm page.
+  var ticket = null, round = 0;
+  function slotChosen(s) {
+    start = s; ticket = null; show("details", false); show("how", true);
+    var box = $("signin-choices"), mine = ++round;
+    box.textContent = ""; $("how-hint").textContent = t.labels.howHint;
+    call("/api/booking/types").then(function (r) {
+      if (mine !== round) return; // another time has been chosen since
+      (r.ok && Array.isArray(r.data.signin_providers) ? r.data.signin_providers : []).forEach(function (p) {
+        if (!t.names[p]) return; // launched since this page was built: offered once it's rebuilt
+        var b = document.createElement("button");
+        b.type = "button"; b.id = "by-signin-" + p; b.textContent = t.labels.signin.replace("{provider}", t.names[p]);
+        b.addEventListener("click", function () { signIn(p, b); });
+        box.appendChild(b);
+      });
+    }, function () {});
+  }
+  // The confirm page's own POST, made here so there's no extra page: it sets the sign-in cookie
+  // and sends the browser on to the provider.
+  function go(p, tk) {
+    var f = document.createElement("form"), i = document.createElement("input");
+    f.method = "post"; f.action = "/book/confirm/" + p;
+    i.type = "hidden"; i.name = "t"; i.value = tk;
+    f.appendChild(i); document.body.appendChild(f); f.submit();
+  }
+  function signIn(p, b) {
     if (!start) return;
-    $("by-signin").disabled = true;
-    say(t.messages.signingIn);
+    b.disabled = true;
+    $("how-hint").textContent = t.labels.howHintChosen.replace("{provider}", t.names[p]);
+    say(t.messages.signingIn.replace("{provider}", t.names[p]));
+    if (ticket) return go(p, ticket);
     call("/api/booking/request", { type: type, start: start, source: "page" }).then(function (r) {
       if (!r.ok || typeof r.data.confirm_url !== "string") {
-        $("by-signin").disabled = false;
+        b.disabled = false;
         if (r.status === 409) return loadSlots(t.messages.slotGone);
         return failed(r);
       }
-      // The confirm page's own POST, made here so there's no extra page: it sets the sign-in
-      // cookie and sends the browser on to Google.
-      var f = document.createElement("form"), i = document.createElement("input");
-      f.method = "post"; f.action = "/book/confirm/google";
-      i.type = "hidden"; i.name = "t"; i.value = new URL(r.data.confirm_url).searchParams.get("t");
-      f.appendChild(i); document.body.appendChild(f); f.submit();
-    }, function () { $("by-signin").disabled = false; broken(); });
-  });
+      ticket = new URL(r.data.confirm_url).searchParams.get("t");
+      go(p, ticket);
+    }, function () { b.disabled = false; broken(); });
+  }
+  $("by-email").addEventListener("click", function () { show("details", true); $("name").focus(); });
 
   function loadSlots(done) {
     start = null; byDay = {}; picked = null; months = [];
@@ -861,14 +894,17 @@ const bookScript = (copy) => `
 })();
 `;
 
-// \`guide\`: the booking guide (F-002, US-7), shown verbatim in a "For AI agents" note.
-export function renderBook(c, guide) {
+// \`guide\`: the booking guide (F-002, US-7), shown verbatim in a "For AI agents" note. F-004: the
+// copy names booking.json's launched sign-in providers, and the script knows their names only.
+export function renderBook(c, guide, cfg = BOOKING_CONFIG) {
   const b = c.pages.book, l = b.labels, email = c.person.links.email;
+  const launched = launchedProviders(cfg);
+  const names = Object.fromEntries(Object.entries(PROVIDER_NAMES).filter(([p]) => launched.includes(p)));
   const field = (id, label, control) => `<label class="field" for="${id}">${attr(label)}</label>\n${control}`;
   return sitePage({
     title: `${b.title} — ${c.person.name}`, description: b.description, path: BOOK_PATH, style: BOOK_STYLE,
     main: `<h1>${attr(b.title)}</h1>
-<p>${attr(b.intro)}</p>
+<p>${attr(b.intro.replaceAll("{sign_in_providers}", signInPhrase(launched)))}</p>
 <noscript><p>${linkEmail(b.noscript, email)}</p></noscript>
 <form id="book" hidden>
 <fieldset><legend>${attr(l.type)}</legend><div id="types" class="choices"></div></fieldset>
@@ -878,8 +914,8 @@ export function renderBook(c, guide) {
 <table id="days" class="cal" role="grid" aria-labelledby="cal-month"><thead id="cal-cols"></thead><tbody id="cal-body"></tbody></table>
 </fieldset>
 <fieldset id="time-set" hidden><legend id="time-legend">${attr(l.time)}</legend><div id="times" class="slots"></div></fieldset>
-<fieldset id="how" hidden><legend>${attr(l.how)}</legend><p class="meta">${attr(l.howHint)}</p>
-<div class="choices"><button id="by-signin" type="button">${attr(l.signin)}</button><button id="by-email" type="button">${attr(l.byEmail)}</button></div></fieldset>
+<fieldset id="how" hidden><legend>${attr(l.how)}</legend><p id="how-hint" class="meta">${attr(l.howHint)}</p>
+<div class="choices"><span id="signin-choices"></span><button id="by-email" type="button">${attr(l.byEmail)}</button></div></fieldset>
 <div id="details" hidden>
 ${field("name", l.name, '<input id="name" name="name" type="text" autocomplete="name" required maxlength="100">')}
 ${field("email", l.email, '<input id="email" name="email" type="email" autocomplete="email" required maxlength="254">')}
@@ -893,7 +929,9 @@ ${field("note", l.note, '<textarea id="note" name="note" rows="4" maxlength="500
 <section id="for-agents" aria-labelledby="for-agents-h"><h2 id="for-agents-h">${attr(b.agents.heading)}</h2>
 <p class="meta">${attr(b.agents.intro.replace("/book.md", ""))}<a href="/book.md">/book.md</a></p>
 <pre class="guide">${attr(guide)}</pre></section>`,
-    script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, labels: { minutes: l.minutes, noteCount: l.noteCount, freeOne: l.freeOne, freeMany: l.freeMany, freeNone: l.freeNone, timeOn: l.timeOn }, messages: b.messages }),
+    script: bookScript({ zone: b.zone, zoneFallback: b.zoneFallback, names,
+      labels: { minutes: l.minutes, noteCount: l.noteCount, freeOne: l.freeOne, freeMany: l.freeMany, freeNone: l.freeNone, timeOn: l.timeOn, howHint: l.howHint, howHintChosen: l.howHintChosen, signin: l.signin },
+      messages: b.messages }),
   });
 }
 
@@ -952,7 +990,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
   // ---- WebMCP data ---- Names, titles, descriptions and schemas come from the MCP server's own
   // tools(), so the page and the server describe the same tools in the same words.
   const data = agentData(c);
-  const webTools = mcpTools().map((t) => {
+  const webTools = mcpTools(bookingCfg).map((t) => {
     const out = { name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: !!t.annotations?.readOnlyHint } };
     if (TOOL_DATA[t.name]) out.data = TOOL_DATA[t.name];
     else if (t.name === "request_intro") out.description += " In this browser, the person is also asked to confirm the exact message before anything is sent.";
@@ -963,7 +1001,9 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
     if (out.data && !out.annotations.readOnlyHint) throw new Error(`MCP tool ${t.name} serves page data but is not readOnlyHint`);
     return out;
   });
-  const webmcp = { ...data, booking_guide: guide, tools: webTools };
+  // F-004: the launched sign-in providers, as the guide names them and by id, for the prompt.
+  const launched = launchedProviders(bookingCfg);
+  const webmcp = { ...data, booking_guide: guide, sign_in_providers: signInPhrase(launched), sign_in_names: Object.fromEntries(launched.map((p) => [p, PROVIDER_NAMES[p]])), tools: webTools };
 
   // ---- index.html: head metadata, JSON-LD and WebMCP data spliced into the hand-written page ----
   let html = html0;
@@ -983,7 +1023,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
   html = splice(html, /var d = \{.*\};/, () => `var d = ${safeJson(webmcp)};`, "WebMCP data");
 
   // ---- index.md ----
-  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Book a call](${SITE}book): pick a free time and sign in with Google to book it (or confirm by email)`, `- [How to book a call](${SITE}book.md): the booking steps for AI agents, as Markdown`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
+  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Book a call](${SITE}book): pick a free time and sign in with ${signInPhrase(launched)} to book it (or confirm by email)`, `- [How to book a call](${SITE}book.md): the booking steps for AI agents, as Markdown`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
   const md = [
     `# ${c.person.name}`, "",
     `Platform engineer in London (not the footballer of the same name). Canonical page: ${SITE}`, "",
@@ -1017,7 +1057,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
     "## Machine-readable", "",
     `- [Markdown version of this page](${SITE}index.md): the full profile as clean Markdown`,
     `- [Sitemap](${SITE}sitemap.xml)`,
-    `- [MCP server](${SITE}mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day); get_booking_guide, list_meeting_types, get_availability, book_meeting, get_booking_status and cancel_booking book a call, confirmed by the person signing in with Google (see How to book a call above)`, "",
+    `- [MCP server](${SITE}mcp): remote MCP (Streamable HTTP, POST, JSON responses, no auth). Read-only tools get_profile, list_work, list_skills, list_faq; request_intro emails Patrick (rate-limited, a couple per sender per day); get_booking_guide, list_meeting_types, get_availability, book_meeting, get_booking_status and cancel_booking book a call, confirmed by the person signing in with ${signInPhrase(launched)} (see How to book a call above)`, "",
   ].join("\n");
 
   // ---- sitemap.xml ----
@@ -1062,18 +1102,20 @@ Sitemap: ${SITE}sitemap.xml
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${cvPage.styles.map(cspHash).join(" ")}`,
     "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "upgrade-insecure-requests",
   ].join("; ");
-  const privacyHtml = renderPrivacy(c);
+  const privacyHtml = renderPrivacy(c, bookingCfg);
   const privacyPage = inlineCode(privacyHtml, { styles: 1, scripts: 0 });
   const privacyCsp = pageCsp(privacyPage);
-  const bookHtml = renderBook(c, guide);
+  const bookHtml = renderBook(c, guide, bookingCfg);
   const bookPage = inlineCode(bookHtml, { styles: 1, scripts: 1 });
-  const bookCsp = pageCsp(bookPage, "'self' https://accounts.google.com"); // F-002: the sign-in POST goes on to Google
+  // F-002: the sign-in POST goes on to the provider. F-004: any enabled one (launched or on trial).
+  const signinAction = ["'self'", ...enabledProviders(bookingCfg).map((p) => PROVIDERS[p].host)].join(" ");
+  const bookCsp = pageCsp(bookPage, signinAction);
   const nf = inlineCode(html404, { styles: 1, scripts: 0 });
   const csp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${page.styles.map(cspHash).join(" ")}`,
     `script-src ${page.scripts.map(cspHash).join(" ")}`, "connect-src 'self'", "base-uri 'none'",
-    // F-002: WebMCP's "Sign in to book" prompt posts to /book/confirm/google, which redirects to Google.
-    "form-action 'self' https://accounts.google.com",
+    // F-002: WebMCP's "Sign in to book" prompt posts to /book/confirm/<provider>, which redirects to it.
+    `form-action ${signinAction}`,
     "frame-ancestors 'none'", "upgrade-insecure-requests",
   ].join("; ");
   // Production lesson (6 Oct 2026): Workers static-asset _headers does NOT honour "! Header"
