@@ -2,7 +2,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import * as bookingConfig from "./booking-config.js";
 import { validateConfig, localToUtc, localDay, withOffset, candidateSlots, checkSlot, availableSlots } from "./booking-config.js";
+
+// F-004: namespace reads, so a helper not written yet fails only the tests that call it.
+const { launchedProviders, trialProviders, signInPhrase, PROVIDER_ORDER, PROVIDER_NAMES } = bookingConfig;
 
 const TZ = "Europe/London";
 
@@ -356,4 +360,48 @@ test("F-002 validateConfig (D3): a request can never outlive its slot: requestMi
   assert.throws(() => validateConfig(at(24 * 60, 24)), /requestMinutes must be less than minNoticeHours × 60 \(1440\)/);
   assert.throws(() => validateConfig(at(181, 3)), /requestMinutes/);
   assert.equal(validateConfig(at(24 * 60 - 1, 24)).requestMinutes, 1439);
+});
+
+// ---- F-004: launched and trial sign-in providers (D7) ------------------------------------------
+
+test("F-004 booking.json: Google is the one launched provider and nothing is on trial", () => {
+  const cfg = validateConfig(realConfig());
+  assert.deepEqual(launchedProviders(cfg), ["google"]);
+  assert.deepEqual(trialProviders(cfg), []);
+  const { signin, ...rest } = realConfig();
+  assert.deepEqual(launchedProviders(validateConfig(rest)), ["google"], "default when signin is absent");
+  assert.deepEqual(trialProviders(validateConfig(rest)), []);
+});
+
+test("F-004 validateConfig (D7): signin.providers must be non-empty, start with google, name only google, microsoft and altimist, with no duplicates", () => {
+  const withProviders = (providers) => { const c = realConfig(); c.signin = { providers }; return c; };
+  for (const ok of [["google"], ["google", "microsoft"], ["google", "altimist"], ["google", "microsoft", "altimist"], ["google", "altimist", "microsoft"]]) {
+    assert.deepEqual(launchedProviders(validateConfig(withProviders(ok))), ok);
+  }
+  for (const bad of [[], ["microsoft"], ["microsoft", "google"], ["google", "google"], ["google", "github"], ["google", "Microsoft"], "google", null, [1]]) {
+    assert.throws(() => validateConfig(withProviders(bad)), /booking\.json: signin\.providers/, JSON.stringify(bad));
+  }
+  const notObject = realConfig();
+  notObject.signin = ["google"];
+  assert.throws(() => validateConfig(notObject), /booking\.json: signin /);
+});
+
+test("F-004 validateConfig (D7): signin.trial is an array of microsoft or altimist, no duplicates, none also launched", () => {
+  const withTrial = (trial, providers = ["google"]) => { const c = realConfig(); c.signin = { providers, trial }; return c; };
+  for (const ok of [[], ["microsoft"], ["altimist"], ["altimist", "microsoft"]]) assert.deepEqual(trialProviders(validateConfig(withTrial(ok))), ok);
+  assert.deepEqual(trialProviders(validateConfig(withTrial(["altimist"], ["google", "microsoft"]))), ["altimist"]);
+  for (const [bad, providers] of [[["google"]], [["microsoft", "microsoft"]], [["github"]], ["microsoft"], [null], [["microsoft"], ["google", "microsoft"]], [["altimist"], ["google", "altimist"]]]) {
+    assert.throws(() => validateConfig(withTrial(bad, providers)), /booking\.json: signin\.trial/, JSON.stringify([bad, providers]));
+  }
+});
+
+test("F-004 the sign-in phrase names providers in the fixed order Google, Microsoft, Altimist ID, whatever the list's order", () => {
+  assert.equal(signInPhrase(["google"]), "Google");
+  assert.equal(signInPhrase(["google", "microsoft"]), "Google or Microsoft");
+  assert.equal(signInPhrase(["google", "altimist"]), "Google or Altimist ID");
+  assert.equal(signInPhrase(["google", "microsoft", "altimist"]), "Google, Microsoft or Altimist ID");
+  assert.equal(signInPhrase(["google", "altimist", "microsoft"]), "Google, Microsoft or Altimist ID");
+  assert.equal(signInPhrase(["microsoft"]), "Microsoft");
+  assert.deepEqual(PROVIDER_ORDER, ["google", "microsoft", "altimist"]);
+  assert.deepEqual(PROVIDER_NAMES, { google: "Google", microsoft: "Microsoft", altimist: "Altimist ID" });
 });
