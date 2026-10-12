@@ -576,7 +576,7 @@ test("F-002 cancel_booking: an email-form (F-001) booking still gets F-001's con
 // ---- Sign-in transactions -----------------------------------------------------------------------
 
 let txn = 0;
-const txFor = () => { txn++; return { stateHash: `state${txn}`, cookieHash: `cookie${txn}`, nonce: `nonce${txn}`, codeVerifier: `verifier${txn}` }; };
+const txFor = () => { txn++; return { stateHash: `state${txn}`, cookieHash: `cookie${txn}`, nonce: `nonce${txn}`, codeVerifier: `verifier${txn}`, provider: "google" }; };
 const start = (t, url, { now = NOW, tx = txFor(), busy = [] } = {}) => store.startSignin(t.sql, { token: ticketOf(url), now, cfg, busy, tx, deps: t.deps }).then((r) => ({ ...r, tx }));
 
 test("F-002 sign-in start: creates a signin_tx bound to the ticket and its purpose, expiring in 10 minutes", async () => {
@@ -586,7 +586,7 @@ test("F-002 sign-in start: creates a signin_tx bound to the ticket and its purpo
   assert.equal(s.purpose, "book");
   const row = t.sql.exec("SELECT * FROM signin_tx").one();
   assert.deepEqual(row, { state_hash: s.tx.stateHash, ticket_hash: await store.hashToken(ticketOf(r.confirm_url)), cookie_hash: s.tx.cookieHash,
-    nonce: s.tx.nonce, code_verifier: s.tx.codeVerifier, purpose: "book", expires_at: "2026-10-19T09:10:00.000Z" });
+    nonce: s.tx.nonce, code_verifier: s.tx.codeVerifier, purpose: "book", expires_at: "2026-10-19T09:10:00.000Z", provider: "google" }); // F-004: provider
   const id = await booked(t, JANE, { start: "2026-10-22T09:00:00.000Z" });
   const link = await agentCancel(t, id);
   assert.equal((await start(t, link.confirm_url)).purpose, "cancel");
@@ -682,7 +682,7 @@ test("F-002 peek: a cancel ticket's state (open; then still booked, started, can
   const t = setup();
   const id = await booked(t);
   const link = await agentCancel(t, id);
-  assert.deepEqual(await peek(t, link.confirm_url), { purpose: "cancel", state: "open", type: "consultation", start: SLOT, end: SLOT_END, expires_at: link.link_expires });
+  assert.deepEqual(await peek(t, link.confirm_url), { purpose: "cancel", state: "open", type: "consultation", start: SLOT, end: SLOT_END, expires_at: link.link_expires, provider: "google" }); // F-004: provider
   assert.equal((await peek(t, link.confirm_url, later(HOUR))).state, "still_booked", "expired, booking still confirmed before the start");
   assert.equal((await peek(t, link.confirm_url, new Date(Date.parse(SLOT) + MINUTE))).state, "started");
   for (let i = 0; i < 5; i++) await start(t, link.confirm_url);

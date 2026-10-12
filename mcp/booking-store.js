@@ -46,6 +46,10 @@ export function migrate(sql) {
   for (const s of SCHEMA) sql.exec(s);
   const have = new Set(sql.exec("PRAGMA table_info(bookings)").toArray().map((c) => c.name));
   for (const c of BOOKING_COLUMNS) if (!have.has(c)) sql.exec(`ALTER TABLE bookings ADD COLUMN ${c} TEXT`);
+  // F-004: the provider a sign-in transaction was started for; ones in flight during the deploy are Google's.
+  if (!sql.exec("PRAGMA table_info(signin_tx)").toArray().some((c) => c.name === "provider")) {
+    sql.exec("ALTER TABLE signin_tx ADD COLUMN provider TEXT NOT NULL DEFAULT 'google'");
+  }
 }
 
 const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -611,8 +615,9 @@ function withdrawRequest(sql, id, now) {
 // own authority, so the alarm's recovery finishes it with no grant and takes no cap again.
 // ---------------------------------------------------------------------------------------------
 
-// Which proofs may do what. Later proofs (P2, P4) add their checks here.
-const PROOFS = { book: ["signin:google"], cancel: ["signin:google", "booked_email_link"] };
+// Which proofs may do what. Later proofs (P4) add their checks here. F-004 adds Microsoft and Altimist ID.
+const SIGNIN_PROOFS = ["signin:google", "signin:microsoft", "signin:altimist"];
+const PROOFS = { book: SIGNIN_PROOFS, cancel: [...SIGNIN_PROOFS, "booked_email_link"] };
 const grantAllows = (grant, scope, ticketHash, now) => grant?.scope === scope && PROOFS[scope].includes(grant.proof)
   && grant.ticket_hash === ticketHash && typeof grant.expires_at === "string" && grant.expires_at > now.toISOString();
 
@@ -724,14 +729,16 @@ function signinCancelLink(sql, b, link, { now, cfg, ipKey, deps }) {
   const expires = lapse < b.start_utc ? lapse : b.start_utc;
   sql.exec("UPDATE tokens SET used_at = ? WHERE booking_id = ? AND action = 'cancel_signin' AND used_at IS NULL", nowIso, b.id);
   sql.exec("INSERT INTO tokens (hash, booking_id, action, expires_at) VALUES (?, ?, 'cancel_signin', ?)", link.hash, b.id, expires);
-  return { status: "confirmed", confirm_url: deps.confirmUrl(link.token), link_expires: expires };
+  // F-004: the provider the booking was made with, the only one that can cancel it.
+  return { status: "confirmed", confirm_url: deps.confirmUrl(link.token), link_expires: expires, provider: guestProvider(sql, b) };
 }
+const guestProvider = (sql, b) => sql.exec("SELECT provider FROM identities WHERE id = ?", b.identity_id).toArray()[0]?.provider ?? null;
 
 // The only way a sign-in booking is cancelled, on either proof: a sign-in by the guest
-// (signin:google, on a cancel_signin ticket) or the "Booked" email's cancel link
+// (signin:<provider>, on a cancel_signin ticket) or the "Booked" email's cancel link
 // (booked_email_link, on that F-001 token: holding it proves the verified mailbox). Caps and
 // availability never stop a cancellation. Once authorised it runs F-001's cancellation unchanged.
-const CANCEL_TICKET = { "signin:google": "cancel_signin", booked_email_link: "cancel" };
+const CANCEL_TICKET = { ...Object.fromEntries(SIGNIN_PROOFS.map((p) => [p, "cancel_signin"])), booked_email_link: "cancel" };
 export async function cancelMeeting(sql, bookingId, person, grant, { now, deps }) {
   const nowIso = now.toISOString();
   // ---- Synchronous from here to cancelByLink's claim. No await. ----
@@ -741,7 +748,7 @@ export async function cancelMeeting(sql, bookingId, person, grant, { now, deps }
   if (!tok || tok.action !== CANCEL_TICKET[grant.proof] || !grantAllows(grant, "cancel", tok.hash, now)) return { error: "forbidden" };
   if (tok.used_at || b.status !== "confirmed") return { error: "used" };
   if (tok.expires_at <= nowIso || b.start_utc <= nowIso) return { error: "expired" };
-  if (grant.proof === "signin:google") {
+  if (SIGNIN_PROOFS.includes(grant.proof)) {
     const guest = sql.exec("SELECT provider, subject FROM identities WHERE id = ?", b.identity_id).toArray()[0];
     if (!guest || guest.provider !== person?.provider || guest.subject !== person?.subject) return { error: "not_guest" };
   }
@@ -793,8 +800,8 @@ export async function startSignin(sql, { token, now, cfg, busy, tx, deps }) {
   if (attempts(sql, hash, expiresAt) >= cfg.caps.signinAttemptsPerTicket) return { error: "too_many" };
   quotaAdd(sql, ...attemptsKey(hash, expiresAt));
   sql.exec(
-    "INSERT INTO signin_tx (state_hash, ticket_hash, cookie_hash, nonce, code_verifier, purpose, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    tx.stateHash, hash, tx.cookieHash, tx.nonce, tx.codeVerifier, found.purpose, plus(nowIso, SIGNIN_TX_MS),
+    "INSERT INTO signin_tx (state_hash, ticket_hash, cookie_hash, nonce, code_verifier, purpose, expires_at, provider) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    tx.stateHash, hash, tx.cookieHash, tx.nonce, tx.codeVerifier, found.purpose, plus(nowIso, SIGNIN_TX_MS), tx.provider,
   );
   return { purpose: found.purpose };
 }
@@ -839,5 +846,6 @@ export async function peekTicket(sql, token, { now, cfg, hash: known }) {
   if (b.start_utc <= nowIso) return view("started", b, tok.expires_at);
   if (tok.used_at || tok.expires_at <= nowIso) return view("still_booked", b, tok.expires_at);
   if (attempts(sql, hash, tok.expires_at) >= cfg.caps.signinAttemptsPerTicket) return view("too_many", b, tok.expires_at);
-  return view("open", b, tok.expires_at);
+  // F-004: a cancel link offers only the booking's own provider.
+  return view("open", b, tok.expires_at, { provider: guestProvider(sql, b) });
 }

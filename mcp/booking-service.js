@@ -216,7 +216,7 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
       const busy = await busyOrNone();
       const [state, nonce, cookie, verifier] = [randomValue(), randomValue(), randomValue(), randomValue()];
       const [stateHash, cookieHash, challenge] = await Promise.all([hashToken(state), hashToken(cookie), pkceChallenge(verifier)]);
-      const r = await startSignin(sql, { token, now: now(), cfg, busy, tx: { stateHash, cookieHash, nonce, codeVerifier: verifier }, deps });
+      const r = await startSignin(sql, { token, now: now(), cfg, busy, tx: { stateHash, cookieHash, nonce, codeVerifier: verifier, provider: "google" }, deps });
       if (r.error) return { ...r, view: await peekTicket(sql, token, { now: now(), cfg }) };
       await alarmBy(nextAlarmAt(sql, now()));
       return { purpose: r.purpose, cookie, location: authUrl({ clientId: env.SIGNIN_GOOGLE_CLIENT_ID, state, nonce, codeChallenge: challenge }) };
