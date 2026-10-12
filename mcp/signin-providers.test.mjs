@@ -426,6 +426,28 @@ test("F-004 health: providers reports each enabled provider's readiness (secrets
   assert.ok(!JSON.stringify(r).includes("secret"));
 });
 
+// ---- D8: the Worker's own pages pass the employer guard --------------------------------------------------
+
+test("F-004 (D8): the confirm and cancel pages, with all three providers and with Altimist ID on trial, pass the build's employer guard", async () => {
+  const { employerMention } = await import("../build.mjs");
+  const pages = [];
+  const h = launched();
+  const r = await request(h);
+  pages.push((await confirmPage(h, r.confirm_url)).html);
+  await h.signInOn(r.confirm_url, {}, { provider: "altimist" });
+  const c = (await h.tool("cancel_booking", { booking_id: r.booking_id })).structuredContent;
+  pages.push((await confirmPage(h, c.confirm_url)).html);
+  unready(h, "altimist");
+  pages.push((await confirmPage(h, c.confirm_url)).html);
+  const t = launched(["google"], ["altimist"]);
+  const r2 = await request(t);
+  pages.push((await confirmPage(t, r2.confirm_url, "&try=altimist")).html);
+  const res = await t.call(`/book/confirm?t=${t.ticketOf(r2.confirm_url)}&try=altimist`);
+  pages.push(res.headers.get("content-security-policy"));
+  for (const html of pages) assert.equal(employerMention(html), null, html.slice(0, 200));
+  assert.ok(pages.some((p) => p.includes("Altimist ID")), "the pages do name Altimist ID");
+});
+
 // ---- Security --------------------------------------------------------------------------------------------
 
 test("F-004 security: the confirm page's form-action is 'self' plus exactly the enabled providers' authorisation hosts; Origin and the cookie rules apply to every provider", async () => {
