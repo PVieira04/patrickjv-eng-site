@@ -735,6 +735,24 @@ test("F-004 /book: choosing Microsoft names it in the disclosure and progress te
   assert.equal(v.requests.filter((r) => r.url === "/api/booking/request").length, 2);
 });
 
+test("F-004 (review) /book: a second provider clicked while the request is being made makes no second request; every sign-in choice waits", async () => {
+  let release;
+  const v = openBook({ html: bookHtml(["google", "microsoft"]), routes: ready({
+    "GET /api/booking/types": { status: 200, body: { ...TYPES.body, signin_providers: ["google", "microsoft"] } },
+    "POST /api/booking/request": () => new Promise((r) => { release = () => r({ status: 202, body: { booking_id: "a".repeat(32), status: "pending_confirmation", confirm_url: "https://patrickjv.com/book/confirm?t=AbCdEfGhIjKlMnOpQrStUv", link_expires: "x", next_step: "x" } }); }),
+  }) });
+  await toChoice(v);
+  fire(v.$("by-signin-microsoft"), "click");
+  await settle();
+  assert.equal(v.$("by-signin-google").disabled, true, "all sign-in choices wait");
+  fire(v.$("by-signin-google"), "click");
+  await settle();
+  release();
+  await settle();
+  assert.equal(v.requests.filter((r) => r.url === "/api/booking/request").length, 1);
+  assert.deepEqual(v.document.submitted.map((s) => s.action), ["/book/confirm/microsoft"]);
+});
+
 test("F-004 /book: the copy names the launched providers; the script names no external URL", () => {
   const html = bookHtml(["google", "microsoft", "altimist"]);
   assert.match(textOf(html.match(/<h1>[^<]*<\/h1>\n<p>[^<]*<\/p>/)[0]), /then sign in with Google, Microsoft or Altimist ID to book it in your name\. No Google, Microsoft or Altimist ID account\?/);

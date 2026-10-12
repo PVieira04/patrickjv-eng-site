@@ -426,6 +426,21 @@ test("F-004 health: providers reports each enabled provider's readiness (secrets
   assert.ok(!JSON.stringify(r).includes("secret"));
 });
 
+// ---- The production Durable Object wrapper (mcp/index.js, which the harness bypasses) --------------------
+
+test("F-004 (review): mcp/index.js's BookingStore passes every argument through to the service (the start's provider included)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("./index.js", import.meta.url), "utf8");
+  const body = src.slice(src.indexOf("export class BookingStore"), src.indexOf("export default"));
+  const methods = [...body.matchAll(/^ {2}(\w+)\(([^)]*)\) \{ return this\.svc\.(\w+)\(([^)]*)\); \}$/gm)];
+  assert.ok(methods.length >= 12, `${methods.length} forwarding methods`);
+  for (const [, name, params, called, args] of methods) {
+    assert.equal(called, name, name);
+    assert.equal(args, params.replace(/\s*=[^,]*/g, ""), `${name} forwards (${params}) as (${args})`);
+  }
+  assert.ok(methods.some(([, name, params]) => name === "startSignin" && /provider/.test(params)), "startSignin takes the provider");
+});
+
 // ---- D8: the Worker's own pages pass the employer guard --------------------------------------------------
 
 test("F-004 (D8): the confirm and cancel pages, with all three providers and with Altimist ID on trial, pass the build's employer guard", async () => {
