@@ -5,6 +5,22 @@ export const ENV = {
   RESEND_API_KEY: "re_key", BOOKING_OWNER_EMAIL: "owner@example.net", BOOKING_FROM: "Patrick Vieira <hello@patrickjv.com>",
   CAL_PERSONAL_MAIN: "main@example.net",
   SIGNIN_GOOGLE_CLIENT_ID: "signin-client.apps.googleusercontent.com", SIGNIN_GOOGLE_CLIENT_SECRET: "signin-secret",
+  // F-004: set, so Microsoft and Altimist ID are ready; tests launch them in booking.json.
+  SIGNIN_MICROSOFT_CLIENT_ID: "3f1c9a2e-0000-4000-8000-00000000c11e", SIGNIN_MICROSOFT_CLIENT_SECRET: "ms-secret",
+  SIGNIN_ALTIMIST_CLIENT_ID: "patrickjv-com-client", SIGNIN_ALTIMIST_CLIENT_SECRET: "altimist-secret",
+};
+// F-004: a Microsoft 365 work tenant, and the tenant of personal Microsoft accounts.
+export const MS_TENANT = "72f988bf-86f1-41af-91ab-2d7cd011db47";
+export const MS_PERSONAL = "9188040d-6c67-4c5b-b112-36a304b66dad";
+// Each fake provider: its sign-in host, token endpoint, discovery document, client secret, and
+// the claims of the person who signs in there unless a test says otherwise.
+const FAKE_PROVIDERS = {
+  "accounts.google.com": { token: "https://oauth2.googleapis.com/token", discovery: "https://accounts.google.com/.well-known/openid-configuration", secret: ENV.SIGNIN_GOOGLE_CLIENT_SECRET,
+    claims: { iss: "https://accounts.google.com", sub: "sub-jane", email: "jane@gmail.com", email_verified: true, name: "Jane Smith" } },
+  "login.microsoftonline.com": { token: "https://login.microsoftonline.com/common/oauth2/v2.0/token", discovery: "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration", secret: ENV.SIGNIN_MICROSOFT_CLIENT_SECRET,
+    claims: { iss: `https://login.microsoftonline.com/${MS_TENANT}/v2.0`, ver: "2.0", tid: MS_TENANT, oid: "oid-omar", sub: "pairwise-omar", email: "omar@contoso.example", xms_edov: true, name: "Omar Khan" } },
+  "altimist.id": { token: "https://altimist.id/oidc/token", discovery: "https://altimist.id/.well-known/openid-configuration", secret: ENV.SIGNIN_ALTIMIST_CLIENT_SECRET,
+    claims: { iss: "https://altimist.id", sub: "al-sub-sam", email: "sam@example.org", given_name: "Sam", family_name: "Lee" } },
 };
 
 // opts: busy [{start,end}] reported for every calendar; fail: {token, freebusy, insert, delete, mail,
@@ -15,22 +31,24 @@ export const ENV = {
 // F-002's fake Google sign-in: authorize(authUrl, claims, now) plays the person signing in on
 // Google's page and returns the code and state Google would send back to the callback. The code
 // is single-use and bound to the PKCE challenge; the ID token carries the auth URL's nonce and
-// client ID unless `claims` overrides them.
+// client ID unless `claims` overrides them (a claim set to undefined is left out).
+// F-004: the same for Microsoft and Altimist ID, chosen by the auth URL's host; a code is
+// redeemed only at the token endpoint of the provider that issued it. fail.discovery may be true
+// (every provider's discovery document fails) or a list of hosts.
 export function fakeFetch(opts = {}) {
   const calls = [];
   const events = new Map();
   const codes = new Map();
   const b64url = (buf) => Buffer.from(buf).toString("base64url");
   const authorize = (authUrl, claims = {}, now = new Date()) => {
-    const p = new URL(authUrl).searchParams;
+    const u = new URL(authUrl), p = u.searchParams, provider = FAKE_PROVIDERS[u.host];
     const code = `code-${codes.size + 1}-${Math.random().toString(36).slice(2)}`;
     const iat = Math.floor(now.getTime() / 1000);
-    codes.set(code, { challenge: p.get("code_challenge"), claims: {
-      iss: "https://accounts.google.com", aud: p.get("client_id"), sub: "sub-jane", email: "jane@gmail.com", email_verified: true,
-      name: "Jane Smith", nonce: p.get("nonce"), iat, exp: iat + 3600, ...claims,
-    } });
+    const all = { ...provider.claims, aud: p.get("client_id"), nonce: p.get("nonce"), iat, exp: iat + 3600, ...claims };
+    codes.set(code, { challenge: p.get("code_challenge"), provider, claims: Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) });
     return { code, state: p.get("state") };
   };
+  const discoveryFails = (host) => opts.fail?.discovery === true || (Array.isArray(opts.fail?.discovery) && opts.fail.discovery.includes(host));
   const json = (status, body) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -41,15 +59,14 @@ export function fakeFetch(opts = {}) {
       if (opts.fail?.mail) return json(500, { name: "application_error" });
       return json(200, { id: `mail-${calls.length}` });
     }
-    if (u.host === "accounts.google.com" && u.pathname === "/.well-known/openid-configuration") {
-      return opts.fail?.discovery ? json(503, {}) : json(200, { issuer: "https://accounts.google.com" });
-    }
+    const signin = Object.entries(FAKE_PROVIDERS).find(([, p]) => p.discovery === String(url) || p.token === String(url));
+    if (signin && signin[1].discovery === String(url)) return discoveryFails(signin[0]) ? json(503, {}) : json(200, { issuer: signin[1].claims.iss });
     const form = typeof body === "string" ? Object.fromEntries(new URLSearchParams(body)) : {};
-    if (u.host === "oauth2.googleapis.com" && form.grant_type === "authorization_code") {
+    if (signin && form.grant_type === "authorization_code") {
       const grant = codes.get(form.code);
       codes.delete(form.code);
       const pkce = grant && b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(form.code_verifier ?? ""))) === grant.challenge;
-      if (opts.fail?.exchange || !pkce || form.client_secret !== ENV.SIGNIN_GOOGLE_CLIENT_SECRET) return json(400, { error: "invalid_grant" });
+      if (opts.fail?.exchange || !pkce || grant.provider !== signin[1] || form.client_secret !== signin[1].secret) return json(400, { error: "invalid_grant" });
       return json(200, { id_token: idToken(grant.claims), access_token: "unused", expires_in: 3600 });
     }
     if (u.host === "oauth2.googleapis.com") {

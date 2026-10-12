@@ -23,7 +23,8 @@ export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 
   const clock = { now: NOW };
   // Each harness has its own copy of booking.json, so a test may change its caps.
   const sql = openSql(), ownCfg = structuredClone(cfg);
-  const svc = createBookingService({ sql, storage: alarmStorage(), env: { QUOTA_SALT: SALT, ...ENV, ...over }, cfg: ownCfg, fetch: f.fetch, sleep: async () => {}, now: () => clock.now });
+  const svcEnv = { QUOTA_SALT: SALT, ...ENV, ...over };
+  const svc = createBookingService({ sql, storage: alarmStorage(), env: svcEnv, cfg: ownCfg, fetch: f.fetch, sleep: async () => {}, now: () => clock.now });
   let storeCalls = 0;
   // Like a Durable Object stub: every method is async and results are structured-cloned.
   const stub = new Proxy(svc, { get: (o, k) => async (...a) => { storeCalls++; if (storeDown) throw new Error("DO unreachable"); return structuredClone(await o[k](...a)); } });
@@ -37,7 +38,8 @@ export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 
   };
   for (const [k, v] of Object.entries(over)) if (v === undefined) delete env[k];
   const deps = {
-    content, now: () => clock.now, reserve: async () => ({ ok: true }),
+    // F-004: the Worker reads its sign-in settings from the same booking.json copy as the store.
+    content, cfg: ownCfg, now: () => clock.now, reserve: async () => ({ ok: true }),
     sendEmail: async (from, to, raw) => { alerts.push({ from, to, raw }); },
     booking: () => stub,
   };
@@ -55,21 +57,26 @@ export function harness({ enabled = true, fetchOpts = {}, minute = 1e9, burst = 
   const mcp = async (method, params) => (await (await call("/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: rpc(method, params) })).json());
   const tool = (name, args = {}) => mcp("tools/call", { name, arguments: args }).then((r) => r.result);
   const ticketOf = (url) => new URL(url).searchParams.get("t");
-  const startSignin = (ticket, { headers = {} } = {}) => call("/book/confirm/google", { method: "POST",
+  // F-004: `provider` picks /book/confirm/<provider> and /book/callback/<provider> (Google by default).
+  const startSignin = (ticket, { headers = {}, provider = "google" } = {}) => call(`/book/confirm/${provider}`, { method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, ...headers }, body: `t=${encodeURIComponent(ticket)}` });
   const cookieOf = (res) => res.headers.get("set-cookie")?.match(/__Host-pjv_signin=([^;]*)/)?.[1];
-  const callback = (query, cookie) => call(`/book/callback/google?${new URLSearchParams(query)}`, { headers: cookie ? { cookie: `__Host-pjv_signin=${cookie}` } : {} });
+  const callback = (query, cookie, provider = "google") => call(`/book/callback/${provider}?${new URLSearchParams(query)}`, { headers: cookie ? { cookie: `__Host-pjv_signin=${cookie}` } : {} });
   // Signs in on a confirm_url (as `claims` says) and returns the callback's page, or the start's
-  // page if the ticket started no sign-in.
-  const signInOn = async (url, claims = {}) => {
-    const start = await startSignin(ticketOf(url));
-    if (start.status !== 303) return { res: start, html: await start.text(), start };
+  // page if the ticket started no sign-in. A start that isn't a redirect to a provider is returned as is.
+  const signInOn = async (url, claims = {}, { provider = "google" } = {}) => {
+    const start = await startSignin(ticketOf(url), { provider });
+    const location = start.headers.get("location");
+    if (start.status !== 303 || !/^https:\/\/(accounts\.google\.com|login\.microsoftonline\.com|altimist\.id)\//.test(location)) return { res: start, html: await start.text(), start };
     const cookie = cookieOf(start);
-    const { code, state } = f.authorize(start.headers.get("location"), claims, clock.now);
-    const res = await callback({ code, state }, cookie);
+    const { code, state } = f.authorize(location, claims, clock.now);
+    const res = await callback({ code, state }, cookie, provider);
     return { res, html: await res.text(), start, cookie, code, state };
   };
   const rows = (q, ...b) => sql.exec(q, ...b).toArray();
   const run = (q, ...b) => { sql.exec(q, ...b); };
-  return { call, post, actPost, f, svc, clock, env, alerts, rl, storeCalls: () => storeCalls, cfg: ownCfg, rows, run, mcp, tool, ticketOf, startSignin, cookieOf, callback, signInOn };
+  // F-004: sets (or, with undefined, removes) a secret for the Worker and the store alike, as a
+  // secret change does in production.
+  const secret = (k, v) => { for (const e of [env, svcEnv]) { if (v === undefined) delete e[k]; else e[k] = v; } };
+  return { secret, call, post, actPost, f, svc, sql, clock, env, alerts, rl, storeCalls: () => storeCalls, cfg: ownCfg, rows, run, mcp, tool, ticketOf, startSignin, cookieOf, callback, signInOn };
 }
