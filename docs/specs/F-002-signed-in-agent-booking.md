@@ -330,7 +330,7 @@ F-001's `POST /api/booking` stays, unchanged, as the email form's endpoint until
 
 ## Phases after P1
 
-- **P2, more ways to sign in and better hand-off:** Microsoft (key on tenant plus object ID; email counted only when Microsoft marks it verified) and Altimist ID, as more buttons on the confirm page; MCP URL-mode elicitation on 2026-07-28 connections.
+- **P2, more ways to sign in:** specified in [F-004](F-004-more-sign-in-providers.md) (Microsoft and Altimist ID). MCP URL-mode elicitation is deferred until clients support it.
 - **P3, retire anonymous paths:** remove `/book`'s email form (and F-001's `POST /api/booking` and its email-confirm code) and make `request_intro` require a sign-in. Reading stays anonymous.
 - **P4 (optional), identity providers with agent support (US-6).** Only if and when it's worth doing:
   - **Add a new identity provider built for agents** as another sign-in on the confirm page, or
