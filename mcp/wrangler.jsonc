@@ -13,7 +13,8 @@
     { "pattern": "patrickjv.com/api/booking*", "zone_name": "patrickjv.com" },
     // F-002: the sign-in confirm page and Google's return. /book itself stays a static asset.
     { "pattern": "patrickjv.com/book/confirm*", "zone_name": "patrickjv.com" },
-    { "pattern": "patrickjv.com/book/callback*", "zone_name": "patrickjv.com" }
+    { "pattern": "patrickjv.com/book/callback*", "zone_name": "patrickjv.com" },
+    { "pattern": "patrickjv.com/.well-known/microsoft-identity-association.json", "zone_name": "patrickjv.com" }
   ],
   // Workers Logs: ONLY the handler's own console events (redacted failure and quota-refusal events:
   // subsystem or cap name, no personal data). Invocation logs are off: they would record every
@@ -43,6 +44,14 @@
   // https://patrickjv.com/book/callback/google:
   //   wrangler secret put SIGNIN_GOOGLE_CLIENT_ID -c mcp/wrangler.jsonc
   //   wrangler secret put SIGNIN_GOOGLE_CLIENT_SECRET -c mcp/wrangler.jsonc
+  // F-004: Microsoft (the multi-tenant Entra app "patrickjv.com", redirect URI
+  // https://patrickjv.com/book/callback/microsoft; its secret's expiry goes in booking.json as
+  // signin.microsoftSecretExpires) and Altimist ID (redirect URI .../book/callback/altimist). A
+  // provider is offered only once it is also listed in booking.json's signin.providers (or trial).
+  //   wrangler secret put SIGNIN_MICROSOFT_CLIENT_ID -c mcp/wrangler.jsonc   also served at /.well-known/microsoft-identity-association.json
+  //   wrangler secret put SIGNIN_MICROSOFT_CLIENT_SECRET -c mcp/wrangler.jsonc
+  //   wrangler secret put SIGNIN_ALTIMIST_CLIENT_ID -c mcp/wrangler.jsonc
+  //   wrangler secret put SIGNIN_ALTIMIST_CLIENT_SECRET -c mcp/wrangler.jsonc
   // Booking quota keys are HMACs with QUOTA_SALT too.
   // Email Routing send_email can only deliver to the account's verified destination addresses
   // (free plan), so strangers can never use it to email anyone else. No destination_address here:

@@ -11,8 +11,9 @@ import { agentData } from "../lib/agent-data.mjs";
 // Single source for the server version: the MCP Registry entry. Bump it there and both agree.
 import serverJson from "./server.json" with { type: "json" };
 import bookingJson from "../booking.json" with { type: "json" };
-import { validateConfig, withOffset } from "./booking-config.js";
+import { validateConfig, withOffset, PROVIDER_ORDER, PROVIDER_NAMES, launchedProviders, trialProviders, enabledProviders, signInPhrase } from "./booking-config.js";
 import { capAlertEmail } from "./booking-email.js";
+import { PROVIDERS } from "./booking-signin.js";
 import { bookingGuide } from "../lib/booking-guide.mjs";
 
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18"];
@@ -64,7 +65,8 @@ const ICONS = [
 ];
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
-export function tools() {
+// `cfg`: booking.json, whose launched sign-in providers the booking copy names (F-004).
+export function tools(cfg = BOOKING_CONFIG) {
   const empty = { type: "object", properties: {}, additionalProperties: false };
   return [
     { name: "get_profile", title: "Profile", description: "Patrick Vieira's public profile (platform engineer, London — not the footballer): name, headline, tagline, location and links.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
@@ -118,7 +120,7 @@ export function tools() {
       name: "book_meeting",
       title: "Book a meeting",
       description:
-        `Step 4 of the booking guide (get_booking_guide). Ask to book a time with Patrick Vieira for a person: returns a confirm_url to give them. Nothing is reserved yet, and nothing is emailed: the call is booked, in their name, when they open the link and sign in with Google (within ${BOOKING_CONFIG.requestMinutes} minutes). Don't send their name or email address: those come from their sign-in. Only use this when the person has asked for this meeting at this time. Do not retry on error. Then use get_booking_status. Privacy: until the person signs in, the site keeps only the type, time and note; see https://patrickjv.com/privacy.`,
+        `Step 4 of the booking guide (get_booking_guide). Ask to book a time with Patrick Vieira for a person: returns a confirm_url to give them. Nothing is reserved yet, and nothing is emailed: the call is booked, in their name, when they open the link and sign in with ${signInPhrase(launchedProviders(cfg))} (within ${cfg.requestMinutes} minutes). Don't send their name or email address: those come from their sign-in. Only use this when the person has asked for this meeting at this time. Do not retry on error. Then use get_booking_status. Privacy: until the person signs in, the site keeps only the type, time and note; see https://patrickjv.com/privacy.`,
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -462,7 +464,7 @@ async function callTool(name, args, ctx) {
       return { content: [{ type: "text", text: "Thanks — your introduction has been sent to Patrick. He replies personally when he can; there is no automated follow-up." }] };
     }
     case "get_booking_guide": {
-      const guide = bookingGuide(ctx.content, BOOKING_CONFIG);
+      const guide = bookingGuide(ctx.content, ctx.cfg);
       return { content: [{ type: "text", text: guide }], structuredContent: { guide } };
     }
     case "list_meeting_types": return result(meetingTypes());
@@ -487,7 +489,7 @@ function bookingResult(r) {
 // the read tools stay listed and working, so agents can still research and check a link's status.
 const BOOKING_WRITE_TOOLS = new Set(["book_meeting", "cancel_booking"]);
 const INSTRUCTIONS = "Public profile of Patrick Vieira, a platform engineer in London (not the footballer). Use get_profile, list_work, list_skills and list_faq for facts. Use request_intro only when a person has asked to contact him and approved the message.";
-const BOOKING_INSTRUCTIONS = " To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it by signing in with Google on the link it returns.";
+const bookingInstructions = (cfg) => ` To book a meeting, use list_meeting_types and get_availability, then book_meeting only when a person has asked for that meeting; they confirm it by signing in with ${signInPhrase(launchedProviders(cfg))} on the link it returns.`;
 // Tools that take no arguments: a non-empty arguments object is a protocol error.
 const NO_ARGUMENTS = new Set(["get_profile", "list_work", "list_skills", "list_faq", "get_booking_guide", "list_meeting_types"]);
 
@@ -503,8 +505,14 @@ export const BOOKING_SECRETS = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOO
   ...BOOKING_CONFIG.calendars.filter((c) => c.blocks && c.idSecret).map((c) => c.idSecret)];
 // F-002: the sign-in client's secrets (its own Google Cloud project, D4). Whether Google answers
 // is health's signinReady.
-export const SIGNIN_SECRETS = ["SIGNIN_GOOGLE_CLIENT_ID", "SIGNIN_GOOGLE_CLIENT_SECRET"];
-export const signinConfigured = (env) => SIGNIN_SECRETS.every((k) => typeof env[k] === "string" && env[k] !== "");
+export const SIGNIN_SECRETS = PROVIDERS.google.secrets;
+// F-004 (D7): a provider is ready when its client ID and secret are set (reachability is health's,
+// and never hides a button); usable (a sign-in may start or finish) when also launched or on
+// trial. Buttons and request admission go by the launched providers that are ready.
+export const providerReady = (env, p) => PROVIDERS[p].secrets.every((k) => typeof env[k] === "string" && env[k] !== "");
+export const providerUsable = (env, cfg, p) => enabledProviders(cfg).includes(p) && providerReady(env, p);
+export const readyProviders = (env, cfg) => PROVIDER_ORDER.filter((p) => launchedProviders(cfg).includes(p) && providerReady(env, p));
+export const signinConfigured = (env) => providerReady(env, "google");
 export function bookingConfigured(env) {
   return saltConfigured(env) && BOOKING_SECRETS.every((k) => typeof env[k] === "string" && env[k] !== "")
     && typeof env.BOOKING?.idFromName === "function" && typeof env.BOOKING?.get === "function";
@@ -552,9 +560,9 @@ export function validateBooking(args) {
 
 // F-002 (D5): a booking request takes the type, the start and an optional note. The guest's name
 // and address come only from their sign-in, so an agent is never given a field to put one in.
-export function validateRequest(args) {
+export function validateRequest(args, cfg = BOOKING_CONFIG) {
   if (isPlainObject(args) && ("name" in args || "email" in args)) {
-    return { error: "don't send name or email: the person's name and email address come from their Google sign-in. Send only type, start and an optional note" };
+    return { error: `don't send name or email: the person's name and email address come from their ${signInPhrase(launchedProviders(cfg))} sign-in. Send only type, start and an optional note` };
   }
   const bad = fieldsError(args, ["type", "start", "note"]);
   if (bad) return { error: bad };
@@ -623,7 +631,8 @@ const localSlot = (s) => ({ start: withOffset(s.start, TZ), end: withOffset(s.en
 
 const bookingOps = {
   // `enabled` lets the /book page and the homepage's WebMCP script stay hidden until launch.
-  types: (ctx) => ({ status: 200, body: { enabled: bookingEnabled(ctx.env), types: meetingTypes() } }),
+  // F-004: `signin_providers`, the launched providers that are ready, for /book's and WebMCP's buttons.
+  types: (ctx) => ({ status: 200, body: { enabled: bookingEnabled(ctx.env), types: meetingTypes(), signin_providers: readyProviders(ctx.env, ctx.cfg) } }),
 
   async availability(ctx, args) {
     const { value: v, error } = validateAvailability(args);
@@ -657,9 +666,11 @@ const bookingOps = {
   // reserved or emailed; the person books by signing in on confirm_url.
   async request(ctx, args, source) {
     if (!bookingEnabled(ctx.env)) return failed("booking_disabled");
-    const { value: v, error } = validateRequest(args);
+    const { value: v, error } = validateRequest(args, ctx.cfg);
     if (error) return invalid(error);
-    if (!bookingConfigured(ctx.env) || !signinConfigured(ctx.env)) { logFailure("config"); return failed("unavailable"); }
+    if (!bookingConfigured(ctx.env)) { logFailure("config"); return failed("unavailable"); }
+    // F-004 (D7): at least one launched provider must be ready to sign in with.
+    if (!readyProviders(ctx.env, ctx.cfg).length) { logFailure("signin_config"); return bookingFailure({ error: "unavailable", next_step: NEXT_STEP.noSignin }); }
     return viaStore(ctx, "booking_store", async (store) => {
       const r = await store.signinRequest({ ...v, source }, await quotaHash(ctx.env, "booking-ip", ctx.ipKey));
       if (r.error) {
@@ -667,7 +678,7 @@ const bookingOps = {
         return bookingFailure(r);
       }
       const expires = withOffset(r.link_expires, TZ);
-      return { status: 202, body: { booking_id: r.booking_id, status: r.status, confirm_url: r.confirm_url, link_expires: expires, next_step: NEXT_STEP.book(expires) } };
+      return { status: 202, body: { booking_id: r.booking_id, status: r.status, confirm_url: r.confirm_url, link_expires: expires, next_step: NEXT_STEP.book(expires, ctx.cfg) } };
     });
   },
 
@@ -690,8 +701,7 @@ const bookingOps = {
       const { why, ...r } = await store.cancel(id, await quotaHash(ctx.env, "booking-ip", ctx.ipKey));
       if (r.error) return bookingFailure(r.error === "not_cancellable" ? { ...r, next_step: NEXT_STEP.notCancellable[why] } : r);
       if (r.confirm_url) {
-        const expires = withOffset(r.link_expires, TZ);
-        return { status: 200, body: { status: r.status, confirm_url: r.confirm_url, link_expires: expires, next_step: NEXT_STEP.cancelLink(expires) } };
+        return { status: 200, body: { status: r.status, confirm_url: r.confirm_url, link_expires: withOffset(r.link_expires, TZ), next_step: NEXT_STEP.cancelLink(r.provider) } };
       }
       return { status: 200, body: { ...r, next_step: r.cancellation ? NEXT_STEP.cancelEmailed : NEXT_STEP.withdrawn } };
     });
@@ -700,7 +710,9 @@ const bookingOps = {
 
 // F-002 (US-7): every booking result says what to do next, in the booking guide's words.
 const NEXT_STEP = {
-  book: (expires) => `Give this link to the person you're booking for. They need to sign in with Google before ${expires} to book the call. Then call get_booking_status.`,
+  book: (expires, cfg) => `Give this link to the person you're booking for. They need to sign in with ${signInPhrase(launchedProviders(cfg))} before ${expires} to book the call. Then call get_booking_status.`,
+  // F-004 (D7): no launched provider is ready, so no request is made.
+  noSignin: "Sign-in isn't available just now, so nothing was made. Try again in a few minutes, or your person can book at https://patrickjv.com/book with email instead.",
   status: {
     pending_confirmation: "Not finished yet: the person may still be signing in (or confirming from their email), or the site may be finishing the booking. Wait and check again; don't book again.",
     confirmed: "The call is booked. Google has sent the invite to the person's email address.",
@@ -709,7 +721,8 @@ const NEXT_STEP = {
     cancelled: "This booking was withdrawn or cancelled. Nothing more to do.",
   },
   withdrawn: "The request is withdrawn: nothing was booked, and its link no longer works.",
-  cancelLink: (expires) => `Give this link to the person the call is booked for. They need to sign in with Google before ${expires} to cancel it; until then it stays booked.`,
+  // F-004 (US-3): only the account the booking was made with can cancel it.
+  cancelLink: (provider) => `Give this link to your person: they sign in with the same ${PROVIDER_NAMES[provider] ?? provider} account they booked with to cancel.`,
   cancelEmailed: "A cancellation email was sent to the person. They cancel using the link in it; until then it stays booked.",
   notCancellable: {
     finishing: "This booking is still being finished. Check again in a few minutes, then cancel if needed.",
@@ -726,16 +739,21 @@ const NEXT_STEP = {
 // launch. Booleans only.
 // F-002: signinReady says sign-in would work: its client ID and secret set, and Google's discovery
 // document reachable (checked in the store, at most once a minute).
+// F-004: providers, for each provider launched or on trial, {ready: secrets set, reachable: its
+// discovery document fetched within the last minute (by the store)}; "off" for the others.
 async function bookingReadiness(env, deps) {
-  let ready = false, signin = false;
+  let ready = false, signin = false, providers = null;
   if (bookingConfigured(env)) {
     try {
       const h = await deps.booking().health();
       ready = h.google === true && h.email === true;
       signin = h.signin === true;
+      providers = h.providers;
     } catch { logFailure("booking_store"); }
   }
-  return { bookingEnabled: bookingEnabled(env), bookingReady: ready, signinReady: signin };
+  const enabled = enabledProviders(deps.cfg ?? BOOKING_CONFIG);
+  providers ??= Object.fromEntries(PROVIDER_ORDER.map((p) => [p, enabled.includes(p) ? { ready: providerReady(env, p), reachable: false } : "off"]));
+  return { bookingEnabled: bookingEnabled(env), bookingReady: ready, signinReady: signin, providers };
 }
 
 // Patrick's alert when the global cap is first reached (the store reports that once a day): to
@@ -876,25 +894,29 @@ async function doLink(ctx, token) {
   return linkError(r.error);
 }
 
-// ---- F-002: the confirm page and the Google sign-in round trip (/book/confirm*, /book/callback*) ----
+// ---- F-002: the confirm page and the sign-in round trip (/book/confirm*, /book/callback*) ----
 // GET /book/confirm?t= shows what a ticket is for and its state (changing nothing, except settling
-// a request whose slot has gone); its button POSTs to /book/confirm/google, which sets the sign-in
-// cookie and redirects to Google; Google returns to /book/callback/google. Copy is in the spec's
-// "Instructions for agents and people"; public copy is approved by Patrick before release.
+// a request whose slot has gone); its buttons POST to /book/confirm/<provider>, which sets the
+// sign-in cookie and redirects to the provider, which returns to /book/callback/<provider>
+// (F-004: Google, Microsoft or Altimist ID). Copy is in the specs' "Instructions for agents and
+// people"; public copy is approved by Patrick before release.
 const SIGNIN_COOKIE = "__Host-pjv_signin";
 const COOKIE_ATTRS = "Secure; HttpOnly; SameSite=Lax; Path=/";
+const SIGNIN_PATH = new RegExp(`^/book/(confirm|callback)/(${PROVIDER_ORDER.join("|")})$`);
 // Fills in the meeting in the visitor's own time zone (the server only knows London's).
 const LOCAL_TIME_SCRIPT = 'document.querySelectorAll("[data-start]").forEach(function (el) { var f = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }); el.textContent = "In your time zone: " + f.format(new Date(el.getAttribute("data-start"))) + "."; el.hidden = false; });';
-let confirmCsp = null;
-async function confirmPolicy() {
-  if (!confirmCsp) {
+let confirmHashes = null;
+async function confirmPolicy(cfg) {
+  if (!confirmHashes) {
     const hash = async (s) => `'sha256-${b64(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))))}'`;
-    // form-action covers the redirect the sign-in form's POST answers with.
-    confirmCsp = `default-src 'none'; style-src ${await hash(ACT_CSS)}; script-src ${await hash(LOCAL_TIME_SCRIPT)}; font-src 'self'; form-action 'self' https://accounts.google.com; base-uri 'none'; frame-ancestors 'none'`;
+    confirmHashes = { style: await hash(ACT_CSS), script: await hash(LOCAL_TIME_SCRIPT) };
   }
-  return confirmCsp;
+  // form-action covers the redirect the sign-in form's POST answers with: to any enabled
+  // provider (F-004: launched or on trial, so a trial sign-in works from the real page).
+  const hosts = enabledProviders(cfg).map((p) => PROVIDERS[p].host).join(" ");
+  return `default-src 'none'; style-src ${confirmHashes.style}; script-src ${confirmHashes.script}; font-src 'self'; form-action 'self' ${hosts}; base-uri 'none'; frame-ancestors 'none'`;
 }
-const page = async (status, title, paragraphs, form = "", headers = {}) => actPage(status, title, paragraphs, form, { csp: await confirmPolicy(), script: LOCAL_TIME_SCRIPT, headers });
+const page = async (status, title, paragraphs, form = "", headers = {}, cfg = BOOKING_CONFIG) => actPage(status, title, paragraphs, form, { csp: await confirmPolicy(cfg), script: LOCAL_TIME_SCRIPT, headers });
 // "Mon 19 Oct 2026, 11:00 BST": a link's expiry, in London time.
 function whenAt(iso) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" })
@@ -909,15 +931,38 @@ const DECLINED = {
   unavailable: `Google couldn't add this call, so nothing was booked. Ask your assistant to find another time, or go to ${BOOK_LINK}.`,
 };
 const NEW_CANCEL_LINK = "Ask your assistant for a new cancel link, or use the cancel link in your booking email.";
-// The page for a ticket's state (peekTicket's view), as the confirm page and the sign-in results show it.
-async function ticketPage(view, token) {
+// F-004: Altimist ID's self-service sign-up, which returns to `returnTo` (its origin allow-listed
+// for the app patrickjv-com).
+const CONFIRM_PAGE = "https://patrickjv.com/book/confirm";
+const altimistSignup = (returnTo) => `https://altimist.id/signup/self-service?app_id=patrickjv-com&return_to=${encodeURIComponent(returnTo)}`;
+// The page for a ticket's state (peekTicket's view), as the confirm page and the sign-in results
+// show it. F-004: `pc` is {env, cfg, try, refused}: the buttons are the launched providers that are
+// ready (plus a trial provider named by ?try=); `refused` says a start was just refused.
+async function ticketPage(view, token, pc = {}) {
+  const cfg = pc.cfg ?? BOOKING_CONFIG;
+  const page2 = (status, title, paragraphs, form = "") => page(status, title, paragraphs, form, {}, cfg);
   const type = BOOKING_CONFIG.meetingTypes.find((t) => t.id === view.type)?.title ?? view.type;
   const meeting = () => [para(`${esc(type)} with Patrick Vieira, ${esc(when(view.start, view.end))}.`), `<p class="muted" data-start="${esc(view.start)}" hidden></p>`];
-  const button = (label) => `<form method="post" action="/book/confirm/google">\n<input type="hidden" name="t" value="${esc(token)}">\n<button type="submit">${esc(label)}</button>\n</form>\n`;
+  const button = (p, label) => `<form method="post" action="/book/confirm/${p}">\n<input type="hidden" name="t" value="${esc(token)}">\n<button type="submit">${esc(label)}</button>\n</form>\n`;
   const expiry = () => `<p class="muted">This link works until ${esc(whenAt(view.expires_at))}.</p>`;
+  const ready = (p) => pc.env && providerReady(pc.env, p);
+  if (view.purpose === "book" && view.state === "open") {
+    const shown = PROVIDER_ORDER.filter((p) => ready(p) && (launchedProviders(cfg).includes(p) || (trialProviders(cfg).includes(p) && pc.try === p)));
+    if (!shown.length) return page2(503, "Book your call", [...meeting(), para(`Sign-in isn't available just now. Try again in a few minutes, or book at ${BOOK_LINK} with email instead.`)]);
+    const here = `${CONFIRM_PAGE}?t=${token}${pc.try ? `&try=${pc.try}` : ""}`;
+    const forms = shown.map((p) => button(p, `Sign in with ${PROVIDER_NAMES[p]} to book`)
+      + (p === "altimist" ? `<p class="muted">No Altimist ID? <a href="${esc(altimistSignup(here))}">Create one</a></p>\n` : "")).join("");
+    return page2(200, "Book your call", [...meeting(), ...(pc.refused ? [para("That sign-in isn't available just now. Choose another.")] : []),
+      para(`Sign in with ${esc(signInPhrase(shown))} to book this call. We use your name and email address from the account you sign in with for the invite, and nothing else.`), expiry()], forms);
+  }
+  if (view.purpose === "cancel" && view.state === "open") {
+    // Only the booking's own provider can cancel it, so only it is offered (launched or on trial).
+    const name = esc(PROVIDER_NAMES[view.provider] ?? view.provider);
+    if (!providerUsable(pc.env ?? {}, cfg, view.provider)) return page2(503, "Cancel your call", [...meeting(), para(`${name} sign-in isn't available just now. Try again in a few minutes, or use the cancel link in your 'Booked' email.`)]);
+    return page2(200, "Cancel your call", [...meeting(), para(`You booked with ${name}. Sign in with ${name} to cancel this call. Only the person it's booked for can cancel it.`), expiry()], button(view.provider, `Sign in with ${PROVIDER_NAMES[view.provider]} to cancel`));
+  }
   if (view.purpose === "book") {
     switch (view.state) {
-      case "open": return page(200, "Book your call", [...meeting(), para("Sign in with Google to book this call. We use your name and email address from Google for the invite, and nothing else."), expiry()], button("Sign in with Google to book"));
       case "too_many": return page(429, "Too many tries", [para("Too many tries. Ask your assistant for a new link.")]);
       case "declined": return page(409, "Not booked", [...meeting(), para(DECLINED[view.reason] ?? DECLINED.slot_taken)]);
       case "confirming": return page(202, "Being finished", [...meeting(), para("Your call is being finished. Check your email in a few minutes, and don't book again.")]);
@@ -928,7 +973,6 @@ async function ticketPage(view, token) {
   }
   if (view.purpose === "cancel") {
     switch (view.state) {
-      case "open": return page(200, "Cancel your call", [...meeting(), para("Sign in with Google to cancel this call. Only the person it's booked for can cancel it."), expiry()], button("Sign in with Google to cancel"));
       case "too_many": return page(429, "Too many tries", [para(`Too many tries. ${NEW_CANCEL_LINK}`)]);
       case "still_booked": return page(410, "Link expired", [...meeting(), para(`This call is still booked. ${NEW_CANCEL_LINK}`)]);
       case "started": return page(410, "Already started", [para("This call has already started, so it can't be cancelled here.")]);
@@ -946,6 +990,13 @@ const notFinished = (what) => page(400, "Sign-in didn't finish", [para(`${what} 
 async function signinResult(r) {
   const withCookie = async (resPromise) => { const res = await resPromise; res.headers.set("set-cookie", CLEAR_COOKIE["set-cookie"]); return res; };
   const nothing = r.purpose === "cancel" ? "Nothing has changed." : "Nothing was booked.";
+  // F-004: failures of the provider just used name it.
+  const name = esc(PROVIDER_NAMES[r.provider] ?? "");
+  if (r.error === "address") {
+    const next = r.purpose === "cancel" ? "Sign in with the account you booked with, or use the cancel link in your 'Booked' email." : `Sign in another way, or book at ${BOOK_LINK} with email instead.`;
+    return page(403, "Sign-in didn't finish", [para(`${name} couldn't confirm this address belongs to you. ${next}`)], "", CLEAR_COOKIE);
+  }
+  if (r.error === "provider_unavailable") return page(503, "Sign-in isn't available", [para(`${name} sign-in isn't available just now. ${nothing} Open the link from your assistant again to try once more, before it expires.`)], "", CLEAR_COOKIE);
   if (r.result === "confirmed") return page(200, "Booked", [para("Google Calendar will send you an invite from hello@patrickjv.com with the Google Meet link. I've also emailed you a link to cancel if you need to.")], "", CLEAR_COOKIE);
   if (r.result === "cancelled") return page(200, "Cancelled", [para("Cancelled. Google has told everyone invited.")], "", CLEAR_COOKIE);
   if (r.result === "confirming") return page(202, "Your call is being finished", [para("Your call is being finished. Check your email in a few minutes, and don't book again.")], "", CLEAR_COOKIE);
@@ -971,8 +1022,8 @@ async function signinResult(r) {
 }
 
 async function handleSigninHttp(request, env, deps, url) {
-  const routes = { "/book/confirm": "GET", "/book/confirm/google": "POST", "/book/callback/google": "GET" };
-  const method = routes[url.pathname];
+  const [, kind, provider] = url.pathname.match(SIGNIN_PATH) ?? [];
+  const method = kind === "confirm" ? "POST" : "GET";
   if (request.method !== method) return new Response("Method not allowed", { status: 405, headers: { ...SECURITY_HEADERS, allow: method } });
   const post = method === "POST";
   // The sign-in POST sets a cookie: it must come from this exact origin (a missing Origin too).
@@ -987,25 +1038,32 @@ async function handleSigninHttp(request, env, deps, url) {
   } catch { logFailure("ratelimit"); return signinUnavailable(); }
 
   const store = () => deps.booking();
+  const cfg = deps.cfg ?? BOOKING_CONFIG;
+  // F-004: ?try=<provider> shows a provider on trial; ?unavailable=1 follows a refused start.
+  const q = url.searchParams;
+  const pc = { env, cfg, try: trialProviders(cfg).includes(q.get("try")) ? q.get("try") : null, refused: q.get("unavailable") === "1" };
   try {
     if (url.pathname === "/book/confirm") {
-      const t = url.searchParams.get("t");
-      if (!TOKEN.test(t ?? "")) return ticketPage({ state: "unknown" });
-      return ticketPage(await store().confirmPage(t), t);
+      const t = q.get("t");
+      if (!TOKEN.test(t ?? "")) return ticketPage({ state: "unknown" }, null, pc);
+      return ticketPage(await store().confirmPage(t), t, pc);
     }
     if (post) {
       let raw;
       try { raw = await readCapped(request, LIMITS.maxBodyBytes); } catch { raw = null; }
       const t = raw === null ? null : new URLSearchParams(raw).get("t");
-      if (!TOKEN.test(t ?? "")) return ticketPage({ state: "unknown" });
-      const r = await store().startSignin(t);
-      if (r.error === "unavailable") return signinUnavailable();
-      if (r.error) return r.error === "too_many" ? ticketPage({ ...r.view, state: "too_many" }, t) : ticketPage(r.view, t);
+      if (!TOKEN.test(t ?? "")) return ticketPage({ state: "unknown" }, null, pc);
+      const r = await store().startSignin(t, provider);
+      // F-004: a provider not enabled or not ready: back to the request's own confirm page, which
+      // says what to do. Nothing is created or counted.
+      if (r.error === "unavailable" && r.view.state === "open") {
+        return new Response(null, { status: 303, headers: { ...SECURITY_HEADERS, location: `/book/confirm?t=${t}&unavailable=1`, "cache-control": "no-store" } });
+      }
+      if (r.error) return r.error === "too_many" ? ticketPage({ ...r.view, state: "too_many" }, t, pc) : ticketPage(r.view, t, pc);
       return new Response(null, { status: 303, headers: { ...SECURITY_HEADERS, location: r.location, "set-cookie": `${SIGNIN_COOKIE}=${r.cookie}; ${COOKIE_ATTRS}; Max-Age=600`, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
     }
     const cookie = (request.headers.get("cookie") || "").match(new RegExp(`(?:^|;\\s*)${SIGNIN_COOKIE}=([^;]*)`))?.[1] ?? null;
-    const q = url.searchParams;
-    return signinResult(await store().callback({ state: q.get("state"), cookie, code: q.get("code"), error: q.get("error") }));
+    return signinResult(await store().callback({ provider, state: q.get("state"), cookie, code: q.get("code"), error: q.get("error") }));
   } catch {
     logFailure("booking_store");
     return signinUnavailable();
@@ -1054,7 +1112,7 @@ async function handleBookingHttp(request, env, deps, url) {
     try { body = media === "application/json" ? JSON.parse(raw) : Object.fromEntries(new URLSearchParams(raw)); } catch { return err(400, "invalid_input", "The request body isn't valid JSON."); }
   }
 
-  const ctx = { env, ipKey, booking: deps.booking, sendEmail: deps.sendEmail, now: deps.now() };
+  const ctx = { env, ipKey, booking: deps.booking, sendEmail: deps.sendEmail, now: deps.now(), cfg: deps.cfg ?? BOOKING_CONFIG };
   if (isAct) return post ? doLink(ctx, isPlainObject(body) ? body.t : null) : showLink(ctx, url.searchParams.get("t"));
   let r;
   if (url.pathname === "/api/booking/types") r = bookingOps.types(ctx);
@@ -1078,8 +1136,16 @@ async function handleBookingHttp(request, env, deps, url) {
 export async function handle(request, env, deps) {
   const url = new URL(request.url);
   const text = (body, status, headers = {}) => new Response(body, { status, headers: { "content-type": "text/plain; charset=utf-8", ...SECURITY_HEADERS, ...headers } });
+  const cfg = deps.cfg ?? BOOKING_CONFIG;
   if (url.pathname === "/api/booking" || url.pathname.startsWith("/api/booking/")) return handleBookingHttp(request, env, deps, url);
-  if (url.pathname === "/book/confirm" || url.pathname === "/book/confirm/google" || url.pathname === "/book/callback/google") return handleSigninHttp(request, env, deps, url);
+  if (url.pathname === "/book/confirm" || SIGNIN_PATH.test(url.pathname)) return handleSigninHttp(request, env, deps, url);
+  // F-004 (D5): publisher-domain verification for the Microsoft app, once its client ID is set.
+  if (url.pathname === "/.well-known/microsoft-identity-association.json") {
+    if (request.method !== "GET" && request.method !== "HEAD") return text("Method not allowed", 405, { allow: "GET, HEAD" });
+    const id = env.SIGNIN_MICROSOFT_CLIENT_ID;
+    if (typeof id !== "string" || id === "") return text("Not found", 404);
+    return new Response(JSON.stringify({ associatedApplications: [{ applicationId: id }] }), { status: 200, headers: { "content-type": "application/json", ...SECURITY_HEADERS } });
+  }
   if (url.pathname !== "/mcp") return text("Not found", 404);
 
   // Browsers always send Origin on cross-origin requests; server-side MCP clients send none.
@@ -1149,7 +1215,7 @@ export async function handle(request, env, deps) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "patrickjv.com", title: "Patrick Vieira — platform engineer", version: SERVER_VERSION, websiteUrl: "https://patrickjv.com/", icons: ICONS },
           // F-002 (US-7): the whole booking guide, for clients that show instructions to their model.
-          instructions: INSTRUCTIONS + (bookingEnabled(env) ? `${BOOKING_INSTRUCTIONS}\n\n${bookingGuide(deps.content, BOOKING_CONFIG)}` : ""),
+          instructions: INSTRUCTIONS + (bookingEnabled(env) ? `${bookingInstructions(cfg)}\n\n${bookingGuide(deps.content, cfg)}` : ""),
         });
       }
       case "ping":
@@ -1159,7 +1225,7 @@ export async function handle(request, env, deps) {
       case "patrickjv/health":
         return ok({ ...introReadiness(env), ...(await bookingReadiness(env, deps)) });
       case "tools/list":
-        return ok({ tools: bookingEnabled(env) ? tools() : tools().filter((t) => !BOOKING_WRITE_TOOLS.has(t.name)) });
+        return ok({ tools: bookingEnabled(env) ? tools(cfg) : tools(cfg).filter((t) => !BOOKING_WRITE_TOOLS.has(t.name)) });
       case "tools/call": {
         if (typeof params.name !== "string") return rpcError(msg.id, -32602, "tools/call requires params.name");
         const args = "arguments" in params ? params.arguments : {};
@@ -1167,7 +1233,7 @@ export async function handle(request, env, deps) {
         if (BOOKING_WRITE_TOOLS.has(params.name) && !bookingEnabled(env)) return ok(bookingResult(failed("booking_disabled")));
         if (NO_ARGUMENTS.has(params.name) && Object.keys(args).length) return rpcError(msg.id, -32602, `${params.name} takes no arguments`);
         const result = await callTool(params.name, args, {
-          env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve, booking: deps.booking,
+          env, ipKey, content: deps.content, now: deps.now(), sendEmail: deps.sendEmail, reserve: deps.reserve, booking: deps.booking, cfg,
         });
         if (!result) return rpcError(msg.id, -32602, `Unknown tool: ${params.name}`);
         return ok(result);

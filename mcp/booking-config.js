@@ -61,7 +61,31 @@ export function validateConfig(cfg) {
     if ("id" in c && (!isText(c.id) || c.id.includes("@"))) fail(`${at}.id`, "must be non-empty and not an email address (put those in a Worker secret named by idSecret)");
     if ("idSecret" in c && !SECRET_NAME.test(c.idSecret)) fail(`${at}.idSecret`, "must name a Worker secret (UPPER_SNAKE_CASE)");
   });
+
+  // F-004 (D7): the launched sign-in providers (Google first) and those on trial. Both optional.
+  if ("signin" in cfg) {
+    const s = cfg.signin;
+    if (!isObject(s)) fail("signin", "must be an object");
+    const list = (x) => Array.isArray(x) && new Set(x).size === x.length && x.every((p) => PROVIDER_ORDER.includes(p));
+    if ("providers" in s && !(list(s.providers) && s.providers[0] === "google"))
+      fail("signin.providers", `must be a list of distinct providers from ${PROVIDER_ORDER.join(", ")}, starting with "google"`);
+    if ("trial" in s && !(list(s.trial) && s.trial.every((p) => p !== "google" && !launchedProviders(cfg).includes(p))))
+      fail("signin.trial", "must be a list of distinct providers from microsoft, altimist, none of them in signin.providers");
+  }
   return cfg;
+}
+
+// F-004: sign-in providers, always shown and named in this order (D7).
+export const PROVIDER_ORDER = ["google", "microsoft", "altimist"];
+export const PROVIDER_NAMES = { google: "Google", microsoft: "Microsoft", altimist: "Altimist ID" };
+export const launchedProviders = (cfg) => cfg.signin?.providers ?? ["google"];
+export const trialProviders = (cfg) => cfg.signin?.trial ?? [];
+// Launched or on trial: a sign-in may start and finish with these.
+export const enabledProviders = (cfg) => PROVIDER_ORDER.filter((p) => launchedProviders(cfg).includes(p) || trialProviders(cfg).includes(p));
+// "Google", "Google or Microsoft", "Google, Microsoft or Altimist ID".
+export function signInPhrase(providers) {
+  const names = PROVIDER_ORDER.filter((p) => providers.includes(p)).map((p) => PROVIDER_NAMES[p]);
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names.at(-1)}` : names.join("");
 }
 
 // Zone maths with Intl only (proven by spike S1, docs/specs/F-001-spikes/tz-slots.mjs).

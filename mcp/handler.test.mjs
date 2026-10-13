@@ -574,12 +574,14 @@ test("failures and quota refusals are logged as redacted events naming the subsy
 
 // patrickjv/health: a read-only readiness signal for request_intro (smoke --mcp requires introReady).
 const health = async (h, opts) => (await (await h.call(rpc("patrickjv/health"), opts)).json());
-const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits", "bookingEnabled", "bookingReady", "signinReady"]; // signinReady: F-002
+const HEALTH_KEYS = ["introReady", "salt", "email", "quota", "rateLimits", "bookingEnabled", "bookingReady", "signinReady", "providers"]; // signinReady: F-002; providers: F-004
 
 test("patrickjv/health: only booleans; introReady when salt, email, quota and rate limits are all configured", async () => {
   const r = await health(harness());
   // No booking configuration in this harness: booking is off and not ready (mcp/booking-api.test.mjs covers it).
-  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false, signinReady: false });
+  // F-004: providers, Google's readiness with nothing reachable checked (the store isn't asked).
+  assert.deepEqual(r.result, { introReady: true, salt: true, email: true, quota: true, rateLimits: true, bookingEnabled: false, bookingReady: false, signinReady: false,
+    providers: { google: { ready: false, reachable: false }, microsoft: "off", altimist: "off" } });
   const broken = [
     ["salt", (h) => { delete h.env.QUOTA_SALT; }], ["salt", (h) => { h.env.QUOTA_SALT = "x".repeat(31); }],
     ["email", (h) => { delete h.env.EMAIL; }], ["email", (h) => { delete h.env.INTRO_TO_ADDRESS; }], ["email", (h) => { h.env.INTRO_FROM = ""; }],
@@ -590,7 +592,7 @@ test("patrickjv/health: only booleans; introReady when salt, email, quota and ra
     breakIt(h);
     const res = (await health(h)).result;
     assert.deepEqual(Object.keys(res), HEALTH_KEYS, key);
-    for (const k of HEALTH_KEYS) assert.equal(typeof res[k], "boolean", `${key}: ${k}`);
+    for (const k of HEALTH_KEYS.filter((k) => k !== "providers")) assert.equal(typeof res[k], "boolean", `${key}: ${k}`);
     assert.equal(res[key], false, key);
     assert.equal(res.introReady, false, `${key}: introReady`);
   }

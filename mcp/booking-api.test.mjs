@@ -23,10 +23,10 @@ test("GET /api/booking/types: whether booking is open, and the meeting types fro
   const res = await harness().call("/api/booking/types");
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("content-type"), "application/json");
-  assert.deepEqual(await res.json(), { enabled: true, types });
+  assert.deepEqual(await res.json(), { enabled: true, types, signin_providers: ["google"] }); // F-004: signin_providers
   // The page and the WebMCP script read `enabled` to stay hidden until launch.
   for (const value of ["false", undefined, "TRUE"]) {
-    assert.deepEqual(await (await harness({ env: { BOOKING_ENABLED: value } }).call("/api/booking/types")).json(), { enabled: false, types }, String(value));
+    assert.deepEqual(await (await harness({ env: { BOOKING_ENABLED: value } }).call("/api/booking/types")).json(), { enabled: false, types, signin_providers: ["google"] }, String(value));
   }
 });
 
@@ -548,7 +548,8 @@ test("global cap: a failed alert is logged by subsystem only and doesn't change 
 test("mcp/wrangler.jsonc: booking route, BookingStore Durable Object (migration v2), ships dark, secrets documented", () => {
   const text = readFileSync(new URL("./wrangler.jsonc", import.meta.url), "utf8");
   const w = JSON.parse(text.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"));
-  assert.deepEqual(w.routes.map((r) => r.pattern), ["patrickjv.com/mcp*", "patrickjv.com/api/booking*", "patrickjv.com/book/confirm*", "patrickjv.com/book/callback*"]); // F-002 adds the last two
+  assert.deepEqual(w.routes.map((r) => r.pattern), ["patrickjv.com/mcp*", "patrickjv.com/api/booking*", "patrickjv.com/book/confirm*", "patrickjv.com/book/callback*",
+    "patrickjv.com/.well-known/microsoft-identity-association.json"]); // F-002 adds confirm and callback; F-004 the Microsoft publisher file (D5)
   assert.ok(w.durable_objects.bindings.some((b) => b.name === "BOOKING" && b.class_name === "BookingStore"));
   assert.deepEqual(w.migrations, [{ tag: "v1", new_sqlite_classes: ["IntroQuota"] }, { tag: "v2", new_sqlite_classes: ["BookingStore"] }]);
   assert.equal(w.vars.BOOKING_ENABLED, "true", "switched on at launch (8 Oct 2026, docs/06 launch checklist)");

@@ -576,7 +576,7 @@ test("F-002 cancel_booking: an email-form (F-001) booking still gets F-001's con
 // ---- Sign-in transactions -----------------------------------------------------------------------
 
 let txn = 0;
-const txFor = () => { txn++; return { stateHash: `state${txn}`, cookieHash: `cookie${txn}`, nonce: `nonce${txn}`, codeVerifier: `verifier${txn}` }; };
+const txFor = () => { txn++; return { stateHash: `state${txn}`, cookieHash: `cookie${txn}`, nonce: `nonce${txn}`, codeVerifier: `verifier${txn}`, provider: "google" }; };
 const start = (t, url, { now = NOW, tx = txFor(), busy = [] } = {}) => store.startSignin(t.sql, { token: ticketOf(url), now, cfg, busy, tx, deps: t.deps }).then((r) => ({ ...r, tx }));
 
 test("F-002 sign-in start: creates a signin_tx bound to the ticket and its purpose, expiring in 10 minutes", async () => {
@@ -586,7 +586,7 @@ test("F-002 sign-in start: creates a signin_tx bound to the ticket and its purpo
   assert.equal(s.purpose, "book");
   const row = t.sql.exec("SELECT * FROM signin_tx").one();
   assert.deepEqual(row, { state_hash: s.tx.stateHash, ticket_hash: await store.hashToken(ticketOf(r.confirm_url)), cookie_hash: s.tx.cookieHash,
-    nonce: s.tx.nonce, code_verifier: s.tx.codeVerifier, purpose: "book", expires_at: "2026-10-19T09:10:00.000Z" });
+    nonce: s.tx.nonce, code_verifier: s.tx.codeVerifier, purpose: "book", expires_at: "2026-10-19T09:10:00.000Z", provider: "google" }); // F-004: provider
   const id = await booked(t, JANE, { start: "2026-10-22T09:00:00.000Z" });
   const link = await agentCancel(t, id);
   assert.equal((await start(t, link.confirm_url)).purpose, "cancel");
@@ -682,7 +682,7 @@ test("F-002 peek: a cancel ticket's state (open; then still booked, started, can
   const t = setup();
   const id = await booked(t);
   const link = await agentCancel(t, id);
-  assert.deepEqual(await peek(t, link.confirm_url), { purpose: "cancel", state: "open", type: "consultation", start: SLOT, end: SLOT_END, expires_at: link.link_expires });
+  assert.deepEqual(await peek(t, link.confirm_url), { purpose: "cancel", state: "open", type: "consultation", start: SLOT, end: SLOT_END, expires_at: link.link_expires, provider: "google" }); // F-004: provider
   assert.equal((await peek(t, link.confirm_url, later(HOUR))).state, "still_booked", "expired, booking still confirmed before the start");
   assert.equal((await peek(t, link.confirm_url, new Date(Date.parse(SLOT) + MINUTE))).state, "started");
   for (let i = 0; i < 5; i++) await start(t, link.confirm_url);
@@ -735,6 +735,72 @@ test("F-002 retention: an identity is deleted 30 days after the later of its las
   const c3 = await ask(t2, { start: "2026-10-23T09:00:00.000Z" }, { now: later3 });
   assert.equal((await confirm(t2, c3, JANE, { now: later3 })).error, "person_cap");
   assert.equal(t2.sql.exec("SELECT delete_after FROM identities").one().delete_after, new Date(Date.parse("2026-10-22T09:30:00.000Z") + 30 * DAY_MS).toISOString(), "still the later meeting's end");
+});
+
+// ---- F-004: Microsoft and Altimist ID through the same core -----------------------------------------
+
+const OMAR_MS = { provider: "microsoft", subject: "72f988bf-86f1-41af-91ab-2d7cd011db47:oid-omar", email: "omar@contoso.example", display_name: "Omar Khan" };
+const SAM_AL = { provider: "altimist", subject: "al-sub-1", email: "sam@example.org", display_name: "Sam Lee" };
+
+test("F-004 data model: signin_tx gains provider; a transaction started on an F-002 database is Google's after migrate()", async () => {
+  const t = setup();
+  const r = await ask(t);
+  // An F-002 database: signin_tx as it was, with a transaction in flight during the deploy.
+  t.sql.exec("DROP TABLE signin_tx");
+  t.sql.exec(`CREATE TABLE signin_tx (
+    state_hash TEXT PRIMARY KEY, ticket_hash TEXT NOT NULL, cookie_hash TEXT NOT NULL,
+    nonce TEXT NOT NULL, code_verifier TEXT NOT NULL, purpose TEXT NOT NULL, expires_at TEXT NOT NULL)`);
+  t.sql.exec("INSERT INTO signin_tx VALUES ('st-old', ?, 'ck-old', 'n-old', 'v-old', 'book', ?)", await store.hashToken(ticketOf(r.confirm_url)), later(5 * MINUTE).toISOString());
+  store.migrate(t.sql);
+  store.migrate(t.sql); // idempotent
+  const c = store.consumeSignin(t.sql, { stateHash: "st-old", cookieHash: "ck-old", now: NOW });
+  assert.equal(c.tx.provider, "google");
+  const s = await start(t, r.confirm_url, { tx: { ...txFor(), provider: "microsoft" } });
+  assert.equal(s.purpose, "book");
+  assert.equal(store.consumeSignin(t.sql, { stateHash: s.tx.stateHash, cookieHash: s.tx.cookieHash, now: NOW }).tx.provider, "microsoft");
+});
+
+test("F-004 (D2): confirmRequest books with signin:microsoft and signin:altimist exactly as with signin:google; any other proof books nothing", async () => {
+  const t = setup();
+  for (const [person, proof, start] of [[OMAR_MS, "signin:microsoft", SLOT], [SAM_AL, "signin:altimist", "2026-10-22T09:00:00.000Z"]]) {
+    const r = await ask(t, { start });
+    assert.equal((await confirm(t, r, person, { grant: { proof } })).result, "confirmed", proof);
+    const b = bookingRow(t, r.booking_id);
+    assert.deepEqual([b.proof, b.guest_email, b.guest_name], [proof, person.email, person.display_name]);
+    assert.deepEqual(t.sql.exec("SELECT provider, subject FROM identities WHERE id = ?", b.identity_id).one(), { provider: person.provider, subject: person.subject });
+  }
+  const r = await ask(t, { start: "2026-10-23T09:00:00.000Z" });
+  assert.deepEqual(await confirm(t, r, JANE, { grant: { proof: "signin:github" } }), { error: "forbidden" });
+});
+
+test("F-004 (US-1, D3): two Microsoft sign-ins with the same tid and oid but different addresses are one person for the caps", async () => {
+  const t = setup();
+  await booked(t, OMAR_MS);
+  await booked(t, { ...OMAR_MS, email: "o.khan@contoso.example" }, { start: "2026-10-22T09:00:00.000Z" });
+  const r = await ask(t, { start: "2026-10-23T09:00:00.000Z" });
+  assert.deepEqual(await confirm(t, r, { ...OMAR_MS, email: "third@contoso.example" }, { grant: { proof: "signin:microsoft" } }), { error: "person_cap", which: "daily" });
+  assert.equal(count(t, "SELECT count(*) c FROM identities"), 1);
+});
+
+test("F-004 (US-3): cancelMeeting accepts a sign-in only when provider and subject both match the guest; the cancel link and its view name the booking's provider", async () => {
+  const t = setup();
+  const id = await booked(t, OMAR_MS);
+  const link = await agentCancel(t, id);
+  assert.equal(link.provider, "microsoft", "cancel_booking's result names the booking's provider");
+  assert.equal((await peek(t, link.confirm_url)).provider, "microsoft", "and so does the cancel ticket's view");
+  const ms = { grant: { proof: "signin:microsoft" } };
+  assert.deepEqual(await signinCancel(t, id, link, { ...JANE, email: OMAR_MS.email }, { grant: { proof: "signin:google" } }), { error: "not_guest" }, "same email through a different provider");
+  assert.deepEqual(await signinCancel(t, id, link, { ...OMAR_MS, subject: "72f988bf-86f1-41af-91ab-2d7cd011db47:someone-else" }, ms), { error: "not_guest" }, "same provider, different subject");
+  assert.deepEqual(await signinCancel(t, id, link, OMAR_MS, { grant: { proof: "signin:github" } }), { error: "forbidden" });
+  assert.equal(bookingRow(t, id).status, "confirmed");
+  assert.deepEqual(await signinCancel(t, id, link, OMAR_MS, ms), { result: "cancelled" });
+
+  const id2 = await booked(t, SAM_AL, { start: "2026-10-22T09:00:00.000Z" });
+  const link2 = await agentCancel(t, id2);
+  assert.equal(link2.provider, "altimist");
+  assert.deepEqual(await signinCancel(t, id2, link2, SAM_AL, { grant: { proof: "signin:altimist" } }), { result: "cancelled" });
+  const id3 = await booked(t, JANE, { start: "2026-10-23T09:00:00.000Z" });
+  assert.equal((await agentCancel(t, id3)).provider, "google");
 });
 
 

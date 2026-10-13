@@ -10,8 +10,9 @@ import {
 } from "./booking-store.js";
 import { createGoogle, assertNoErrors, meetLinkOf } from "./booking-google.js";
 import { createMailer, holdEmail, bookedEmail, cancelRequestEmail } from "./booking-email.js";
-import { createSignin, authUrl, pkceChallenge, randomValue, verifyIdToken } from "./booking-signin.js";
-import { quotaHash, senderQuotaKey, signinConfigured } from "./handler.js";
+import { PROVIDERS, createSignin, authUrl, pkceChallenge, randomValue, verifyIdToken } from "./booking-signin.js";
+import { enabledProviders } from "./booking-config.js";
+import { quotaHash, senderQuotaKey, providerReady, providerUsable } from "./handler.js";
 
 export const ACT_URL = "https://patrickjv.com/api/booking/act";
 export const CONFIRM_URL = "https://patrickjv.com/book/confirm";
@@ -55,7 +56,9 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     if (!mail) throw new Error(`unknown email kind ${kind}`);
     await mailer.send({ to: b.email, ...mail });
   };
-  const signin = createSignin({ clientId: env.SIGNIN_GOOGLE_CLIENT_ID, clientSecret: env.SIGNIN_GOOGLE_CLIENT_SECRET, fetch });
+  // F-004: a provider's sign-in client, from its secrets as they are now.
+  const clientId = (p) => env[PROVIDERS[p].secrets[0]];
+  const signin = (p) => createSignin({ provider: p, clientId: clientId(p), clientSecret: env[PROVIDERS[p].secrets[1]], fetch });
   const deps = {
     checkSlot, freeBusy, sendEmail,
     actUrl: (token) => `${ACT_URL}?t=${token}`,
@@ -106,19 +109,24 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
   // For settling a request on a read: if the cache can't be had, only the local checks apply.
   const busyOrNone = () => cachedBusy().catch(() => []);
   let pingCache = null; // { at, ok }
-  let signinCache = null; // { at, ok }
+  const discoveryCache = {}; // provider -> { at, ok }
 
   // F-002: the callback, after its transaction is consumed: the code exchange and the ID token
-  // checks give the person; the ticket gives the grant; then the core decides.
-  async function finishSignin(tx, { code, error }) {
+  // checks give the person; the ticket gives the grant; then the core decides. F-004: with the
+  // transaction's own provider, which must be the callback's and still enabled and ready.
+  async function finishSignin(tx, provider, { code, error }) {
+    const p = tx.provider;
+    if (p !== provider) return { error: "provider", purpose: tx.purpose };
+    if (!providerUsable(env, cfg, p)) return { error: "provider_unavailable", provider: p, purpose: tx.purpose };
     if (error || !code) return { error: "denied", purpose: tx.purpose };
     let jwt;
-    try { jwt = await signin.exchange(code, tx.code_verifier); } catch { logFailure("signin_exchange"); return { error: "exchange", purpose: tx.purpose }; }
-    const v = verifyIdToken(jwt, { clientId: env.SIGNIN_GOOGLE_CLIENT_ID, nonce: tx.nonce, now: now() });
+    try { jwt = await signin(p).exchange(code, tx.code_verifier); } catch { logFailure(`signin_exchange_${p}`); return { error: "exchange", purpose: tx.purpose }; }
+    const v = verifyIdToken(jwt, { provider: p, clientId: clientId(p), nonce: tx.nonce, now: now() });
+    if (v.error === "address") return { error: "address", provider: p, purpose: tx.purpose };
     if (v.error) return { error: "id_token", purpose: tx.purpose };
     const found = findTicket(sql, tx.ticket_hash);
     if (!found || found.purpose !== tx.purpose) return { error: "forbidden", purpose: tx.purpose };
-    const grant = { proof: "signin:google", actor: null, scope: tx.purpose };
+    const grant = { proof: `signin:${p}`, actor: null, scope: tx.purpose };
     if (found.purpose === "book") {
       const r = found.request;
       return { purpose: "book", ...(await confirmRequest(sql, r.id, v.person, { ...grant, ticket_hash: r.ticket_hash, expires_at: r.expires_at }, { cfg, now: now(), deps })) };
@@ -210,25 +218,27 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
       }
       return peekTicket(sql, token, { now: now(), cfg });
     },
-    // POST /book/confirm/google: a sign-in transaction, and where to send the browser.
-    async startSignin(token) {
-      if (!signinConfigured(env)) return { error: "unavailable" };
+    // POST /book/confirm/<provider>: a sign-in transaction, and where to send the browser. F-004: a
+    // provider that isn't enabled (launched or on trial) or ready creates nothing: `view` is the
+    // ticket's state, as the confirm page shows it.
+    async startSignin(token, provider) {
+      if (!providerUsable(env, cfg, provider)) return { error: "unavailable", view: await this.confirmPage(token) };
       const busy = await busyOrNone();
       const [state, nonce, cookie, verifier] = [randomValue(), randomValue(), randomValue(), randomValue()];
       const [stateHash, cookieHash, challenge] = await Promise.all([hashToken(state), hashToken(cookie), pkceChallenge(verifier)]);
-      const r = await startSignin(sql, { token, now: now(), cfg, busy, tx: { stateHash, cookieHash, nonce, codeVerifier: verifier }, deps });
+      const r = await startSignin(sql, { token, now: now(), cfg, busy, tx: { stateHash, cookieHash, nonce, codeVerifier: verifier, provider }, deps });
       if (r.error) return { ...r, view: await peekTicket(sql, token, { now: now(), cfg }) };
       await alarmBy(nextAlarmAt(sql, now()));
-      return { purpose: r.purpose, cookie, location: authUrl({ clientId: env.SIGNIN_GOOGLE_CLIENT_ID, state, nonce, codeChallenge: challenge }) };
+      return { purpose: r.purpose, cookie, location: authUrl({ provider, clientId: clientId(provider), state, nonce, codeChallenge: challenge }) };
     },
-    // GET /book/callback/google: the transaction is consumed before any outside call, then the
+    // GET /book/callback/<provider>: the transaction is consumed before any outside call, then the
     // sign-in is finished. `view` is the ticket's state afterwards, for the page.
-    callback({ state, cookie, code, error }) {
+    callback({ provider, state, cookie, code, error }) {
       return tracked(async () => {
         const [stateHash, cookieHash] = await Promise.all([hashToken(String(state ?? "")), typeof cookie === "string" && cookie ? hashToken(cookie) : null]);
         const c = consumeSignin(sql, { stateHash: state ? stateHash : null, cookieHash, now: now() });
         if (c.error) return { error: `signin_${c.error}` };
-        const r = await finishSignin(c.tx, { code, error });
+        const r = await finishSignin(c.tx, provider, { code, error });
         return { ...r, view: await peekTicket(sql, null, { now: now(), cfg, hash: c.tx.ticket_hash }) };
       });
     },
@@ -242,11 +252,20 @@ export function createBookingService({ sql, storage, env, cfg, fetch, sleep, now
     // Health: a fresh token refresh (so a revoked token shows), at most once a minute; and whether
     // guest email is failing (EMAIL_FAILURES_DOWN in a row). F-002: whether sign-in would work
     // (its secrets set and Google's discovery document reachable), also at most once a minute.
+    // F-004: for each enabled provider, its secrets set (ready) and its discovery document fetched
+    // within the last minute (reachable); "off" for the others.
     async health() {
       const t = now().getTime();
       if (!pingCache || t - pingCache.at >= PING_CACHE_MS) pingCache = { at: t, ok: await google.ping() };
-      if (!signinCache || t - signinCache.at >= PING_CACHE_MS) signinCache = { at: t, ok: signinConfigured(env) && (await signin.ready()) };
-      return { google: pingCache.ok, email: emailFailures(sql) < EMAIL_FAILURES_DOWN, signin: signinCache.ok };
+      const enabled = enabledProviders(cfg);
+      const reachable = async (p) => {
+        if (!discoveryCache[p] || t - discoveryCache[p].at >= PING_CACHE_MS) discoveryCache[p] = { at: t, ok: await signin(p).ready() };
+        return discoveryCache[p].ok;
+      };
+      const providers = {};
+      for (const p of Object.keys(PROVIDERS)) providers[p] = enabled.includes(p) ? { ready: providerReady(env, p), reachable: await reachable(p) } : "off";
+      const signinOk = providerReady(env, "google") && (await reachable("google"));
+      return { google: pingCache.ok, email: emailFailures(sql) < EMAIL_FAILURES_DOWN, signin: signinOk, providers };
     },
     async alarm() {
       const t = now();

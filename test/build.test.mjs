@@ -6,7 +6,10 @@ import { readFileSync, cpSync, mkdtempSync, writeFileSync, rmSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import * as buildModule from "../build.mjs";
 import { build, checkPage, inlineCode, safeJson, checkSecurityTxt, checkHeaders, writeStaged, parsePost } from "../build.mjs";
+
+const { employerMention } = buildModule; // F-004 (D8)
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const content = JSON.parse(readFileSync(join(ROOT, "content.json"), "utf8"));
@@ -327,4 +330,84 @@ test("writing: a post naming an employer fails the build", () => {
     const r = build({ root: dir, check: true, today: "2026-10-08" });
     assert.ok(r.errors.some((e) => /writing\/zz-test\.(html|md) names an employer/.test(e)), r.errors.join("\n"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- F-004: the employer guard's one exception (D8), the Microsoft secret's expiry (D6), and
+// booking.json's sign-in settings checked by the build (D7) ----------------------------------------
+
+// A scratch tree with booking.json, its signin settings replaced by `signin` (if given).
+function scratchWith(signin) {
+  const dir = scratch();
+  const cfg = JSON.parse(readFileSync(join(ROOT, "booking.json"), "utf8"));
+  if (signin !== undefined) cfg.signin = signin;
+  writeFileSync(join(dir, "booking.json"), JSON.stringify(cfg, null, 2));
+  return dir;
+}
+
+test("F-004 (D8): employerMention allows exactly 'Altimist ID', altimist.id and URLs on it, the altimist sign-in paths, \"altimist\" quoted and try=altimist (raw or encoded); anything else naming Altimist is caught", () => {
+  for (const ok of [
+    "Sign in with Altimist ID to book", "No Altimist ID? Create one", "Google, Microsoft or Altimist ID.",
+    "https://altimist.id", "https://altimist.id/signup/self-service?app_id=patrickjv-com&return_to=x", "form-action 'self' https://altimist.id;", "see altimist.id.",
+    '<form method="post" action="/book/confirm/altimist">', "https://patrickjv.com/book/callback/altimist", 'var n = { "altimist": "Altimist ID" };', 'p === "altimist"',
+    "/book/confirm?t=abc&try=altimist", "return_to=https%3A%2F%2Fpatrickjv.com%2Fbook%2Fconfirm%3Ft%3Dabc%26try%3Daltimist", "&amp;try=altimist\"",
+    "plain text with nothing to see",
+  ]) assert.equal(employerMention(ok), null, ok);
+  for (const [bad, found] of [
+    ["Altimist", "Altimist"], ["altimist id", "altimist"], ["Altimist IDs", "Altimist"], ["altimist.com", "altimist"], ["ALTIMIST ID", "ALTIMIST"],
+    ["Altimist IDx", "Altimist"], ["altimist.identity", "altimist"], ["altimist.id.evil.example", "altimist"], ["'altimist'", "altimist"],
+    ["/book/confirm/altimistx", "altimist"], ["try=altimists", "altimist"], ["the company", "the company"], ["a fintech", "fintech"],
+    ["Altimist ID and Altimist", "Altimist"],
+  ]) assert.equal(employerMention(bad), found, bad);
+});
+
+test("F-004 (D8): the build applies that one function to every page: an allowed form passes in a post, anything else fails", () => {
+  const post = (body) => `---\ntitle: T\ndescription: D\ndate: 2026-10-08\n---\n\n# T\n\n${body}\n`;
+  const dir = scratchWith();
+  try {
+    writeFileSync(join(dir, "writing/zz-test.md"), post("I sign in with Altimist ID at https://altimist.id/signup."));
+    assert.deepEqual(build({ root: dir, today: "2026-10-08", now: NOW }).errors, []);
+    for (const bad of ["Altimist IDs are nice.", "See altimist.com.", "altimist id"]) {
+      writeFileSync(join(dir, "writing/zz-test.md"), post(bad));
+      const r = build({ root: dir, today: "2026-10-08", now: NOW });
+      assert.ok(r.errors.some((e) => /writing\/zz-test\.(html|md) names an employer/.test(e)), `${bad}: ${r.errors.join("\n")}`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("F-004 (D8): the full build with all three providers launched passes", () => {
+  const dir = scratchWith({ providers: ["google", "microsoft", "altimist"], trial: [], microsoftSecretExpires: "2028-10-01" });
+  try {
+    assert.deepEqual(build({ root: dir, today: "2026-10-12", now: NOW }).errors, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("F-004 (D6): with microsoft launched, the build fails when signin.microsoftSecretExpires is missing, malformed, or 30 days away or less, naming the runbook entry; with Microsoft not launched it is ignored", () => {
+  const launch = (expires) => ({ providers: ["google", "microsoft"], trial: [], ...(expires === undefined ? {} : { microsoftSecretExpires: expires }) });
+  const errorsFor = (signin) => { const dir = scratchWith(signin); try { return build({ root: dir, today: "2026-10-12", now: NOW }).errors; } finally { rmSync(dir, { recursive: true, force: true }); } };
+  // NOW is 6 Oct 2026, 12:00 UTC: 30 days on is 5 Nov 2026.
+  for (const bad of [undefined, "", "2027-13-01", "2027-02-30", "1 Nov 2027", "20271101", 20271101, "2027-11-01T00:00:00Z"]) {
+    const e = errorsFor(launch(bad));
+    assert.ok(e.some((x) => /signin\.microsoftSecretExpires/.test(x) && /Rotate the Microsoft sign-in secret/.test(x)), `${JSON.stringify(bad)}: ${e.join("\n")}`);
+  }
+  for (const near of ["2026-10-06", "2026-11-05", "2026-10-01"]) {
+    const e = errorsFor(launch(near));
+    assert.ok(e.some((x) => /Microsoft sign-in secret expires/.test(x) && /Rotate the Microsoft sign-in secret/.test(x)), `${near}: ${e.join("\n")}`);
+  }
+  assert.deepEqual(errorsFor(launch("2026-11-07")), [], "more than 30 days ahead");
+  assert.deepEqual(errorsFor({ providers: ["google"], trial: ["microsoft"], microsoftSecretExpires: "garbage" }), [], "on trial, not launched: ignored");
+  assert.deepEqual(errorsFor({ providers: ["google"], trial: [] }), [], "not launched, no date: fine");
+});
+
+test("F-004 (D7): the build fails on bad sign-in settings in booking.json, for each case", () => {
+  for (const signin of [
+    { providers: [] }, { providers: ["microsoft"] }, { providers: ["google", "google"] }, { providers: ["google", "github"] }, { providers: "google" },
+    { providers: ["google"], trial: ["google"] }, { providers: ["google"], trial: ["microsoft", "microsoft"] }, { providers: ["google", "altimist"], trial: ["altimist"] }, { providers: ["google"], trial: "altimist" },
+    ["google"],
+  ]) {
+    const dir = scratchWith(signin);
+    try {
+      const r = build({ root: dir, today: "2026-10-12", now: NOW });
+      assert.ok(r.errors.some((e) => /booking\.json: signin/.test(e)), `${JSON.stringify(signin)}: ${r.errors.join("\n")}`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
 });

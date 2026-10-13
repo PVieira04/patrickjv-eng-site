@@ -170,7 +170,8 @@ test("F-002 GET /book/confirm: the meeting (London time, and the visitor's zone 
   const html = await res.text();
   const t = text(html);
   assert.match(t, /Consultation with Patrick Vieira, Wed 21 Oct 2026, 10:00–10:30 BST/);
-  assert.match(t, /Sign in with Google to book this call\. We use your name and email address from Google for the invite, and nothing else\./);
+  // F-004: the disclosure before a provider is chosen names none.
+  assert.match(t, /Sign in with Google to book this call\. We use your name and email address from the account you sign in with for the invite, and nothing else\./);
   assert.match(t, /This link works until Mon 19 Oct 2026, 11:00 BST\./);
   assert.match(html, /<form method="post" action="\/book\/confirm\/google">/);
   assert.match(html, /<button type="submit">Sign in with Google to book<\/button>/);
@@ -430,7 +431,7 @@ test("F-002 cancel_booking (MCP): an open request is withdrawn; a sign-in bookin
   const c = (await h.tool("cancel_booking", { booking_id: b.booking_id })).structuredContent;
   assert.deepEqual(Object.keys(c).sort(), ["confirm_url", "link_expires", "next_step", "status"]);
   assert.equal(c.status, "confirmed");
-  assert.match(c.next_step, /Give this link to the person/);
+  assert.equal(c.next_step, "Give this link to your person: they sign in with the same Google account they booked with to cancel."); // F-004's wording
   const page = text(await (await h.call(`/book/confirm?t=${h.ticketOf(c.confirm_url)}`)).text());
   assert.match(page, /Sign in with Google to cancel this call\. Only the person it's booked for can cancel it\./);
   const done = await h.signInOn(c.confirm_url);

@@ -8,16 +8,16 @@ import { fileURLToPath } from "node:url";
 
 const PUBLIC = fileURLToPath(new URL("../public/", import.meta.url));
 
-// The header lines of the _headers rule for exactly `path`.
-export function headersFor(path) {
-  const block = readFileSync(join(PUBLIC, "_headers"), "utf8").split("\n\n").map((b) => b.replace(/^(#.*\n)+/, "")).find((b) => b.split("\n")[0] === path);
+// The header lines of the _headers rule for exactly `path` (in `root`, another build's public/, if given).
+export function headersFor(path, root = PUBLIC) {
+  const block = readFileSync(join(root, "_headers"), "utf8").split("\n\n").map((b) => b.replace(/^(#.*\n)+/, "")).find((b) => b.split("\n")[0] === path);
   return Object.fromEntries(block.split("\n").slice(1).map((l) => l.trim().match(/^([^:]+):\s*(.*)$/)).filter(Boolean).map(([, k, v]) => [k, v]));
 }
 
 export const TYPES = { enabled: true, types: [
   { id: "consultation", title: "Consultation", minutes: 30, description: "A 30-minute call about a platform, infrastructure or AI agent problem you're working on." },
   { id: "recruiter-intro", title: "Recruiter intro", minutes: 15, description: "A 15-minute call for recruiters to introduce a role." },
-] };
+], signin_providers: ["google"] }; // F-004
 
 // Weekday slots every 15 minutes from 10:00 to 16:30 London time, as the real config gives, over
 // the given London days (YYYY-MM-DD, all in GMT here), minus a few taken times so days differ.
