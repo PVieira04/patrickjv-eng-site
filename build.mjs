@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { marked } from "marked";
-import { agentData } from "./lib/agent-data.mjs";
+import { agentData, addressLine } from "./lib/agent-data.mjs";
 import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
 import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROVIDER_NAMES } from "./mcp/booking-config.js";
 import { PROVIDERS } from "./mcp/booking-signin.js";
@@ -221,6 +221,8 @@ export function checkPage(html, c) {
     return [textOf(dt), sib[sib.indexOf(dt) + 1]];
   }).filter(([, v]) => v && v.tag === "dd").map(([k, v]) => [k, textOf(v)]));
   one("contact strip Location", dd.Location, c.person.location, "person.location");
+  one("contact strip Address", dd.Address, addressLine(c.person.address), "person.address");
+  for (const k of ["street", "locality", "postcode"]) used.add(`person.address.${k}`); // shown as the one line above
   one("contact strip LinkedIn", dd.LinkedIn, bare(L.linkedin), "person.links.linkedin");
   one("contact strip GitHub", dd.GitHub, bare(L.github), "person.links.github");
   one("contact strip Email", dd.Email, L.email, "person.links.email");
@@ -976,7 +978,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
         jobTitle: c.person.headline,
         hasOccupation: { "@type": "Occupation", name: c.person.headline, occupationLocation: { "@type": "City", name: city } },
         description: c.person.tagline, url: SITE, image: SITE + "photo.webp",
-        address: { "@type": "PostalAddress", addressLocality: city, addressCountry: "GB" },
+        address: { "@type": "PostalAddress", streetAddress: c.person.address.street, addressLocality: c.person.address.locality, postalCode: c.person.address.postcode, addressCountry: "GB" },
         alumniOf: { "@type": "CollegeOrUniversity", name: "UCL" },
         sameAs: [c.person.links.linkedin, c.person.links.github],
         email: "mailto:" + c.person.links.email,
