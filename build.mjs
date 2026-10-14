@@ -1028,7 +1028,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
   html = splice(html, /var d = \{.*\};/, () => `var d = ${safeJson(webmcp)};`, "WebMCP data");
 
   // ---- index.md ----
-  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Book a call](${SITE}book): pick a free time and sign in with ${signInPhrase(launched)} to book it (or confirm by email)`, `- [How to book a call](${SITE}book.md): the booking steps for AI agents, as Markdown`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
+  const links = [`- [Email](mailto:${c.person.links.email}): ${c.person.links.email}`, `- Address: ${addressLine(c.person.address)}`, `- [LinkedIn](${c.person.links.linkedin})`, `- [GitHub](${c.person.links.github})`, `- [CV](${SITE}cv): two-page CV, also as [PDF](${SITE}${CV_PDF.slice(1)})`, `- [Book a call](${SITE}book): pick a free time and sign in with ${signInPhrase(launched)} to book it (or confirm by email)`, `- [How to book a call](${SITE}book.md): the booking steps for AI agents, as Markdown`, `- [Privacy](${SITE}privacy): what this site stores about you, for how long, and who processes it`, "", c.privacy, ""];
   const md = [
     `# ${c.person.name}`, "",
     `Platform engineer in London (not the footballer of the same name). Canonical page: ${SITE}`, "",
