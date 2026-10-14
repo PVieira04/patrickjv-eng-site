@@ -411,3 +411,12 @@ test("F-004 (D7): the build fails on bad sign-in settings in booking.json, for e
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }
 });
+
+test("the public contact address is in every machine-readable surface: index.md, llms.txt and the page's JSON-LD", () => {
+  const line = "91 Tachbrook St, Lillington and Longmoore Gardens, London SW1V 2QA";
+  for (const f of ["public/index.md", "public/llms.txt"]) assert.ok(readFileSync(join(ROOT, f), "utf8").includes(line), f);
+  const html = readFileSync(join(ROOT, "public/index.html"), "utf8");
+  const ld = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+  const person = ld["@graph"].find((n) => n["@type"] === "Person");
+  assert.deepEqual(person.address, { "@type": "PostalAddress", streetAddress: "91 Tachbrook St, Lillington and Longmoore Gardens", addressLocality: "London", postalCode: "SW1V 2QA", addressCountry: "GB" });
+});
