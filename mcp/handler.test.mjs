@@ -150,6 +150,7 @@ test("read tools: text is the serialised structuredContent, matching content.jso
   assert.deepEqual(JSON.parse(r.result.content[0].text), r.result.structuredContent);
   const p = await (await call(rpc("tools/call", { name: "get_profile" }))).json();
   assert.equal(p.result.structuredContent.links.email, content.person.links.email);
+  assert.equal(p.result.structuredContent.address, "91 Tachbrook St, Lillington and Longmoore Gardens, London SW1V 2QA");
 });
 
 test("request_intro: one email, Reply-To is exactly the validated address even with a hostile name", async () => {
