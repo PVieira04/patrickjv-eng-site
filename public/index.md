@@ -127,7 +127,6 @@ To cancel, call `cancel_booking`. A request your person hasn't signed in on yet 
 ## Links
 
 - [Email](mailto:hello@patrickjv.com): hello@patrickjv.com
-- Address: 91 Tachbrook St, Lillington and Longmoore Gardens, London SW1V 2QA
 - [LinkedIn](https://www.linkedin.com/in/patrickvieira/)
 - [GitHub](https://github.com/PVieira04)
 - [CV](https://patrickjv.com/cv): two-page CV, also as [PDF](https://patrickjv.com/cv.pdf)

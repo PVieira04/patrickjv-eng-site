@@ -69,7 +69,7 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 export function tools(cfg = BOOKING_CONFIG) {
   const empty = { type: "object", properties: {}, additionalProperties: false };
   return [
-    { name: "get_profile", title: "Profile", description: "Patrick Vieira's public profile (platform engineer, London — not the footballer): name, headline, tagline, location, postal address and links.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
+    { name: "get_profile", title: "Profile", description: "Patrick Vieira's public profile (platform engineer, London — not the footballer): name, headline, tagline, location and links.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
     { name: "list_work", title: "Selected work", description: "Selected work: title, summary and tags for each item.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
     { name: "list_skills", title: "Skills", description: "Patrick Vieira's listed skills.", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
     { name: "list_faq", title: "Quick answers", description: "Quick answers about Patrick Vieira: each question (q) with its answer (a).", inputSchema: empty, annotations: READ_ONLY, icons: ICONS },
