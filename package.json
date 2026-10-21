@@ -16,9 +16,9 @@
     "smoke": "node smoke.mjs"
   },
   "devDependencies": {
-    "marked": "18.1.0",
-    "playwright-core": "1.63.0",
+    "marked": "18.1.1",
+    "playwright-core": "1.64.1",
     "sharp": "0.35.5",
-    "wrangler": "4.147.0"
+    "wrangler": "4.151.1"
   }
 }
