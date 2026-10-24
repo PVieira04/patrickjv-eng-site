@@ -86,6 +86,27 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 
 ## How to re-run the audits
 
+### Re-run, 24 Oct 2026 (all five pages, after booking, CV, writing and sign-in)
+
+Live site, headless Chromium via Playwright + Lighthouse (mobile / desktop), axe in dark and light mode:
+
+| Page | Perf | A11y | Best practices | SEO | LCP | CLS |
+|---|---|---|---|---|---|---|
+| `/` | 100 / 100 | **96** / 100 | 100 / 100 | 100 / 100 | 1.4 s / 0.3 s | 0 / 0 |
+| `/book` | **87–90** / 99 | 100 / 100 | 100 / 100 | 100 / 100 | 0.8–1.0 s / 0.3 s | **0.21** / 0.07 |
+| `/cv` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 1.2 s / 0.3 s | 0.05 / 0.02 |
+| `/writing/` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.2 s | 0.01 / 0.005 |
+| `/privacy` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.2 s | 0.05 / 0.001 |
+
+axe-core (WCAG 2.0/2.1/2.2 A and AA + best practices): **0 violations on all five pages**, dark and light.
+
+What differs from the 7 Oct "100 everywhere", and why:
+
+- **`/` mobile accessibility 96 (a regression).** Lighthouse's `target-size` audit flags two header links, "Background" (80 × 15 px) and "Writing" (56 × 15 px): under 24 × 24 px and too close to their neighbours. The nav grew when Writing and Book a call were added. Not fixed yet.
+- **`/book` mobile performance 87–90 (a regression).** One layout shift of 0.207, on the "For AI agents" section (`#for-agents`), which moves when the page script has loaded the calendar. Not fixed yet. Desktop is 99.
+- **`/cv`, `/writing/`, `/privacy` SEO 92 is a measurement artefact.** Lighthouse fetches `/robots.txt` from inside the page, and these pages' CSP has no `connect-src`, so the fetch is blocked and the `robots-txt` audit fails with no detail. On `/`, which allows `connect-src 'self'`, the same audit passes, and `robots.txt` is valid. Not a site fault; loosening the CSP to satisfy a probe would be the wrong trade.
+- `/` only: Lighthouse's remaining notes are a 10 KiB cache-lifetime suggestion (deliberate, see Caching) and the network dependency tree (informational).
+
 Headless Chromium works in WSL **without sudo** — the only missing library (`libasound.so.2`) is unpacked locally:
 
 ```bash

@@ -7,7 +7,7 @@ Source for **https://patrickjv.com** — Patrick Vieira's professional site (pla
 | **Live** | https://patrickjv.com (also `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` → 301 to it; 308 for non-GET/HEAD) |
 | **Hosting** | Cloudflare Workers, Free plan — static assets (unmetered) + two small Workers |
 | **Agents** | MCP server at `https://patrickjv.com/mcp` · listed on the MCP Registry as `com.patrickjv/profile` · WebMCP tools on the page |
-| **Quality** | Lighthouse 100 / 100 / 100 / 100 (mobile and desktop) and axe 0 violations — re-run 7 Oct after all review fixes ([docs/05](docs/05-quality-and-audits.md)) · strict per-path CSP, no third-party requests |
+| **Quality** | Lighthouse 100 / 100 / 100 / 100 at launch (7 Oct); re-run 24 Oct on all five pages: axe 0 violations everywhere, homepage 100 on desktop and 96 accessibility on mobile (tap-target size), `/book` mobile performance 87–90 (layout shift) — details in [docs/05](docs/05-quality-and-audits.md) · strict per-path CSP, no third-party requests |
 | **Monitoring** | GitHub Actions smoke check every 6 hours against the last deployed commit (about 40 checks incl. `request_intro` and booking readiness, a booking-request round trip and DNS, each PASS / WARN / FAIL), plus a "main is deployed" check; a post-deploy smoke and a build-failure alert on every Workers Builds result; a failed run notifies according to GitHub's notification settings |
 | **Deploys** | Cloudflare Workers Builds on push to `main` (each Worker: `npm ci && npm test`, then `wrangler deploy`); no deploy credential in GitHub ([docs/06](docs/06-operations.md#deploying)) |
 
