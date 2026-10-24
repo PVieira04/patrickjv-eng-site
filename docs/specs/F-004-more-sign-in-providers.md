@@ -11,7 +11,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | F-004 |
-| Status | Approved |
+| Status | Built and merged (13 Oct 2026, PR #12). Not launched: `booking.json` has `signin.providers: ["google"]` until the Microsoft and Altimist ID registrations exist |
 | Owner | @PVieira04 |
 | Created | 2026-10-12 |
 | Depends on | F-002 P1 (live since 9 Oct 2026); an Entra app registration with a verified publisher; an Altimist ID client registration |

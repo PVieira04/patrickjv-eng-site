@@ -11,7 +11,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | F-002 |
-| Status | Approved |
+| Status | P1 shipped (9 Oct 2026, PRs #9, #11); P2 built as F-004; P3 and P4 not built |
 | Phase | P1 specified in full; P2–P3 outlined; P4 optional |
 | Owner | @PVieira04 |
 | Created | 2026-10-09 |

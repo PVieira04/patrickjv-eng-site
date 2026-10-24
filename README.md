@@ -8,10 +8,10 @@ Source for **https://patrickjv.com** — Patrick Vieira's professional site (pla
 | **Hosting** | Cloudflare Workers, Free plan — static assets (unmetered) + two small Workers |
 | **Agents** | MCP server at `https://patrickjv.com/mcp` · listed on the MCP Registry as `com.patrickjv/profile` · WebMCP tools on the page |
 | **Quality** | Lighthouse 100 / 100 / 100 / 100 (mobile and desktop) and axe 0 violations — re-run 7 Oct after all review fixes ([docs/05](docs/05-quality-and-audits.md)) · strict per-path CSP, no third-party requests |
-| **Monitoring** | GitHub Actions smoke check every 6 hours against the last deployed commit (30 checks incl. `request_intro` readiness and DNS, each PASS / WARN / FAIL), plus a "main is deployed" check; a post-deploy smoke and a build-failure alert on every Workers Builds result; a failed run notifies according to GitHub's notification settings |
+| **Monitoring** | GitHub Actions smoke check every 6 hours against the last deployed commit (about 40 checks incl. `request_intro` and booking readiness, a booking-request round trip and DNS, each PASS / WARN / FAIL), plus a "main is deployed" check; a post-deploy smoke and a build-failure alert on every Workers Builds result; a failed run notifies according to GitHub's notification settings |
 | **Deploys** | Cloudflare Workers Builds on push to `main` (each Worker: `npm ci && npm test`, then `wrangler deploy`); no deploy credential in GitHub ([docs/06](docs/06-operations.md#deploying)) |
 
-The whole site was designed, built and launched on 6 October 2026, then adversarially reviewed and hardened the same evening. [`docs/`](docs/) records everything: what was built, why, how it was verified, and how to run it.
+The whole site was designed, built and launched on 6 October 2026, then adversarially reviewed and hardened the same evening. Booking (`/book`, five MCP and WebMCP tools) went live on 8 October and sign-in confirmation (Google) on 9 October. [`docs/`](docs/) records everything: what was built, why, how it was verified, and how to run it.
 
 ## Quick start
 
@@ -22,7 +22,7 @@ npm run build    # regenerate every machine-readable copy from content.json
 npm run cf:check  # live Cloudflare dashboard config vs infra/cloudflare/ (needs CLOUDFLARE_READ_TOKEN; cf:export to update)
 npm run cv       # print public/cv.html to public/cv.pdf (A4, max two pages; run npm run build first)
 npm run images   # regenerate the icons and share card (after changing the name, headline, tagline, photo or icon)
-npm test         # build drift check + 115 unit tests (build, smoke, workflows, WebMCP, MCP Worker)
+npm test         # build drift check + about 490 tests (build, smoke, workflows, WebMCP, MCP Worker, booking, sign-in, headless-Chromium page tests)
 npm run deploy   # manual fallback: npm test, then deploy both Workers (Workers Builds deploys on push to main)
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```
@@ -39,6 +39,8 @@ npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https
 
 ```
 content.json              Source of truth for all copy (approved text)
+booking.json              Booking rules: hours, notice, caps, meeting types, calendars, sign-in providers (validated by the build)
+cv.json                   Source for /cv and /cv.pdf (the only output that names employers)
 build.mjs                 Generates machine-readable copies + _headers; drift and safety checks
 build-state.json          Content hash of the generated output + the date it was first built (dateModified)
 lib/agent-data.mjs        Public profile data shared by the page's WebMCP tools and the MCP server
@@ -51,9 +53,11 @@ public/                   Static site (served by the patrickjv-eng-site Worker, 
   fonts/                  Self-hosted IBM Plex (OFL)
 mcp/                      patrickjv-mcp Worker: remote MCP server on the route patrickjv.com/mcp*
   server.json             MCP Registry entry (com.patrickjv/profile); also the server's version
+  booking-*.js            Booking (F-001, F-002, F-004): config and slots, Google Calendar, guest email, sign-in providers, the BookingStore Durable Object
 test/                     Build, smoke (against a local mock site), workflow and WebMCP (page script in a VM) tests
 lib/smoke-lib.mjs         Pure helpers for smoke.mjs (media type, CSP count, MCP body, redirect, readiness, NEL and DNS verdicts)
 smoke.mjs                 Live checks (did.json, pages, headers/CSP, redirects, NEL, MCP lifecycle + readiness, Registry, DNS)
+docs/specs/               Feature specs F-001 to F-004 (booking, sign-in, calendar picker, more providers) and the F-001 spikes
 designs/                  Archived design round (PROVENANCE.md), favicon candidates, icon + share-card generators (npm run images; hashes in images.json)
 writing/                  Write-ups (Markdown + front matter) → /writing/<slug> and /writing/<slug>.md, listed at /writing/
 infra/                    Read-only export of the Cloudflare dashboard config (cloudflare-export.mjs → cloudflare/*.json; docs/06)
@@ -72,6 +76,7 @@ docs/                     Full documentation (start below)
 | [05 — Quality and audits](docs/05-quality-and-audits.md) | Lighthouse, accessibility, security headers, CSP, caching, privacy, responsive and print checks, how to re-run audits |
 | [06 — Operations](docs/06-operations.md) | Deploying, CI, monitoring, rollback, keys and secrets, incidents, renewals, open follow-ups |
 | [07 — History and decisions](docs/07-history-and-decisions.md) | How the site was made on 6 Oct 2026: design competition, reviews, decisions and lessons |
+| [Specs](docs/specs/) | F-001 booking (shipped), F-002 confirm by signing in (P1 shipped), F-003 calendar picker (shipped), F-004 Microsoft and Altimist ID sign-in (built, not launched) |
 | [Review (6–7 Oct 2026)](docs/reviews/2026-10-06-merged-review.md) | Merged adversarial review findings (rounds 1–3), with the status of each |
 
 ## Rules that must not be broken

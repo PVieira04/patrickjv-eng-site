@@ -127,7 +127,7 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 | MCP Registry signing key | `~/.config/mcp-registry/key.pem` (600) | Back it up (password manager). Public half: `public/.well-known/mcp-registry-auth` (keep deployed). **If lost:** generate a new ed25519 key, replace the public key in `mcp-registry-auth`, deploy, then `mcp-publisher login http` with the new key — ownership is proven by the domain, not the old key. |
 | Google Search Console proof | DNS TXT on `patrickjv.com` | Keep it |
 | GitHub Pages domain verification | DNS TXT `_github-pages-challenge-pvieira04.patrickjv.com` (added 7 Oct 2026; `patrickjv.com` verified under GitHub → Settings → Pages → Verified domains, review C3-F6) | **Keep it** — GitHub re-checks it, and removing it un-verifies the domain, re-opening the takeover risk for `tenlines` (a CNAME to `pvieira04.github.io`). If the `tenlines` Pages site is retired, delete its CNAME first |
-| Booking secrets (F-001) | Worker secrets on `patrickjv-mcp`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (`hello@`'s production token), `RESEND_API_KEY` (`patrickjv-booking / patrickjv-mcp / send-only`), `BOOKING_OWNER_EMAIL`, `CAL_PERSONAL_MAIN` (one per blocking calendar named in `booking.json`) | Not set until [launch](#booking-launch); `bookingReady` is false until every one is. The OAuth client JSON lives only on Patrick's machine. Re-authorising: [runbook](#booking-runbooks) |
+| Booking secrets (F-001) | Worker secrets on `patrickjv-mcp`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (`hello@`'s production token), `RESEND_API_KEY` (`patrickjv-booking / patrickjv-mcp / send-only`), `BOOKING_OWNER_EMAIL`, `CAL_PERSONAL_MAIN` (one per blocking calendar named in `booking.json`) | Set on 8 Oct 2026 (see [launch](#booking-launch)); `bookingReady` is false if any is missing. The OAuth client JSON lives only on Patrick's machine. Re-authorising: [runbook](#booking-runbooks) |
 | `QUOTA_SALT` | Worker secret on `patrickjv-mcp` (set 6 Oct 2026 with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc`) | Keys the HMAC of the quota counters' IP and sender keys. **Required**: if it is missing or shorter than 32 characters, `request_intro` is refused (tool error, logged as subsystem `config`); the read tools carry on. Not stored anywhere else and not needed elsewhere; if it is changed, the day's per-IP and per-sender counts restart (the global count does not). |
 | Workers Builds build token | Managed by Cloudflare (Workers Builds, since 7 Oct 2026) | Not in GitHub. The old GitHub Actions token `CLOUDFLARE_API_TOKEN` is unused — delete it ([owner clean-up](#token-rotation)) |
 | GitHub Actions `GITHUB_TOKEN` | Per run, automatic | `contents: read` (test); `contents: read` + `checks: read` (monitor, to read Workers Builds check runs) |
@@ -138,7 +138,7 @@ Not stored anywhere: the Immich API key used to fetch the portrait (deleted loca
 <a id="booking-launch"></a>
 ## Booking: launch checklist (F-001)
 
-Booking ships dark: the code is deployed with `BOOKING_ENABLED` `"false"`, `/book` is `noindex` and unlinked, and the WAF rule covers only `/mcp`. Do these in order. Steps marked **manual** can't be done from Claude Code (auto mode blocks DNS and rulesets writes, and Google needs a browser).
+**Record only: booking launched on 8 Oct 2026** (`BOOKING_ENABLED` is `"true"`, `/book` is linked and indexable, the WAF rule covers `/mcp` and `/api/booking`). It shipped dark first; these are the steps that were done, in order. Steps 9 and 13 are still open. Steps marked **manual** can't be done from Claude Code (auto mode blocks DNS and rulesets writes, and Google needs a browser).
 
 1. ✅ **Google account** `hello@patrickjv.com`, its Cloud project, the Calendar API and an OAuth web client exist; free/busy sharing from the personal calendars works (spike S11, 8 Oct 2026).
 2. ✅ **Resend:** domain `patrickjv.com` verified (8 Oct 2026); send-only key `patrickjv-booking / patrickjv-mcp / send-only` created.
@@ -236,10 +236,13 @@ mcp-publisher publish
 
 | Date | Action |
 |---|---|
-| Any time | **Test `did:web` federated sign-in with `patrickjv.com`** — the one check not yet done since the switch-over (parked) |
-| ~13 Oct 2026 | If sign-in works, **delete the `patrickjv-did` Worker**; if not, roll back (above) |
-| ~20 Oct 2026 | Check indexing (Search Console, Bing), search "Patrick Vieira platform engineer", ask ChatGPT/Claude/Perplexity; then promote the AEO learning-log entry |
-| When there is a first article | Build the writing section |
+| **Overdue** | **Test `did:web` federated sign-in with `patrickjv.com`** — the one check not yet done since the switch-over (parked) |
+| **Overdue** (was ~13 Oct) | If sign-in works, **delete the `patrickjv-did` Worker**; if not, roll back (above) |
+| **Overdue** (was ~20 Oct) | Check indexing (Search Console, Bing), search "Patrick Vieira platform engineer", ask ChatGPT/Claude/Perplexity; then promote the AEO learning-log entry |
+| Open | Launch the F-004 providers: set `signin.providers` in `booking.json` once the Microsoft app registration and Altimist ID client exist (specs/F-004, D6 runbook below) |
+| Open | F-002 P3: retire anonymous booking (the `/book` email form) and anonymous `request_intro` — needs its own spec pass |
+| Open | F-001 launch steps 9 and 13 (guest-list privacy check, first real booking) |
+| Done | Writing section (8 Oct 2026, two write-ups) |
 
 Ready-to-paste `/schedule` commands for the two dated follow-ups (each opens a GitHub issue on the day) were provided in the session that built the site.
 
@@ -252,7 +255,7 @@ From the [review](reviews/2026-10-06-merged-review.md) (rounds 1–3). These nee
 |---|---|---|
 | R3 | `patrickjv.com` DMARC is `p=none; rua=mailto:hello@patrickjv.com; fo=1` (monitoring) | After ~2 weeks of clean aggregate reports, `p=quarantine`, then `p=reject`. `fo=1` does nothing without a `ruf` address (C3-F13) — drop it at the same edit, or leave it as harmless |
 | Codex-3 / C3-F13 | `marineweather.patrickjv.com` has its **own** DMARC `v=DMARC1; p=none;` with **no `rua`**: it overrides the apex policy and reports nowhere | Add `rua=mailto:hello@patrickjv.com`; check the actual From, DKIM (`resend._domainkey`, a **1024-bit** key — regenerate at 2048 if Resend allows) and MAIL FROM (`send.marineweather`, Amazon SES) alignment in the reports; then tighten its own policy |
-| R4 / C3-F7 | DNSSEC is enabled on `patrickjv.com`, but the **DS record is not published** at the registrar (RDAP `delegationSigned: false`), so there is no protection yet | Cloudflare Registrar should publish it automatically; if `smoke --dns` still WARNs after a few days, chase it (Cloudflare dashboard → DNS → Settings → DNSSEC, or Registrar support) |
+| R4 / C3-F7 | ~~DNSSEC DS not published~~ **Resolved:** the DS record is published and resolves (checked 24 Oct 2026) | None |
 
 ## Useful commands
 
