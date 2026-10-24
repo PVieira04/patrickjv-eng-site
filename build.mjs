@@ -606,6 +606,9 @@ export function renderPrivacy(c, cfg = BOOKING_CONFIG) {
 export const BOOK_PATH = "/book";
 const BOOK_STYLE = WRITING_STYLE + `
 [hidden] { display: none; }
+/* While the script loads the meeting types, hold the form's space so the section below doesn't jump (CLS). The script clears data-gone; without it, or when booking is closed, the form collapses. */
+#book[hidden]:not([data-gone]) { display: block; visibility: hidden; min-height: 17.5rem; }
+@media (min-width: 600px) { #book[hidden]:not([data-gone]) { min-height: 13rem; } }
 fieldset { margin: 0 0 20px; padding: 12px 16px 16px; border: 1px solid var(--line); border-radius: 4px; }
 legend { padding: 0 6px; font-family: var(--mono); font-size: 0.875rem; }
 .choices { display: flex; flex-wrap: wrap; gap: 8px 16px; }
@@ -655,6 +658,7 @@ const bookScript = (copy) => `
   var t = ${safeJson(copy)};
   var $ = function (id) { return document.getElementById(id); };
   var form = $("book"), n = 0, type = null, byDay = {}, start = null;
+  form.removeAttribute("data-gone");
   var zone = null;
   try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { zone = null; }
   $("zone").textContent = zone ? t.zone.replace("{zone}", zone) : t.zoneFallback;
@@ -702,7 +706,7 @@ const bookScript = (copy) => `
       return res.json().catch(function () { return null; }).then(function (data) { return { status: res.status, ok: res.ok, data: data || {} }; });
     });
   }
-  function closed() { form.hidden = true; show("closed", true); say(t.messages.closed); }
+  function closed() { form.hidden = true; form.setAttribute("data-gone", ""); show("closed", true); say(t.messages.closed); }
   function failed(r) {
     var m = t.messages, server = typeof r.data.message === "string" ? r.data.message : "";
     if (r.status === 503 && r.data.error === "booking_disabled") return closed();
@@ -879,7 +883,7 @@ const bookScript = (copy) => `
     say(t.messages.sending);
     call("/api/booking", body).then(function (r) {
       $("send").disabled = false;
-      if (r.ok) { form.hidden = true; return say(t.messages.held); }
+      if (r.ok) { form.hidden = true; form.setAttribute("data-gone", ""); return say(t.messages.held); }
       if (r.status === 409) return loadSlots(t.messages.slotGone);
       failed(r);
     }, function () { $("send").disabled = false; broken(); });
@@ -887,13 +891,13 @@ const bookScript = (copy) => `
 
   say(t.messages.loadingTypes);
   call("/api/booking/types").then(function (r) {
-    if (!r.ok) return failed(r);
+    if (!r.ok) { form.setAttribute("data-gone", ""); return failed(r); }
     // Closed until launch: say so straight away rather than after the visitor fills in the form.
     if (r.data.enabled !== true) return closed();
     (r.data.types || []).forEach(function (m) { choice("types", "type", m.id, m.title + " · " + t.labels.minutes.replace("{n}", m.minutes), m.description); });
     form.hidden = false;
     say("");
-  }, broken);
+  }, function () { form.setAttribute("data-gone", ""); broken(); });
 })();
 `;
 
@@ -909,7 +913,7 @@ export function renderBook(c, guide, cfg = BOOKING_CONFIG) {
     main: `<h1>${attr(b.title)}</h1>
 <p>${attr(b.intro.replaceAll("{sign_in_providers}", signInPhrase(launched)))}</p>
 <noscript><p>${linkEmail(b.noscript, email)}</p></noscript>
-<form id="book" hidden>
+<form id="book" hidden data-gone>
 <fieldset><legend>${attr(l.type)}</legend><div id="types" class="choices"></div></fieldset>
 <p id="zone" class="meta"></p>
 <fieldset id="day-set" hidden><legend>${attr(l.day)}</legend>
