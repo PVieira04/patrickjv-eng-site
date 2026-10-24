@@ -12,7 +12,7 @@ The rest of the story, from the merged pull requests (London dates):
 | 9 Oct | F-003 calendar day picker and time list; **F-002 P1**: bookings confirmed by signing in with Google; any Google-verified address accepted. |
 | 13 Oct | **F-004** (PR #12) builds Microsoft and Altimist ID sign-in behind the same flow; both stay off. |
 | 14–19 Oct | A public contact address was added (PR #13) and reverted (PR #16). |
-| 24 Oct | Dependabot bumps merged (dev dependencies; `actions/setup-node` 7.1.0, with the workflow guard's pinned SHA updated). Docs brought up to date. |
+| 24 Oct | Dependabot bumps merged (dev dependencies; `actions/setup-node` 7.1.0, with the workflow guard's pinned SHA updated). Docs brought up to date; Lighthouse re-run found two regressions (homepage nav tap targets, `/book` layout shift), fixed in PR #19. |
 
 ## Starting point
 

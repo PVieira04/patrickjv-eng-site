@@ -88,24 +88,24 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 
 ### Re-run, 24 Oct 2026 (all five pages, after booking, CV, writing and sign-in)
 
-Live site, headless Chromium via Playwright + Lighthouse (mobile / desktop), axe in dark and light mode:
+Live site, headless Chromium via Playwright + Lighthouse (mobile / desktop), axe in dark and light mode. Run twice: before and after the two fixes below (PR #19, deployed the same day).
 
 | Page | Perf | A11y | Best practices | SEO | LCP | CLS |
 |---|---|---|---|---|---|---|
-| `/` | 100 / 100 | **96** / 100 | 100 / 100 | 100 / 100 | 1.4 s / 0.3 s | 0 / 0 |
-| `/book` | **87–90** / 99 | 100 / 100 | 100 / 100 | 100 / 100 | 0.8–1.0 s / 0.3 s | **0.21** / 0.07 |
-| `/cv` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 1.2 s / 0.3 s | 0.05 / 0.02 |
-| `/writing/` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.2 s | 0.01 / 0.005 |
-| `/privacy` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.2 s | 0.05 / 0.001 |
+| `/` | 100 / 100 | 100 / 100 | 100 / 100 | 100 / 100 | 1.5 s / 0.4 s | 0 / 0 |
+| `/book` | 100 / 100 | 100 / 100 | 100 / 100 | 100 / 100 | 0.8 s / 0.3 s | 0.005 / 0.021 |
+| `/cv` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.3 s | 0.05 / 0.02 |
+| `/writing/` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.3 s | 0.01 / 0.005 |
+| `/privacy` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.3 s | 0.05 / 0.001 |
 
-axe-core (WCAG 2.0/2.1/2.2 A and AA + best practices): **0 violations on all five pages**, dark and light.
+axe-core (WCAG 2.0/2.1/2.2 A and AA + best practices): **0 violations on all five pages**, dark and light, before and after.
 
-What differs from the 7 Oct "100 everywhere", and why:
+The first run of the day found two regressions since 7 Oct. Both are fixed:
 
-- **`/` mobile accessibility 96 (a regression).** Lighthouse's `target-size` audit flags two header links, "Background" (80 × 15 px) and "Writing" (56 × 15 px): under 24 × 24 px and too close to their neighbours. The nav grew when Writing and Book a call were added. Not fixed yet.
-- **`/book` mobile performance 87–90 (a regression).** One layout shift of 0.207, on the "For AI agents" section (`#for-agents`), which moves when the page script has loaded the calendar. Not fixed yet. Desktop is 99.
-- **`/cv`, `/writing/`, `/privacy` SEO 92 is a measurement artefact.** Lighthouse fetches `/robots.txt` from inside the page, and these pages' CSP has no `connect-src`, so the fetch is blocked and the `robots-txt` audit fails with no detail. On `/`, which allows `connect-src 'self'`, the same audit passes, and `robots.txt` is valid. Not a site fault; loosening the CSP to satisfy a probe would be the wrong trade.
-- `/` only: Lighthouse's remaining notes are a 10 KiB cache-lifetime suggestion (deliberate, see Caching) and the network dependency tree (informational).
+- **`/` mobile accessibility was 96.** Lighthouse's `target-size` audit flagged the header links "Background" (80 × 15 px) and "Writing" (56 × 15 px) as under 24 × 24 px. The nav had grown when Writing and Book a call were added. Fix: the links are `inline-block` with `padding: 0.35rem 0`, so each target is at least 24 px tall (WCAG 2.5.8); the row gap moved into the padding. Now 100.
+- **`/book` mobile performance was 87–90 (desktop 99).** One layout shift of 0.207: the form is hidden until the script has fetched the meeting types, so the "For AI agents" section sat at the top of the screen and jumped down when the form appeared. Fix: `<form id="book" hidden data-gone>`; the script removes `data-gone` as it starts, and while the form is hidden without `data-gone` CSS reserves its height (17.5 rem, 13 rem from 600 px wide) with `visibility: hidden`. The script sets `data-gone` again when booking is closed, a booking is held, or the types call fails, so nothing leaves a blank gap; without JavaScript the form stays collapsed. CLS is now 0.005 (mobile) and 0.021 (desktop), performance 100. `test/booking-pages.test.mjs` guards both fixes. If the form's first-paint height changes (more meeting types, a longer description), adjust the two `min-height` values.
+
+**Known and accepted: `/cv`, `/writing/` and `/privacy` SEO 92.** This is a measurement artefact. Lighthouse fetches `/robots.txt` from inside the page, and these pages' CSP has no `connect-src`, so the fetch is blocked and the `robots-txt` audit fails with no detail. On `/`, which allows `connect-src 'self'`, the same audit passes, and `robots.txt` is valid. Not a site fault; loosening the CSP to satisfy a probe would be the wrong trade. `/` also shows a 10 KiB cache-lifetime suggestion (deliberate, see Caching) and an informational network dependency tree.
 
 Headless Chromium works in WSL **without sudo** — the only missing library (`libasound.so.2`) is unpacked locally:
 
