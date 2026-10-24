@@ -803,3 +803,21 @@ test("F-004 privacy: /privacy names every enabled provider (launched or on trial
     if (!names.includes("Altimist ID")) assert.doesNotMatch(t, /Altimist/);
   }
 });
+
+// Lighthouse 24 Oct 2026: /book mobile CLS 0.207 (the form appeared and pushed "For AI agents" down)
+// and homepage nav links under the 24px tap-target minimum.
+test("/book holds the form's space until the script has loaded the types, and releases it when booking can't open", () => {
+  const html = bookHtml(["google"], []);
+  assert.match(html, /<form id="book" hidden data-gone>/, "no JavaScript: the form collapses");
+  assert.match(html, /#book\[hidden\]:not\(\[data-gone\]\) \{ display: block; visibility: hidden; min-height: 17\.5rem; \}/);
+  assert.match(html, /form\.removeAttribute\("data-gone"\);/, "the script reserves the space as it starts");
+  const releases = html.match(/form\.setAttribute\("data-gone", ""\)/g) ?? [];
+  assert.ok(releases.length >= 4, `closed, held, a failed types call and a network error each release it (found ${releases.length})`);
+});
+
+test("the homepage nav links are at least 24px tall (WCAG 2.5.8 target size)", () => {
+  const css = read("public/index.html");
+  const rule = css.match(/\.strip nav a \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(rule, /display: inline-block/);
+  assert.match(rule, /padding: 0\.35rem 0/, "12px label text (15px line) + 2 x 5.6px >= 24px");
+});

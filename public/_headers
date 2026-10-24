@@ -12,11 +12,11 @@
 
 # The page: "/" is negotiated (HTML, or Markdown for Accept: text/markdown), hence Vary.
 /
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-olvXBLEz9gmipH9v5+j93FTD34cefwoYiz/wyA0KOTg='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ecmirXoAuvDKdmzfx3YNme7i4UfNpeDGv7sXtViHkLA='; script-src 'sha256-olvXBLEz9gmipH9v5+j93FTD34cefwoYiz/wyA0KOTg='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
   Vary: Accept
 
 /index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-qzpSJltW44NDhJ5gY3cnYznz56WqauqRFLivMbqiuOM='; script-src 'sha256-olvXBLEz9gmipH9v5+j93FTD34cefwoYiz/wyA0KOTg='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-ecmirXoAuvDKdmzfx3YNme7i4UfNpeDGv7sXtViHkLA='; script-src 'sha256-olvXBLEz9gmipH9v5+j93FTD34cefwoYiz/wyA0KOTg='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
 
 # The CV: served at /cv (and /cv.html, which the asset server redirects to /cv). It names employers;
 # the page and agent surfaces do not.
@@ -35,10 +35,10 @@
 
 # Booking (F-001).
 /book
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UBZFtA+LBvGrO+xBldsNN69q0u/m3DK2kv1xOenYK98='; script-src 'sha256-m8OBY2lUrDkpw5Mm1LEEUv+utCTjORR7IsErwxkBmS8='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-Fn+7FaKtODJq6xqNBPy5kdcuIixBIWmuY2UesUZAmt4='; script-src 'sha256-ERBmQIV3JxEs0yCU+5vNOeFzlKtLg+xoU/Nv/M/FDIA='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
 
 /book.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-UBZFtA+LBvGrO+xBldsNN69q0u/m3DK2kv1xOenYK98='; script-src 'sha256-m8OBY2lUrDkpw5Mm1LEEUv+utCTjORR7IsErwxkBmS8='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-Fn+7FaKtODJq6xqNBPy5kdcuIixBIWmuY2UesUZAmt4='; script-src 'sha256-ERBmQIV3JxEs0yCU+5vNOeFzlKtLg+xoU/Nv/M/FDIA='; connect-src 'self'; base-uri 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
 
 # Writing: each post as HTML (at /writing/<slug>, and its .html name) and as its Markdown source.
 /writing/gating-agent-written-code
