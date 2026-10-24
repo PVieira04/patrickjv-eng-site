@@ -24,7 +24,7 @@ Right after a deploy, Cloudflare can briefly serve the previous version from som
 <a id="ci"></a>
 ## CI
 
-GitHub Actions no longer deploys and holds **no secrets**. Both workflows use actions pinned to full commit SHAs — `actions/checkout` **v7.0.1** (`3d3c42e…`) and `actions/setup-node` **v7.0.0** (`8207627…`), both on the Node 24 action runtime — plus `persist-credentials: false`, least-privilege `permissions`, the `ubuntu-24.04` runner and Node 24. **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for GitHub Actions (bumping the pinned SHA and its version comment together) and npm (dev dependencies grouped into one PR); each PR runs `test.yml`, nothing merges itself. `test/workflows.test.mjs` guards the properties below (revert-and-fail verified).
+GitHub Actions no longer deploys and holds **no secrets**. Both workflows use actions pinned to full commit SHAs — `actions/checkout` **v7.0.1** (`3d3c42e…`) and `actions/setup-node` **v7.1.0** (`949feb2…`), both on the Node 24 action runtime — plus `persist-credentials: false`, least-privilege `permissions`, the `ubuntu-24.04` runner and Node 24. **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for GitHub Actions (bumping the pinned SHA and its version comment together) and npm (dev dependencies grouped into one PR); each PR runs `test.yml`, nothing merges itself. `test/workflows.test.mjs` guards the properties below (revert-and-fail verified).
 
 | Workflow | When | What |
 |---|---|---|

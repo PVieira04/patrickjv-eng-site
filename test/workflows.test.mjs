@@ -100,7 +100,7 @@ test("workflows: every action pinned to a full commit SHA, checkout/setup-node o
     assert.ok(uses.length >= 2, f);
     for (const u of uses) assert.match(u, /^actions\/(checkout|setup-node)@[0-9a-f]{40}$/, `${f}: ${u}`);
     assert.match(raw(f), /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\.0\.1/, f);
-    assert.match(raw(f), /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7\.0\.0/, f);
+    assert.match(raw(f), /actions\/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7\.1\.0/, f);
   }
   const dep = readFileSync(new URL("../.github/dependabot.yml", import.meta.url), "utf8");
   assert.match(dep, /package-ecosystem: github-actions\n\s+directory: \/\n\s+schedule:\n\s+interval: weekly/);
