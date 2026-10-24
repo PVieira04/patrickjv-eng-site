@@ -2,6 +2,18 @@
 
 The site was designed, built and launched in one session on **6 October 2026**, with Claude Code (Claude Opus) doing the build and **Codex (gpt-6.1-sol)** acting as a second, independent designer and as an adversarial reviewer.
 
+## After launch
+
+The rest of the story, from the merged pull requests (London dates):
+
+| Date | What |
+|---|---|
+| 8 Oct | Write-ups at `/writing/`; the CV at `/cv`; **booking (F-001) launched** (`/book`, five MCP and WebMCP tools, MCP Registry 1.2.0). |
+| 9 Oct | F-003 calendar day picker and time list; **F-002 P1**: bookings confirmed by signing in with Google; any Google-verified address accepted. |
+| 13 Oct | **F-004** (PR #12) builds Microsoft and Altimist ID sign-in behind the same flow; both stay off. |
+| 14–19 Oct | A public contact address was added (PR #13) and reverted (PR #16). |
+| 24 Oct | Dependabot bumps merged (dev dependencies; `actions/setup-node` 7.1.0, with the workflow guard's pinned SHA updated). Docs brought up to date. |
+
 ## Starting point
 
 - `patrickjv.com` served only `/.well-known/did.json` (from the `patrickjv-did` Worker); everything else was a 404.

@@ -9,7 +9,7 @@ Everything runs on one **personal Cloudflare account** (Free plan) with two zone
 browser / crawler ────► │ URL Rewrite rule "Markdown for agents"                                      │
                         │   path = "/" and Accept starts with text/markdown → rewrite to /index.md    │
                         │ WAF rate-limiting rule "MCP flood guard"                                    │
-                        │   path starts with /mcp (and /api/booking, from launch): 6 / 10 s per IP    │
+                        │   path starts with /mcp or /api/booking: 6 / 10 s per IP    │
                         └──────────────┬──────────────────────────────┬───────────────────────────────┘
                                        │                              │
              Custom Domains            │            Route             │            Custom Domains
@@ -81,7 +81,7 @@ All on the **`patrickjv.com`** zone. The alias zone `pvieira.co.uk` was hardened
 | SSL/TLS → Edge Certificates → **Always Use HTTPS** | On (7 Oct) | HTTP → HTTPS at the edge, no Worker invoked; HSTS now takes effect from the first HTTPS visit |
 | SSL/TLS → Edge Certificates → **Minimum TLS Version** | 1.2 (7 Oct) | TLS 1.0/1.1 refused |
 | **Network Error Logging** | Off (7 Oct) on `patrickjv.com` and `pvieira.co.uk` | Browsers are no longer told to send network-error reports to a Cloudflare reporting endpoint; smoke `--aliases` FAILs if NEL returns on either zone |
-| DNS → Settings → **DNSSEC** | Enabled (7 Oct; DS publication pending at the registrar — **no protection until the DS appears**; smoke `--dns` WARNs meanwhile) | Will protect the `did:web` identity from DNS spoofing once the chain of trust is complete |
+| DNS → Settings → **DNSSEC** | Enabled (7 Oct); DS published at the registrar (confirmed 24 Oct: the DS record resolves and a validating resolver sets the AD flag), so the chain of trust is complete | Will protect the `did:web` identity from DNS spoofing once the chain of trust is complete |
 
 ## Free-plan limits that shaped the design
 

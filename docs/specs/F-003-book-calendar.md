@@ -11,7 +11,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | F-003 |
-| Status | Calendar merged to `main` (35d788b). Time list refined on `feat/book-time-list` (not merged, not deployed) |
+| Status | Shipped (9 Oct 2026: calendar PR #8, time list PR #10) |
 | Owner | @PVieira04 |
 | Created | 2026-10-09 |
 | Depends on | F-001 (shipped) |

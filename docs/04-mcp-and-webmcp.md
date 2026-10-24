@@ -29,7 +29,8 @@ The email arrives from "patrickjv.com intro" `<intro@patrickjv.com>` with subjec
 
 - `mcp/handler.js` — all protocol and safety logic, including the quota Durable Object's reservation (`reserveIntro`) and alarm (`pruneQuota`) logic, with no Cloudflare-only imports, so it is fully unit-tested in Node.
 - `mcp/index.js` — wires in `EmailMessage` (`cloudflare:email`) and the `IntroQuota` Durable Object, whose methods call `reserveIntro` / `pruneQuota`.
-- `mcp/handler.test.mjs` — 51 tests, run against the real reservation code with an in-memory storage.
+- `mcp/handler.test.mjs` — run against the real reservation code with an in-memory storage.
+- `mcp/booking-config.js`, `booking-store.js`, `booking-service.js`, `booking-google.js`, `booking-email.js`, `booking-signin.js` — booking: rules and slots, the SQLite state machine and the `BookingStore` Durable Object body, Google Calendar, guest email, and the OpenID Connect sign-in providers (F-002, F-004). Each has a `*.test.mjs` beside it; `booking-harness.mjs`, `booking-fakes.mjs` and `booking-sqlite.mjs` are test helpers (fake Google and Resend, `node:sqlite` standing in for Durable Object storage).
 
 ## Cost and abuse controls
 
@@ -109,7 +110,7 @@ Double opt-in (email the sender a confirmation link) needs sending to arbitrary 
 <a id="booking"></a>
 ## Booking (F-001)
 
-Spec: [F-001](specs/F-001-booking.md). **Ships dark:** `BOOKING_ENABLED` is `"false"` in `mcp/wrangler.jsonc` until the [launch checklist](06-operations.md#booking-launch) is done. The booking tools appear (in MCP `tools/list`, the initialize instructions and the homepage's WebMCP tools) only when booking is enabled.
+Spec: [F-001](specs/F-001-booking.md). **Live since 8 Oct 2026:** `BOOKING_ENABLED` is `"true"` in `mcp/wrangler.jsonc` (the [launch checklist](06-operations.md#booking-launch) is kept as the record). The booking tools appear (in MCP `tools/list`, the initialize instructions and the homepage's WebMCP tools) only when booking is enabled.
 
 Every booking starts as a **hold** and becomes a meeting only when the guest clicks **Confirm** in an email sent to the address given. Page bookings and agent bookings take the same path. All booking state lives in one SQLite Durable Object, `BookingStore`, and every operation (holding, confirming, cancelling, availability) runs inside it, so its claim-before-await blocks serialise (spike S2).
 
