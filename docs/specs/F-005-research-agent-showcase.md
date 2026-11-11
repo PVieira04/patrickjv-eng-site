@@ -14,7 +14,7 @@
 | Status | Draft, revised after spec review round 1; not built |
 | Owner | @PVieira04 |
 | Created | 2026-11-11 |
-| Depends on | (1) **A `research publish` spec in research-agent (to be written)**, which must produce the export contract below. (2) **F-001d schema change (`models.harness`)**: merged on research-agent `main` (in `schemas/report.v1.json` as of `bfb901a`); listed so a later schema change is checked against this spec. (3) **F-001c scorecard fields**: the scorecard must carry the fields in "Export contract → Scorecard", which F-001c's `scorecard.json` lacks today (no `dataset`, no `harness`). (4) At least one published synthetic run and one published scorecard before launch. |
+| Depends on | (1) **research-agent F-001e, `research publish`** (draft under review, branch `spec/research-publish`, head `c6115a1`), which produces the export this spec consumes. The contract below is pinned to its layout; one known difference is being corrected in F-001e: it says the site flattens figure paths, and this spec keeps them run-relative (so F-001e's base-name collision rule becomes unnecessary for the site). (2) **F-001d schema change (`models.harness`)**: merged on research-agent `main` (in `schemas/report.v1.json` as of `bfb901a`); listed so a later schema change is checked against this spec. (3) **F-001c's eval** (not built): the scorecard export needs it. F-001e adds the fields the gate needs (`runs[]` with each run's dataset and harness) at export time, so F-001c itself needs no new fields; it should adopt the `eval-YYYYMMDDTHHMMSSZ` directory name F-001e assumes. (4) At least one published synthetic run and one published scorecard before launch. |
 
 **Numbering.** The research-agent repository calls this page "F-002" in its F-001 index. This repository already uses F-002 (signed-in agent booking), F-003 and F-004, so the showcase is **F-005** here. Mapping: research-agent "F-002" = patrickjv-eng-site **F-005**. Research-agent "F-003" (MCP tools on the site's server, then a live Worker) will take the next free number here when it is written; it is not this spec.
 
@@ -85,7 +85,7 @@ As **the owner**, I want **only exports I have read, byte for byte, to be served
 | D3 | **The human check is recorded in `projects/research-agent/published.json`** (the manifest): for each run and the scorecard, the date it was checked, the sha256 of every file, the alt text of every figure, and an optional role (`trap_caught`, `rejected_plan`, `clean_pass`). Only files under `runs/` and `scorecard/` are governed by the manifest; `architecture.svg` and `published.json` are ordinary sources reviewed in the PR. | Trusting the export as is: a later edit, or a file copied in by mistake, would ship unread. |
 | D4 | **The build owns `public/projects/`.** Each build computes the full set of files it would write there. A normal build deletes any other file under `public/projects/` (in the same staged write as the outputs, with the same rollback); `--check` fails, naming the file, if any file there isn't one the current build would write, or if any it would write differs. Today `build.mjs` never deletes and `--check` ignores files it didn't generate; this is new code, limited to `public/projects/`. | Leaving deletion to the owner: unpublishing would leave the run served, and a hand-copied file would be served with no check. |
 | D5 | **Copy lives in `content.json` → `pages.projects`**, like `/privacy` and `/book`. The architecture diagram is a hand-written SVG, `projects/research-agent/architecture.svg`, inlined by the build. Because `checkPage` skips `pages`, coverage of `pages.projects` is new code with its own test: every string under it must be the whole visible text of an element in a generated projects page. | Hand-written HTML pages: the copy couldn't feed the Markdown twins, `llms.txt` and head metadata from one source. |
-| D6 | **Synthetic-only gate in the build.** A run is accepted only if `dataset.visibility` is `public`, `dataset.source` starts with `synthetic:`, and `dataset.licence` equals `Synthetic data, no restrictions` (the string the research-agent generator writes). The scorecard is accepted only if its `dataset` object passes the same three tests. The gate has no config switch. | A config flag: one edit away from publishing licensed data. |
+| D6 | **Synthetic-only gate in the build.** A run is accepted only if `dataset.visibility` is `public`, `dataset.source` matches `^synthetic:research_agent\.data\.synth seed=[0-9]+$`, and `dataset.licence` equals `Synthetic data, no restrictions` (the values the research-agent generator writes; the same tests F-001e's own gate applies first). The scorecard is accepted only if every entry of its `runs[]` passes the same three tests on its `dataset`. The gate has no config switch. | A config flag: one edit away from publishing licensed data. |
 | D7 | **Model-written text is rendered with its own `new Marked()` instance** (never the shared `marked` the writing pages use), configured so that raw HTML is escaped, **no link in model-written content is live** (links and autolinks render as their text followed by the URL as plain text), and images render only when their target is exactly one of the run's figure paths. Headings are shifted down one level (`#` → `<h2>`, `##` → `<h3>`, capped at `<h6>`) so the page keeps one `<h1>`. | Rendering `report.md` with the shared instance as is: marked passes raw HTML through, and live links from model output are a phishing and spam surface the owner can't fully review. |
 | D8 | **URLs follow `/writing/`**: index at `/projects/` (canonical with the slash), showcase at `/projects/research-agent`, runs at `/projects/research-agent/runs/<run_id>` with `.md` and `.json` twins, figures at `/projects/research-agent/runs/<run_id>/calls/<N>/out/<name>.png`, keeping the export's run-relative paths so `report.json` → `figures` and `report.md`'s image links resolve unchanged. | `/projects/langgraph-research-agent`: the owner decided keywords go in the title, not the URL. Flattened figure names: would need rewriting links in checked text. |
 | D9 | **Launch switch.** `pages.projects.launched` (boolean). While `false`, the pages are built and served with `noindex` (a `<meta>` on HTML pages and `X-Robots-Tag: noindex` on every response under `/projects/`), and are absent from the sitemap, `llms.txt`, `index.md` and the homepage. `true` requires at least one published run, the scorecard, and the homepage entry (see "Launch"). | Shipping only when complete: the live checks (CSP, Lighthouse, smoke) can't be run before launch. |
@@ -99,23 +99,41 @@ This is the consumer's contract: what this site accepts. The `research publish` 
 
 ### Run
 
-`research publish <run_id>` writes a directory named `<run_id>` containing exactly:
+`research publish <run_id>` (F-001e) writes an export folder containing exactly:
 
-- `report.json`, valid against `schemas/report.v1.json` (major version 1), with `run_id` equal to the directory name;
-- `report.md`;
-- each file named in `report.json` → `figures`, at that path (`calls/<N>/out/<name>.png`), and no other figure;
-- `SHA256SUMS`, in `sha256sum` format (`<hex>  <path>`, two spaces, paths relative to the directory, sorted), listing every other file in the directory and nothing else.
+- `report.json`, byte-identical to the run's and valid against `schemas/report.v1.json` (major version 1), with `run_id` equal to the export's `id`;
+- `report.md`, byte-identical to the run's;
+- each file named in `report.json` → `figures`, at its run-relative path (`calls/<N>/out/<name>.png`), and no other figure;
+- `export.json`, the hash list.
 
-Patterns the build enforces (from the report schema): `run_id` `^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$`; figure path `^calls/[1-9][0-9]{0,3}/out/[A-Za-z0-9_-][A-Za-z0-9._-]{0,55}\.png$`; at most 20 figures. Figures must be PNGs with no `tEXt`, `iTXt` or `zTXt` chunks (publish strips them; the build refuses them), so no text rides in image metadata.
+`export.json`, as F-001e defines it:
+
+```json
+{
+  "export_version": "1.0.0",
+  "kind": "run",
+  "id": "20261111T143000Z-a1b2c3",
+  "tool": { "name": "research-agent", "version": "0.1.0" },
+  "exported_at": "2026-11-11T15:04:05Z",
+  "files": [
+    { "path": "calls/3/out/vol_by_minute.png", "sha256": "…", "bytes": 48213 },
+    { "path": "report.json", "sha256": "…", "bytes": 9120 },
+    { "path": "report.md", "sha256": "…", "bytes": 6311 }
+  ]
+}
+```
+
+What the site accepts: `export_version` major 1; `kind` `run` (or `scorecard`, below); `id` matching the kind's pattern; `tool.name` `research-agent`; `exported_at` UTC with `Z`; `files` sorted by path, each path unique, listing every file in the folder except `export.json` and nothing else, each with a 64-hex `sha256` and an integer `bytes` that both match the file. `export.json` itself is not copied into this repository; the manifest records what it said.
+
+Patterns the build enforces (from the report schema): `run_id` `^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$`; figure path `^calls/[1-9][0-9]{0,3}/out/[A-Za-z0-9_-][A-Za-z0-9._-]{0,55}\.png$`; at most 20 figures. Figures must be PNGs with none of the chunks F-001e strips (`tEXt`, `zTXt`, `iTXt`, `eXIf`, `tIME`); the build refuses them, so no text rides in image metadata.
 
 ### Scorecard
 
-`research publish --scorecard <eval_id>` writes a directory named `<eval_id>` containing `scorecard.json` and `SHA256SUMS`. `eval_id` matches `^eval-[0-9]{8}T[0-9]{6}Z$` (the research-agent eval directory name; the publish spec must name it this way). `scorecard.json` is F-001c's format (`scorecard_version` major 1) plus two fields this spec needs from F-001c or from publish:
+`research publish --scorecard <eval_id>` (F-001e) writes a folder containing `scorecard.json` and `export.json` (`kind` `scorecard`, `id` the `eval_id`). `eval_id` matches `^eval-[0-9]{8}T[0-9]{6}Z$`.
 
-- `dataset`: `{name, source, visibility, licence}`, the dataset every scored run used (all scored runs must share one dataset, else publish refuses);
-- `harness`: `langgraph` or `claude-code`, the harness every scored run used.
+`scorecard.json` is F-001e's allow-list of F-001c's format: `scorecard_version` (major 1), `created_at`, `k`, the kept `fingerprint.config` fields (model ids, caps, synthetic seed, package version, Claude Code version), `questions[]` (`id`, `n_repeats`, `correct`, `trap_recall`, `critic_precision`, `trap_handled`, `unscored_passes`, `statistic_mismatches`), `aggregate`, optional `baseline`, `dropped`, `eval_id` (equal to the export's `id`), and `runs[]`: one per repeat with `run_id`, `question_id`, `status`, `dataset` (`name`, `source`, `visibility`, `licence`) and `models.harness`.
 
-Whether the `fingerprint.config` fields with the private repository's git commit and prompt hashes are kept is open question 1.
+The site reads `questions[]`, `aggregate`, `k`, `created_at`, the model ids and seed, and `runs[]` (for the gate and the harness shown). It ignores `baseline` (the page doesn't compare scorecards) and `dropped`. The git commit, `dirty` flag, prompt and file hashes and `fingerprint.sha256` are dropped by F-001e by default; the site refuses a scorecard that still has `config.git_commit` or `fingerprint.sha256` unless open question 1 is answered "keep".
 
 ### Where the synthetic data comes from
 
@@ -127,7 +145,7 @@ Checked in research-agent `main` (`src/research_agent/data/synth.py`, read only,
 
 1. In the private repository, `research publish <run_id>` writes the export (above).
 2. The owner reads every file in the export: the report text, every figure, and the JSON.
-3. In this repository, `node build.mjs --record <export-dir>` (new) verifies the export against the contract (exact file set, `SHA256SUMS` matches, patterns, PNG chunk rule), copies exactly the listed files, as bytes, into `projects/research-agent/runs/<run_id>/` (without `SHA256SUMS`), and adds the run to `published.json` with today's date, each file's sha256 and an empty alt text per figure. It refuses a run id already in the manifest. It writes nothing on any failure.
+3. In this repository, `node build.mjs --record <export-dir>` (new) verifies the export against the contract (`export.json` fields, exact file set, every `sha256` and `bytes` matches, patterns, PNG chunk rule), copies exactly the listed files, as bytes and at their run-relative paths, into `projects/research-agent/runs/<run_id>/` (without `export.json`), and adds the run to `published.json` with today's date, `export.json`'s `tool.version` and `exported_at`, each file's sha256 and an empty alt text per figure. It refuses a run id already in the manifest. It writes nothing on any failure.
 4. The owner writes each figure's alt text and the optional role in `published.json`. The build refuses an empty alt text.
 5. A PR to `main`. The diff is the second look: it shows exactly the bytes that will be served.
 
@@ -156,7 +174,7 @@ Sections, in order (headings are working titles; final copy is approved by the o
 1. **Heading and lead.** `<h1>` "Research agent". A lead paragraph naming LangGraph, LangChain and MCP. "Code available on request: [book a call](/book)."
 2. **What it does.** Question → plan → approval → sandboxed analysis → critic → report. The worked example is NQ futures 1-minute bars; **every result on this page is on a seeded synthetic dataset**, and the page says so above the scorecard and on every run.
 3. **Architecture.** The inline SVG (see "CSP and third parties" for its rules) and short text for each part: the graph (plan, approval interrupt, analyse loop, critic, caps, checkpointing and resume); the research MCP server (three tools, used by the graph and by Claude Code on its own; access levels and dataset visibility); the sandbox (no network, no secrets, read-only data, hard limits; bubblewrap, a cgroup memory limit and a seccomp filter, at that level of detail only); the eval (ten questions with planted effects and traps, k repeats, answer accuracy, trap recall, critic precision); the Claude Code harness (no API keys; a `/research` skill, analyst and critic subagents, a permission rule on code execution).
-4. **Eval scorecard.** The published scorecard: date, k, harness, models, synthetic seed; a table per question with correct / n, trap recall x / n, critic precision x / n; the aggregate score with its standard error. A measure with n = 0 shows "n/a".
+4. **Eval scorecard.** The published scorecard: date, k, the harness (from `runs[].models.harness`; if the runs used more than one, each is named with its count), models, synthetic seed; a table per question with correct / n, trap recall x / n, critic precision x / n; the aggregate score with its standard error. A measure with n = 0 shows "n/a".
 5. **Recorded runs.** One card per run: the question, the harness ("LangGraph agent" or "Claude Code harness"), status, review outcome, role, link. Ordered by role (`trap_caught`, `rejected_plan`, `clean_pass`, then none), then newest first.
 6. **How it was built.** Spec-first: a written spec with testable acceptance criteria for every part before code; several rounds of adversarial review by a second model on specs and code, findings fixed and recorded; tests before implementation; the sandbox's threat model written first. No employer, client, team or internal tool names.
 7. **Footer**, as the writing pages.
@@ -286,7 +304,7 @@ Enforced by the build, pre-merge: each generated HTML page ≤ 30 KB gzip; each 
 - [ ] the writing pages' output is unchanged (they use the shared instance). Test compares bytes before and after.
 
 **Manifest, ownership and contract**
-- [ ] **(US-4, D3)** The build fails, writing nothing, when under `runs/` or `scorecard/`: a file isn't in the manifest; a listed file is missing; a hash differs; a figure has empty alt text; `report.json` names a figure that isn't present, or a present figure isn't named; a role isn't one of the three; a figure has a `tEXt`, `iTXt` or `zTXt` chunk. One test per case.
+- [ ] **(US-4, D3)** The build fails, writing nothing, when under `runs/` or `scorecard/`: a file isn't in the manifest; a listed file is missing; a hash differs; a figure has empty alt text; `report.json` names a figure that isn't present, or a present figure isn't named; a role isn't one of the three; a figure has a `tEXt`, `zTXt`, `iTXt`, `eXIf` or `tIME` chunk. One test per case.
 - [ ] **(D4)** Unpublishing: with a run built, removing its directory and manifest entry and building again leaves no file for it under `public/projects/`, and no entry in the sitemap, `llms.txt`, `index.md` or the showcase. Test.
 - [ ] **(D4)** Stray file: a file placed by hand under `public/projects/` makes `--check` fail naming it, and a normal build deletes it. Tests for both.
 - [ ] **(D4)** An injected failure while writing restores deleted files as well as replaced ones (extends the existing rollback test).
@@ -295,10 +313,10 @@ Enforced by the build, pre-merge: each generated HTML page ≤ 30 KB gzip; each 
 - [ ] `report.json` fields the page reads are checked (`schema_version`, `run_id`, `status`, `question`, `dataset`, `finished_at`, `models.harness`, `plan`, `review.outcome`, `review.open_issues`, `summary`, `figures`; `rejection.reason` when `rejected`; `stop_reason` when `capped` or `failed`); missing or wrong-typed fails the build. Full schema validation stays in `research publish`. Tests per status.
 - [ ] Size caps: a page over 30 KB gzip, a figure over 200 KB, and a run over 1 MB of figures each fail the build. Tests.
 - [ ] More than 8 runs fails the build; `checkHeaders` fails above 100 rules; a wildcard rule with any header but `X-Robots-Tag`, or any wildcard other than `/projects/*`, fails. Tests.
-- [ ] `--record` copies only `report.json`, `report.md` and the figures `report.json` names, verified against `SHA256SUMS`, and fails (writing nothing) on an extra file, a missing file, a hash mismatch, a bad pattern, or an existing run id; `--record --replace` keeps alt text only for unchanged figures; `--record-scorecard` replaces the scorecard. Tests per case.
+- [ ] `--record` copies only `report.json`, `report.md` and the figures `report.json` names, verified against `export.json`, and fails (writing nothing) on an extra file, a missing file, a `sha256` or `bytes` mismatch, unsorted or duplicate `files`, a wrong `kind`, an `export_version` major other than 1, an `id` that doesn't match the folder's report or scorecard, a bad pattern, or an existing run id; `--record --replace` keeps alt text only for unchanged figures; `--record-scorecard` replaces the scorecard. Tests per case.
 
 **Gate (D6)**
-- [ ] A run fails the build if `dataset.visibility` isn't `public`, `dataset.source` doesn't start with `synthetic:`, or `dataset.licence` isn't `Synthetic data, no restrictions`; a scorecard fails on the same tests of its `dataset`, or if it has no `dataset` or `harness`. One test per field.
+- [ ] A run fails the build if `dataset.visibility` isn't `public`, `dataset.source` doesn't start with `synthetic:`, or `dataset.licence` isn't `Synthetic data, no restrictions`; a scorecard fails if `runs[]` is missing or empty, any entry's `dataset` fails the same tests, or any entry lacks `models.harness`; a scorecard still holding `config.git_commit` or `fingerprint.sha256` fails while open question 1 is unanswered. One test per field.
 
 **Output scan** (a tripwire; the owner's read is the control). The build fails if any output under `public/projects/`, or any string value in a run's `report.json` or the scorecard, matches one of these exactly-defined patterns. One test per pattern, plus a near-miss that must pass:
 - [ ] employer denylist (the existing `employerMention`);
@@ -353,8 +371,7 @@ Enforced by the build, pre-merge: each generated HTML page ≤ 30 KB gzip; each 
 
 ## Open questions
 
-1. **Scorecard export.** `research publish` needs a scorecard export (its spec is to be written). May `fingerprint.config`'s private git commit and prompt hashes be published as they are, or should the export drop them (the fingerprint then no longer verifies from the published file)?
+1. **Commit and prompt hashes in the scorecard** (same question as F-001e open question 1). F-001e drops them by default, and this spec refuses a scorecard that keeps them. Confirm the default, or say keep (the site's check then changes).
 2. **Launch with which harness?** If the Claude Code harness ships before the LangGraph graph, may the page launch with only `claude-code` runs and a `claude-code` scorecard, given the title names LangGraph? Or does launch wait for at least one LangGraph run?
 3. **URL fallback.** If the production clean-URL check fails, is `/projects/research-agent-runs/<id>` acceptable, or should run pages become sections of the showcase page?
 4. **Run cap.** Eight runs keeps `_headers` under its 100-rule limit with room for about seven more writing posts. Is eight enough? The alternative is dropping the `.html`-name alias rules for new pages, which saves one rule per page but departs from how the writing pages do it.
-5. **Who writes F-001c's new fields.** Should `dataset` and `harness` be added to `scorecard.json` by F-001c itself, or only by `research publish` at export time?
