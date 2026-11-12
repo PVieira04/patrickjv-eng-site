@@ -803,3 +803,117 @@ test("F-005 (D4): --check reports the /projects outputs stale when a source chan
     }
   } finally { s.done(); }
 });
+
+// ---- The SVG guard (D1) ----
+import { checkSvg, gzipSize, GZIP_CAP, gzipCapErrors } from "../build.mjs";
+
+test("F-005 (D1): the architecture SVG passes the SVG guard, and each banned element, attribute or reference fails it", () => {
+  const svg = readFileSync(join(ROOT, "projects/research-agent/architecture.svg"), "utf8");
+  assert.deepEqual(checkSvg(svg), []);
+  const add = (x) => svg.replace("</g>", `${x}\n</g>`);
+  const bad = {
+    "<script>": add("<script>alert(1)</script>"),
+    "<style>": add("<style>rect { fill: red }</style>"),
+    "<foreignObject>": add("<foreignObject><div>x</div></foreignObject>"),
+    "<animate>": add('<animate attributeName="x" to="1"/>'),
+    "<set>": add('<set attributeName="x" to="1"/>'),
+    "<animateTransform>": add('<animateTransform attributeName="transform" type="scale" to="2"/>'),
+    "<animateMotion>": add('<animateMotion path="M0 0L1 1"/>'),
+    "<image>": add('<image href="#arrow"/>'),
+    "an on… attribute": add('<rect class="box" onclick="alert(1)"/>'),
+    "a style attribute": add('<rect class="box" style="fill: red"/>'),
+    "url() to a file": add('<path class="edge" d="M0 0" marker-end="url(https://example.com/m.svg#a)"/>'),
+    "url() to a relative file": add('<rect class="box" fill="url(pattern.svg#p)"/>'),
+    "url() after a fragment url()": add('<rect class="box" fill="url(#a) url(x)"/>'),
+    "an external <use href>": add('<use href="https://example.com/s.svg#a"/>'),
+    "an external xlink:href": add('<use xlink:href="other.svg#a"/>'),
+    "an <a> to a page": add('<a href="https://example.com"><text>x</text></a>'),
+    "no role": svg.replace(' role="img"', ""),
+    "role other than img": svg.replace('role="img"', 'role="figure"'),
+    "<title> not first": svg.replace("<title", "<desc>first</desc><title"),
+    "an empty <title>": svg.replace(/<title([^>]*)>[^<]*<\/title>/, "<title$1> </title>"),
+    "no <svg> root": "<div>not an svg</div>",
+  };
+  for (const [what, x] of Object.entries(bad)) assert.ok(checkSvg(x).length > 0, what);
+  for (const ok_ of [add('<use href="#arrow"/>'), add('<use xlink:href="#arrow"/>'), add('<rect class="box" fill="url(#a)"/>')]) assert.deepEqual(checkSvg(ok_), []);
+});
+
+test("F-005 (D1): a failing SVG guard fails the build", () => {
+  const s = site();
+  try {
+    const f = join(s.root, "projects/research-agent/architecture.svg");
+    writeFileSync(f, readFileSync(f, "utf8").replace("</g>", "<script>alert(1)</script></g>"));
+    const r = publish(s, []);
+    assert.ok(r.errors.some((e) => /architecture\.svg: <script> is not allowed/.test(e)), r.errors.join("\n"));
+    rmSync(f);
+    assert.ok(publish(s, []).errors.some((e) => /architecture\.svg is missing/.test(e)));
+  } finally { s.done(); }
+});
+
+// ---- The 30 KB gzip cap (D1) ----
+// A page-like string whose gzip -9 size is exactly `size` bytes (hex digits from a seeded PRNG add
+// about half a byte each, so every size is reachable).
+function gzippedTo(size) {
+  let x = 1;
+  const hex = Array.from({ length: 80_000 }, () => { x = (x * 48271) % 2147483647; return (x & 15).toString(16); }).join("");
+  let lo = 0, hi = hex.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (gzipSize(hex.slice(0, mid)) < size) lo = mid + 1; else hi = mid; }
+  for (let n = lo; n < lo + 64; n++) if (gzipSize(hex.slice(0, n)) === size) return hex.slice(0, n);
+  throw new Error(`no prefix gzips to ${size}`);
+}
+
+test("F-005 (D1): the gzip cap — a page at 30,720 bytes after gzip -9 passes, one byte over fails", () => {
+  assert.equal(GZIP_CAP, 30_720);
+  const at = gzippedTo(GZIP_CAP), over = gzippedTo(GZIP_CAP + 1);
+  assert.deepEqual(gzipCapErrors("x.html", at), []);
+  assert.match(gzipCapErrors("x.html", over).join(), /x\.html is 30,721 bytes gzipped, over the 30,720-byte cap/);
+});
+
+const bigReport = () => { let x = 7; return "# Report\n\n" + Array.from({ length: 900 }, () => Array.from({ length: 80 }, () => { x = (x * 48271) % 2147483647; return (x % 36).toString(36); }).join("")).join("\n\n") + "\n"; };
+
+test("F-005 (D1): a run page over the gzip cap fails the build", () => {
+  const s = site();
+  try {
+    const r = publish(s, [run(1, { md: bigReport() })]);
+    assert.ok(r.errors.some((e) => new RegExp(`runs/${runId(1)}/index\\.html is [0-9,]+ bytes gzipped, over the 30,720-byte cap`).test(e)), r.errors.join("\n"));
+  } finally { s.done(); }
+});
+
+// ---- --record runs the page-level checks on the pages it would render (US-4, D2) ----
+// A scratch site, and an export of the fixture run with `md` as its report.md.
+function recordWith(s, files) {
+  const dir = join(s.base, "export");
+  return record({ root: s.root, dir, expect: writeExport(dir, { files: { ...runFiles(), ...files } }), today: TODAY });
+}
+const nothingWritten = (s, r, pattern) => {
+  assert.ok(r.errors.some((e) => pattern.test(e)), `expected ${pattern}:\n${r.errors.join("\n")}`);
+  assert.ok(!existsSync(join(s.root, MANIFEST)) && !existsSync(join(s.root, "projects/research-agent/runs")), "nothing written");
+};
+
+test("F-005 (US-4, D2): --record fails, writing nothing, when a page it would render fails the output scan, the employer denylist or .denylist.local — though the exported text alone passes", () => {
+  const s = site();
+  try {
+    // Each term is split (by emphasis, or an entity), so only the rendered page's visible text holds it.
+    nothingWritten(s, recordWith(s, { "report.md": Buffer.from("# Report\n\nWe saw it at **Wimble**don.\n") }), /index\.html \(visible text\) names an employer/);
+    nothingWritten(s, recordWith(s, { "report.md": Buffer.from("# Report\n\nThe notes are in ~&#47;notes.\n") }), /index\.html \(visible text\) matches output scan rule tilde_home/);
+    writeFileSync(join(s.root, ".denylist.local"), "zorblax\n");
+    nothingWritten(s, recordWith(s, { "report.md": Buffer.from("# Report\n\nAs at **Zorb**lax.\n") }), /index\.html \(visible text\) matches a term in \.denylist\.local/);
+    rmSync(join(s.root, ".denylist.local"));
+    ok(recordWith(s, {}));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D1): --record fails, writing nothing, when a page it would render is over the gzip cap", () => {
+  const s = site();
+  try {
+    nothingWritten(s, recordWith(s, { "report.md": Buffer.from(bigReport()) }), /index\.html is [0-9,]+ bytes gzipped, over the 30,720-byte cap/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4): the page-level scan also covers the build: a term only the rendered page shows fails it", () => {
+  const s = site();
+  try {
+    const r = publish(s, [run(1, { md: "# Report\n\nWe saw it at **Wimble**don.\n" })]);
+    assert.ok(r.errors.some((e) => /runs\/[^/]+\/index\.html \(visible text\) names an employer/.test(e)), r.errors.join("\n"));
+  } finally { s.done(); }
+});

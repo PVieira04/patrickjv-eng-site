@@ -990,6 +990,10 @@ const pageCsp = (ic, formAction = "'none'") => [
 export const ARCHITECTURE_SVG = `${PROJECT}/architecture.svg`;
 export const GZIP_CAP = 30_720;
 export const gzipSize = (html) => gzipSync(Buffer.from(html, "utf8"), { level: 9 }).length;
+export function gzipCapErrors(name, html) {
+  const z = gzipSize(html);
+  return z > GZIP_CAP ? [`${name} is ${z.toLocaleString("en-GB")} bytes gzipped, over the ${GZIP_CAP.toLocaleString("en-GB")}-byte cap (F-005: shorten the report, or don't publish it)`] : [];
+}
 
 // The SVG guard: role="img" on the root, whose first element child is a non-empty <title>; no
 // script, style, foreignObject, animation or image element; no on… or style attribute; every href
@@ -1077,8 +1081,7 @@ export function projectPageErrors(out, p, ctx) {
     visible[f] = textOf(doc);
     errors.push(...inlineCode(html, { styles: 1, scripts: 0 }).errors.map((x) => `${name}: ${x}`));
     if (elements(doc, { visible: false }).filter((el) => el.tag === "h1").length !== 1) errors.push(`${name} must have exactly one <h1>`);
-    const z = gzipSize(html);
-    if (z > GZIP_CAP) errors.push(`${name} is ${z.toLocaleString("en-GB")} bytes gzipped, over the ${GZIP_CAP.toLocaleString("en-GB")}-byte cap (F-005: shorten the report, or don't publish it)`);
+    errors.push(...gzipCapErrors(name, html));
     errors.push(...textErrors(name, html, ctx), ...textErrors(`${name} (visible text)`, visible[f], ctx));
   }
   for (const [f, v] of Object.entries(out.files)) {
@@ -1642,7 +1645,10 @@ export function record({ root = process.cwd(), dir, expect, kind = "run", replac
     tree.scorecard = ex.files;
   }
   tree.manifestText = serializeManifest(m);
-  errors.push(...checkProjects(tree, { employerMention, denylist: loadDenylist(root), pendingAlt: kind === "run" ? id : null }));
+  // Every check the build would run on the would-be tree, including those on the pages it would
+  // render from it (the scan and both denylists on their visible text, and the gzip cap).
+  const c = JSON.parse(readFileSync(join(root, "content.json"), "utf8"));
+  errors.push(...projectsOutput(root, c, tree, { employerMention, denylist: loadDenylist(root), pendingAlt: kind === "run" ? id : null }).errors);
   if (errors.length) return { errors };
   const files = { [MANIFEST]: tree.manifestText, ...Object.fromEntries([...ex.files].map(([f, b]) => [`${base}/${f}`, b])) };
   const previous = Object.fromEntries(Object.keys(files).map((f) => [f, existsSync(join(root, f)) ? readFileSync(join(root, f)) : null]));
