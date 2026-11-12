@@ -141,6 +141,7 @@ import { build } from "../build.mjs";
 import { report, scorecard, dump, sha, png, RUN_ID, runFiles, writeExport } from "./projects-helpers.mjs";
 import { record } from "../build.mjs";
 import { deflateSync } from "node:zlib";
+import { createHash } from "node:crypto";
 
 const NOW = Date.parse("2026-11-12T12:00:00Z");
 const TODAY = "2026-11-12";
@@ -1054,6 +1055,33 @@ test("F-005: the showcase copy makes only claims the research-agent specs suppor
     [/access levels per caller/i, "F-001a: an access level on every tool, checked against the caller's"],
     [/Nothing runs until the plan is approved/i, "the eval approves plans automatically, and the Claude Code harness gates each analysis call"],
   ]) assert.doesNotMatch(text, claim, why);
-  assert.match(text, /pauses for approval/, "F-001b's approval interrupt");
-  assert.match(text, /permission for every analysis call/, "F-001d's prompt per run_analysis call");
+  assert.doesNotMatch(text, /has seen the plan/, "the harness's permission prompt shows the code, not the plan");
+  assert.match(text, /No analysis code runs without a person's approval/);
+  assert.match(text, /pauses for the plan to be approved/, "F-001b's approval interrupt");
+  assert.match(text, /asks permission before every analysis call/, "F-001d's prompt per run_analysis call");
+  assert.match(text, /In the eval, plans are approved automatically\./, "F-001c");
+});
+
+test("F-005 (D1, D10): a run recorded with --record and built gets its exact CSP rules, hashing the page's own <style>", () => {
+  const s = site();
+  try {
+    const dir = join(s.base, "export");
+    ok(record({ root: s.root, dir, expect: writeExport(dir, { files: runFiles() }), today: TODAY }));
+    const m = JSON.parse(readFileSync(join(s.root, MANIFEST), "utf8"));
+    m.runs[RUN_ID].alt[FIG] = "A synthetic chart.";
+    writeFileSync(join(s.root, MANIFEST), JSON.stringify(m, null, 2) + "\n");
+    ok(build({ root: s.root, today: TODAY, now: NOW }));
+    const html = out(s, `projects/research-agent/runs/${RUN_ID}/index.html`);
+    const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+    const hash = `'sha256-${createHash("sha256").update(style, "utf8").digest("base64")}'`;
+    const want = `default-src 'none'; img-src 'self'; font-src 'self'; style-src ${hash}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests`;
+    const rules = Object.fromEntries(out(s, "_headers").split(/\n(?=\S)/).filter((b) => !b.startsWith("#") && b.trim()).map((b) => { const [p, ...l] = b.trim().split("\n"); return [p.trim(), l.map((x) => x.trim())]; }));
+    const base = `/projects/research-agent/runs/${RUN_ID}/`;
+    for (const p of [base, `${base}index.html`]) assert.deepEqual(rules[p], [`Content-Security-Policy: ${want}`], p);
+    assert.deepEqual(rules[`${base}report.md`], ["Content-Type: text/markdown; charset=utf-8", "Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"]);
+    assert.deepEqual(rules[`${base}report.json`], ["Content-Type: application/json; charset=utf-8", "Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"]);
+    assert.equal(rules[`${base}${FIG}`], undefined, "no rule for the figure");
+    assert.deepEqual(checkHeaders(out(s, "_headers")), []);
+    ok(build({ root: s.root, check: true, now: NOW }));
+  } finally { s.done(); }
 });
