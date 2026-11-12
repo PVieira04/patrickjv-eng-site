@@ -16,7 +16,7 @@
 // Nothing is written unless every check passes. Writing itself is staged (temporary files, then
 // renames) with a best-effort rollback; it is not transactional — see writeStaged().
 import { realpathSync, readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync, lstatSync, readlinkSync } from "node:fs";
-import { join, dirname, relative, isAbsolute } from "node:path";
+import { join, dirname, relative, isAbsolute, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { marked } from "marked";
@@ -1412,7 +1412,8 @@ export function record({ root = process.cwd(), dir, expect, kind = "run", replac
   if (typeof dir !== "string" || !dir) return { errors: ["the export folder is required"] };
   try {
     const rel = relative(realpathSync(root), realpathSync(dir));
-    if (!rel || (!rel.startsWith("..") && !isAbsolute(rel))) return { errors: [`the export folder ${dir} is inside the repository; research publish writes it outside, so keep it there`] };
+    const outside = rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel);
+    if (!outside) return { errors: [`the export folder ${dir} is inside the repository; research publish writes it outside, so keep it there`] };
   } catch { /* a missing folder is reported by readExport */ }
   const ex = readExport(dir, kind, read);
   const errors = [];

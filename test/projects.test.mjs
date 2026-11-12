@@ -1066,3 +1066,19 @@ test("F-005 (US-4): the empty-alt refusal during --record names the run whose al
     refuses(s, { dir: s.dir, expect: runExport(s.dir, { id, files: { "report.json": reportWith((d) => { d.run_id = id; }) } }) }, new RegExp(`write run ${RUN_ID}'s alt text before recording another`));
   } finally { s.done(); }
 });
+
+// ---- Verification minors ----
+test("F-005 (US-4, D2): an export folder whose name merely starts with .. is inside the repository and refused", () => {
+  const s = sandbox();
+  try {
+    const inside = join(s.root, "..exports/run");
+    refuses(s, { dir: inside, expect: runExport(inside) }, /inside the repository/);
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): an IEND chunk with a non-zero length fails the PNG check", () => {
+  const good = png();
+  const body = good.subarray(0, good.length - 12);
+  assert.equal(typeof pngCheck(Buffer.concat([body, chunk("IEND", Buffer.from([0]))])).error, "string");
+  assert.equal(pngCheck(Buffer.concat([body, chunk("IEND")])).error, undefined);
+});
