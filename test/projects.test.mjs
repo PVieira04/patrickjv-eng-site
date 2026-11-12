@@ -114,3 +114,90 @@ test("F-005 (D3): the PNG check refuses each malformed or disallowed case", () =
   };
   for (const [what, b] of Object.entries(bad)) assert.equal(typeof pngCheck(b).error, "string", what);
 });
+
+// ---- report.json fields, enumerations and the D6 gate ----
+import { reportErrors, ENUMS } from "../lib/projects.mjs";
+import { report } from "./projects-helpers.mjs";
+
+const edit = (doc, fn) => { const d = structuredClone(doc); fn(d); return d; };
+const rejected = (d) => { d.status = "rejected"; d.rejection = { reason: "The window is too short." }; d.review = { outcome: "not_reviewed", critic_calls: 0, open_issues: [] }; d.figures = []; d.answer = null; d.passes = []; d.final_call = null; d.summary.author = "system"; };
+const capped = (d) => { d.status = "capped"; d.stop_reason = "run_tokens"; };
+const failedNoPlan = (d) => { d.status = "failed"; d.stop_reason = "model_error"; d.plan = null; d.figures = []; d.review = { outcome: "not_reviewed", critic_calls: 0, open_issues: [] }; };
+
+test("F-005 (US-2, D3): the fixture report passes, and so does one of each status", () => {
+  assert.deepEqual(reportErrors(report()), []);
+  for (const f of [rejected, capped, failedNoPlan]) assert.deepEqual(reportErrors(edit(report(), f)), [], f.name);
+  assert.deepEqual(reportErrors(edit(report(), (d) => { d.schema_version = "1.4.0"; d.extra_minor_field = { any: 1 }; })), [], "a newer 1.x minor with extra fields is accepted");
+});
+
+test("F-005 (US-2, D3): every field the page reads is checked: missing or wrong-typed fails, per status", () => {
+  const paths = ["schema_version", "run_id", "status", "question", "dataset", "dataset.name", "dataset.source", "dataset.visibility", "dataset.licence", "finished_at", "models", "models.harness", "plan", "plan.hypothesis", "plan.dataset", "plan.start", "plan.end", "plan.method", "plan.statistic", "plan.significance", "review", "review.outcome", "review.open_issues", "review.open_issues.0.tag", "review.open_issues.0.explanation", "summary", "summary.text", "summary.author", "figures", "figures.0"];
+  const at = (d, p) => { const k = p.split("."); const last = k.pop(); return [k.reduce((o, x) => o[x], d), last]; };
+  for (const p of paths) {
+    assert.notDeepEqual(reportErrors(edit(report(), (d) => { const [o, k] = at(d, p); if (Array.isArray(o)) o.splice(+k, 1, 7); else delete o[k]; })), [], `missing ${p}`);
+    assert.notDeepEqual(reportErrors(edit(report(), (d) => { const [o, k] = at(d, p); o[k] = 7; })), [], `wrong type ${p}`);
+  }
+  for (const p of ["question", "plan.hypothesis", "summary.text", "review.open_issues.0.explanation"]) {
+    assert.notDeepEqual(reportErrors(edit(report(), (d) => { const [o, k] = at(d, p); o[k] = ""; })), [], `empty ${p}`);
+  }
+  assert.notDeepEqual(reportErrors(edit(report(), (d) => { d.finished_at = "2026-11-11T14:41:12+00:00"; })), [], "finished_at without Z");
+  assert.notDeepEqual(reportErrors(edit(report(), (d) => { d.finished_at = "2026-02-30T14:41:12Z"; })), [], "an impossible date");
+  assert.notDeepEqual(reportErrors(edit(report(), (d) => { d.plan.start = "2025-1-2"; })), [], "plan.start not a date");
+  assert.notDeepEqual(reportErrors(edit(report(), (d) => { d.figures = [d.figures[0], d.figures[0]]; })), [], "duplicate figures");
+  // Status-specific fields.
+  assert.notDeepEqual(reportErrors(edit(report(), (d) => { rejected(d); delete d.rejection; })), [], "rejected without rejection");
+  assert.notDeepEqual(reportErrors(edit(report(), (d) => { rejected(d); d.rejection.reason = ""; })), [], "rejected with an empty reason");
+  assert.notDeepEqual(reportErrors(edit(report(), (d) => { rejected(d); d.plan = null; })), [], "rejected with no plan");
+  for (const f of [capped, failedNoPlan]) {
+    assert.notDeepEqual(reportErrors(edit(report(), (d) => { f(d); delete d.stop_reason; })), [], `${f.name} without stop_reason`);
+    assert.notDeepEqual(reportErrors(edit(report(), (d) => { f(d); d.stop_reason = 3; })), [], `${f.name} with a wrong-typed stop_reason`);
+  }
+});
+
+test("F-005 (US-2): summary.author \"human\" fails (F-001e refuses it too)", () => {
+  assert.match(reportErrors(edit(report(), (d) => { d.summary.author = "human"; })).join(), /summary\.author/);
+});
+
+test("F-005 (D3): schema_version major other than 1 and a bad run_id pattern fail", () => {
+  for (const v of ["2.0.0", "0.9.0", "1.0", "1.01.0"]) assert.match(reportErrors(edit(report(), (d) => { d.schema_version = v; })).join(), /schema_version/, v);
+  for (const v of ["20261111T143000Z-A1B2C3", "20261111T143000Z-a1b2c", "2026-11-11-a1b2c3"]) assert.match(reportErrors(edit(report(), (d) => { d.run_id = v; })).join(), /run_id/, v);
+});
+
+test("F-005 (D3): the Enumerations table is the site's, and an unknown value in each enumerated report field fails", () => {
+  assert.deepEqual(ENUMS, {
+    status: ["completed", "rejected", "capped", "failed"],
+    outcome: ["passed", "not_passed", "not_reviewed"],
+    tag: ["look_ahead", "overlap_autocorrelation", "sample_size", "return_definition", "contract_roll", "timezone_session", "multiple_comparisons"],
+    stop_reason: ["pass_tool_calls", "run_tool_calls", "run_tokens", "sandbox_unavailable", "dataset_unavailable", "access_denied", "run_not_owned", "invalid_model_output", "model_error", "internal_error", "abandoned", "unsanctioned_call", "run_mismatch", "missing_critique"],
+    harness: ["langgraph", "claude-code"],
+    author: ["model", "system"],
+    role: ["trap_caught", "rejected_plan", "clean_pass"],
+  });
+  const cases = {
+    status: (d) => { d.status = "paused"; },
+    "review.outcome": (d) => { d.review.outcome = "skipped"; },
+    "review.open_issues[].tag": (d) => { d.review.open_issues[0].tag = "survivorship"; },
+    stop_reason: (d) => { capped(d); d.stop_reason = "out_of_time"; },
+    "models.harness": (d) => { d.models.harness = "autogen"; },
+    "summary.author": (d) => { d.summary.author = "editor"; },
+  };
+  for (const [field, f] of Object.entries(cases)) assert.notDeepEqual(reportErrors(edit(report(), f)), [], field);
+});
+
+test("F-005 (US-4, D6): the synthetic-only gate on a run: visibility, source and licence, with near-misses", () => {
+  const gate = (f) => reportErrors(edit(report(), (d) => f(d.dataset))).filter((e) => /D6/.test(e));
+  assert.deepEqual(gate(() => {}), []);
+  assert.deepEqual(gate((s) => { s.source = "synthetic:research_agent.data.synth seed=0"; }), []);
+  const fail = {
+    "visibility private": (s) => { s.visibility = "private"; },
+    "synthetic:other": (s) => { s.source = "synthetic:other"; },
+    "no digits after seed=": (s) => { s.source = "synthetic:research_agent.data.synth seed="; },
+    "a trailing space": (s) => { s.source = "synthetic:research_agent.data.synth seed=1 "; },
+    "a trailing newline": (s) => { s.source = "synthetic:research_agent.data.synth seed=1\n"; },
+    "an unescaped dot would match": (s) => { s.source = "synthetic:research_agentXdataXsynth seed=1"; },
+    "a real dataset": (s) => { s.source = "databento:GLBX.MDP3"; },
+    "licence differing only in case": (s) => { s.licence = "synthetic data, no restrictions"; },
+    "licence with a trailing space": (s) => { s.licence = "Synthetic data, no restrictions "; },
+  };
+  for (const [what, f] of Object.entries(fail)) assert.notDeepEqual(gate(f), [], what);
+});
