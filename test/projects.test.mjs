@@ -930,3 +930,25 @@ test("F-005 (US-4, D3): a duplicate key in export.json or published.json is refu
     buildFails(b, /published\.json.*duplicate key "checked"/);
   } finally { b.done(); }
 });
+
+// ---- Review fixes: denylist case folding and whitespace, and the \s gap in SCAN_RULES ----
+test("F-005 (US-4): .denylist.local folds case as Python's casefold does for ß and ligatures, both ways", () => {
+  assert.equal(denylistHit("Built at STRAßE works", parseDenylist("strasse")), true, "ß in the text, ss in the term");
+  assert.equal(denylistHit("Built at Strasse works", parseDenylist("straße")), true, "ß in the term, ss in the text");
+  assert.equal(denylistHit("the ﬁnch tooling", parseDenylist("finch")), true, "a ligature in the text");
+  assert.equal(denylistHit("the FINCH tooling", parseDenylist("ﬁnch")), true, "a ligature in the term");
+  assert.equal(denylistHit("Straßenbahn", parseDenylist("strasse")), false, "still not inside a longer word");
+});
+
+test("F-005 (US-4): .denylist.local lines are stripped of Python's whitespace set, and not of U+FEFF", () => {
+  assert.deepEqual(parseDenylist("\x1c\x1dzorblax\x1e\x1f\n\x85acme\u3000\n\u00a0# comment"), ["zorblax", "acme"]);
+  assert.deepEqual(parseDenylist("\ufeffzorblax"), ["\ufeffzorblax"], "Python's strip() keeps U+FEFF");
+});
+
+test("F-005 (US-4): Python's \\s includes \\x1c-\\x1f and \\x85, which JavaScript's lacks: those prefixes still hit", () => {
+  for (const c of ["\x1c", "\x1d", "\x1e", "\x1f", "\x85"]) {
+    assert.ok(scanHits(`x${c}/home/someone`).includes("home_path"), `home_path after U+${c.charCodeAt(0).toString(16)}`);
+    assert.ok(scanHits(`x${c}~/notes`).includes("tilde_home"), `tilde_home after U+${c.charCodeAt(0).toString(16)}`);
+    assert.ok(scanHits(`x${c}C:\\Users\\x`).includes("windows_user_path"));
+  }
+});
