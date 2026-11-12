@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Research agent: LangGraph and LangChain on MCP — Patrick Vieira</title>
-<meta name="description" content="A research agent built with LangGraph and LangChain: it plans, waits for approval, runs Python in a sandboxed MCP server, has a critic check for known traps, and reports. Eval results and recorded runs on synthetic data.">
+<meta name="description" content="A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data.">
 <meta name="robots" content="noindex">
 <link rel="canonical" href="https://patrickjv.com/projects/research-agent">
 <link rel="alternate" type="text/markdown" href="/projects/research-agent.md">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Research agent: LangGraph and LangChain on MCP — Patrick Vieira">
-<meta property="og:description" content="A research agent built with LangGraph and LangChain: it plans, waits for approval, runs Python in a sandboxed MCP server, has a critic check for known traps, and reports. Eval results and recorded runs on synthetic data.">
+<meta property="og:description" content="A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data.">
 <meta property="og:url" content="https://patrickjv.com/projects/research-agent">
 <meta property="og:image" content="https://patrickjv.com/og-card.jpg">
 <script type="application/ld+json">
@@ -25,7 +25,7 @@
     "@type": "SoftwareSourceCode",
     "@id": "https://patrickjv.com/projects/research-agent#software",
     "name": "Research agent",
-    "description": "A research agent built with LangGraph and LangChain: it plans, waits for approval, runs Python in a sandboxed MCP server, has a critic check for known traps, and reports. Eval results and recorded runs on synthetic data.",
+    "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data.",
     "programmingLanguage": "Python",
     "keywords": [
       "LangGraph",
@@ -86,13 +86,16 @@ thead th { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; col
 .tag { font-weight: 600; }
 figure { margin: 0 0 24px; }
 img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); }
-.arch { display: block; width: 100%; height: auto; margin: 0 0 16px; }
+.arch { display: block; width: 100%; max-width: 30rem; height: auto; margin: 8px auto 24px; }
 .arch .box { fill: var(--code); stroke: var(--line-strong); }
+.arch .out { stroke-dasharray: 5 4; }
+.arch .layer { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
 .arch .hl { fill: none; stroke: var(--signal); stroke-width: 2; }
 .arch .edge { fill: none; stroke: var(--muted); stroke-width: 1.5; }
 .arch .head { fill: var(--muted); }
-.arch text { fill: var(--ink); font-family: var(--mono); font-size: 13px; }
-.arch .small { fill: var(--muted); font-size: 11px; }
+.arch text { fill: var(--ink); font-family: var(--mono); font-size: 14px; }
+.arch .small { fill: var(--muted); font-size: 12.5px; }
+.arch .note { fill: none; stroke: var(--muted); stroke-dasharray: 1 3; stroke-linecap: round; stroke-width: 1.5; }
 </style>
 </head>
 <body>
@@ -100,45 +103,114 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a><a href="/projects/">Projects</a></nav>
 <main>
 <h1>Research agent</h1>
-<p class="lead">A research agent built with LangGraph and LangChain. It answers a researcher's plain-English question about time-series data: it writes a plan, waits for a person to approve it, runs Python in a sandboxed MCP server, has a second model check the work for known traps, and writes a report.</p>
-<p>Code available on request: <a href="/book">book a call</a>.</p>
+<p class="lead">A research agent built with LangGraph, LangChain and MCP. You ask it a question about time-series data in plain English, and it plans, runs and checks the analysis before it reports.</p>
+<p>The code is available on request. <a href="/book">Book a call</a>.</p>
 <section aria-labelledby="what-h">
 <h2 id="what-h">What it does</h2>
-<p>A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. No analysis code runs without a person's approval: the LangGraph agent pauses for the plan to be approved, and the Claude Code harness asks permission before every analysis call. In the LangGraph eval, plans are approved automatically.</p>
-<p>The agent then analyses the data in a sandbox, a critic model reviews the work against a checklist of known traps, and the agent writes a report with its figures. The worked example is futures one-minute bars.</p>
+<p>Before any analysis, the agent writes a plan with a hypothesis, dataset and window, method, statistic and test. No analysis code runs until a person approves it. The LangGraph agent pauses for the plan to be approved, and the Claude Code harness asks permission before every analysis call. In the LangGraph eval, plans are approved automatically.</p>
+<p>It then analyses the data in a sandbox. A critic model checks the work against a list of known traps before the agent writes its report and figures. The example data is one-minute futures bars.</p>
 <p>Every result on this page is on a seeded synthetic dataset with planted effects and traps, not on market data.</p>
 </section>
 <section aria-labelledby="arch-h">
 <h2 id="arch-h">Architecture</h2>
-<svg class="arch" role="img" aria-labelledby="arch-title" viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg">
-<title id="arch-title">The research agent's loop: a question becomes a plan, a person approves it, the analyst runs Python in a sandbox through the research MCP server, a critic reviews the work, and the agent writes a report.</title>
-<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<p>Two harnesses drive the same loop, and both talk to one MCP server. The LangGraph graph calls models through an API. The Claude Code harness runs inside Claude Code and needs no API keys. Only the server can reach the data or run code. It runs analysis code in a sandbox that reads dataset folders from disk, and keeps a record of every run.</p>
+<p>Because the boundary is MCP, any MCP client could drive the same server, and any dataset folder can be plugged in. A folder holding a dataset.toml descriptor and Parquet or CSV bars, under a directory named in the config, shows up in list_datasets. Sandboxed code never reaches the network. Market data is fetched separately, by a command that writes a dataset folder to disk, and the sandbox only ever reads it.</p>
+<svg class="arch" role="img" aria-labelledby="comp-title" aria-describedby="comp-desc" viewBox="0 0 360 462" xmlns="http://www.w3.org/2000/svg">
+<title id="comp-title">The components: two harnesses drive one MCP server, which runs code in a sandbox over read-only dataset folders; the fetcher and the publish step run separately.</title>
+<desc id="comp-desc">At the top, two clients: the LangGraph graph, built from LangChain models and tools, and the Claude Code harness, with its /research skill and subagents. Both connect over MCP on stdio to one research MCP server, which offers list_datasets, describe_dataset and run_analysis. The server runs each analysis in a sandbox with no network, and keeps a record of every run. The sandbox reads dataset folders, each a dataset.toml and Parquet or CSV bars, mounted read-only. Two parts run separately, outside the agent loop: the fetcher, which writes market data to a dataset folder on disk, and the publish step, which reads a finished run from the run records, checks it and exports it for this site, where a person checks it again.</desc>
+<defs><marker id="comp-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
 <g>
-<rect class="box" x="10" y="20" width="110" height="44" rx="4"/><text x="65" y="47" text-anchor="middle">Question</text>
-<rect class="box" x="175" y="20" width="110" height="44" rx="4"/><text x="230" y="47" text-anchor="middle">Plan</text>
-<rect class="box" x="340" y="20" width="110" height="44" rx="4"/><text x="395" y="41" text-anchor="middle">Approval</text><text class="small" x="395" y="56" text-anchor="middle">a person</text>
-<rect class="box" x="505" y="20" width="125" height="44" rx="4"/><text x="567" y="41" text-anchor="middle">Analyse</text><text class="small" x="567" y="56" text-anchor="middle">loop, with caps</text>
-<rect class="box" x="505" y="130" width="125" height="44" rx="4"/><text x="567" y="157" text-anchor="middle">Critic</text>
-<rect class="box" x="340" y="130" width="110" height="44" rx="4"/><text x="395" y="157" text-anchor="middle">Report</text>
-<rect class="hl" x="175" y="230" width="275" height="54" rx="4"/><text x="312" y="252" text-anchor="middle">Research MCP server</text><text class="small" x="312" y="270" text-anchor="middle">sandbox: no network, read-only data</text>
-<path class="edge" d="M120 42H173" marker-end="url(#arrow)"/>
-<path class="edge" d="M285 42H338" marker-end="url(#arrow)"/>
-<path class="edge" d="M450 42H503" marker-end="url(#arrow)"/>
-<path class="edge" d="M567 64V128" marker-end="url(#arrow)"/>
-<path class="edge" d="M505 152H452" marker-end="url(#arrow)"/>
-<path class="edge" d="M530 64C530 100 470 200 452 240" marker-end="url(#arrow)"/>
+<rect class="box" x="10" y="10" width="160" height="52" rx="4"/><text x="90" y="32" text-anchor="middle">LangGraph graph</text><text class="small" x="90" y="50" text-anchor="middle">LangChain models</text>
+<rect class="box" x="190" y="10" width="160" height="52" rx="4"/><text x="270" y="32" text-anchor="middle">Claude Code</text><text class="small" x="270" y="50" text-anchor="middle">harness, /research</text>
+<path class="edge" d="M90 62V98" marker-end="url(#comp-arrow)"/>
+<path class="edge" d="M270 62V98" marker-end="url(#comp-arrow)"/>
+<text class="small" x="180" y="84" text-anchor="middle">MCP, stdio</text>
+<rect class="hl" x="10" y="100" width="340" height="52" rx="4"/><text x="180" y="122" text-anchor="middle">Research MCP server</text><text class="small" x="180" y="140" text-anchor="middle">list · describe · run_analysis</text>
+<path class="edge" d="M90 152V188" marker-end="url(#comp-arrow)"/>
+<path class="edge" d="M270 152V188" marker-end="url(#comp-arrow)"/>
+<rect class="box" x="10" y="190" width="160" height="52" rx="4"/><text x="90" y="212" text-anchor="middle">Sandbox</text><text class="small" x="90" y="230" text-anchor="middle">no network</text>
+<rect class="box" x="190" y="190" width="160" height="52" rx="4"/><text x="270" y="212" text-anchor="middle">Run records</text><text class="small" x="270" y="230" text-anchor="middle">reports and calls</text>
+<path class="edge" d="M90 242V278" marker-end="url(#comp-arrow)"/>
+<text class="small" x="98" y="264">read-only</text>
+<rect class="box" x="10" y="280" width="160" height="52" rx="4"/><text x="90" y="302" text-anchor="middle">Dataset folders</text><text class="small" x="90" y="320" text-anchor="middle">descriptor + bars</text>
+<rect class="box out" x="190" y="280" width="160" height="52" rx="4"/><text x="270" y="302" text-anchor="middle">Publish</text><text class="small" x="270" y="320" text-anchor="middle">check, then export</text>
+<path class="edge" d="M270 242V278" marker-end="url(#comp-arrow)"/>
+<text class="small" x="278" y="264">reads</text>
+<rect class="box out" x="10" y="370" width="160" height="52" rx="4"/><text x="90" y="392" text-anchor="middle">Fetcher</text><text class="small" x="90" y="410" text-anchor="middle">writes to disk</text>
+<path class="edge" d="M90 370V334" marker-end="url(#comp-arrow)"/>
+<rect class="box" x="190" y="370" width="160" height="52" rx="4"/><text x="270" y="392" text-anchor="middle">This site</text><text class="small" x="270" y="410" text-anchor="middle">a person checks it</text>
+<path class="edge" d="M270 332V368" marker-end="url(#comp-arrow)"/>
+<text class="small" x="180" y="450" text-anchor="middle">Dashed: runs separately, outside the loop</text>
 </g>
 </svg>
-<h3>The graph</h3>
-<p>A LangGraph state graph: plan, an approval interrupt, an analyse loop, the critic, hard caps on tool calls and tokens, and checkpointing so a run can stop and resume.</p>
+<h3>Where LangGraph comes in</h3>
+<p>The agent is a LangGraph StateGraph with seven nodes, from plan to report. Its state is a typed dictionary holding the messages, the plan, the analysis calls, the critic's verdicts and running counts of tool calls and tokens. When a node meets an ending, such as a rejected plan, a cap or an error, it records that in the state. The conditional edges then send the run straight to report, so every run ends with a report that says how it stopped.</p>
+<p>Approval is a LangGraph interrupt. The approve node calls interrupt() with the plan, and the run pauses until the caller resumes it with Command(resume=…). The answer is approve, edit with a changed plan, or reject with a reason. apply_decision checks it and sends an invalid answer back to approve, with the reason shown.</p>
+<p>The checkpointer is LangGraph's AsyncSqliteSaver. The run id is the thread id, and durability is set to sync, so each completed step is saved before the next one starts. A run paused at approval, or stopped by a rate limit or a timeout, resumes from its last completed step and keeps the models it started with.</p>
+<p>In the analyse loop the agent and tools nodes take turns until the analyst stops calling tools. Then the critic reviews the pass. If its verdict is revise, a new pass starts with the critic's issues, up to a set number of critic calls. Hard caps on tool calls per pass, tool calls per run and tokens per run end the run as capped, and the report names the cap and its value.</p>
+<svg class="arch" role="img" aria-labelledby="graph-title" aria-describedby="graph-desc" viewBox="0 0 360 420" xmlns="http://www.w3.org/2000/svg">
+<title id="graph-title">The LangGraph graph: plan, an approval interrupt, an analyse loop of agent and tools, the critic, and the report.</title>
+<desc id="graph-desc">The run starts at plan, which writes a structured plan. approve pauses the run with a LangGraph interrupt until a person resumes it with approve, edit or reject; apply_decision checks the answer and sends an invalid one back to approve. After approval, agent (the analyst model) calls tools, which runs the MCP tools through a ToolNode, and the two alternate until the analyst stops calling tools. critique then runs the critic; a verdict of revise starts a new pass at agent, and pass goes on to report. A rejected plan, a crossed cap on tool calls or tokens, or an error routes straight to report. A SQLite checkpointer saves the state after every step, so a run can stop and resume.</desc>
+<defs><marker id="graph-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<g>
+<rect class="box" x="64" y="10" width="132" height="44" rx="4"/><text x="130" y="30" text-anchor="middle">plan</text><text class="small" x="130" y="46" text-anchor="middle">structured</text>
+<rect class="hl" x="64" y="80" width="132" height="44" rx="4"/><text x="130" y="100" text-anchor="middle">approve</text><text class="small" x="130" y="116" text-anchor="middle">interrupt()</text>
+<rect class="box" x="64" y="150" width="132" height="44" rx="4"/><text x="130" y="176" text-anchor="middle">apply_decision</text>
+<rect class="box" x="64" y="220" width="132" height="44" rx="4"/><text x="130" y="240" text-anchor="middle">agent</text><text class="small" x="130" y="256" text-anchor="middle">analyst, caps</text>
+<rect class="box" x="64" y="290" width="132" height="44" rx="4"/><text x="130" y="310" text-anchor="middle">critique</text><text class="small" x="130" y="326" text-anchor="middle">critic, Verdict</text>
+<rect class="box" x="64" y="360" width="132" height="44" rx="4"/><text x="130" y="380" text-anchor="middle">report</text><text class="small" x="130" y="396" text-anchor="middle">.json and .md</text>
+<rect class="note" x="218" y="10" width="140" height="44" rx="4"/><text x="288" y="30" text-anchor="middle">Checkpointer</text><text class="small" x="288" y="46" text-anchor="middle">after each step</text>
+<rect class="box" x="218" y="80" width="140" height="44" rx="4"/><text x="288" y="100" text-anchor="middle">A person</text><text class="small" x="288" y="116" text-anchor="middle">Command(resume)</text>
+<rect class="box" x="218" y="220" width="140" height="44" rx="4"/><text x="288" y="240" text-anchor="middle">tools</text><text class="small" x="288" y="256" text-anchor="middle">ToolNode, MCP</text>
+<rect class="note" x="218" y="290" width="140" height="44" rx="4"/><text x="288" y="310" text-anchor="middle">Any stop</text><text class="small" x="288" y="326" text-anchor="middle">reject, cap, error</text>
+<path class="edge" d="M130 54V78" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M130 124V148" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M130 194V218" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M130 264V288" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M130 334V358" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M218 102H198" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M196 236H216" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M218 250H198" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M64 172C40 172 40 102 62 102" marker-end="url(#graph-arrow)"/>
+<text class="small" x="52" y="141">invalid</text>
+<path class="edge" d="M64 312C40 312 40 242 62 242" marker-end="url(#graph-arrow)"/>
+<text class="small" x="52" y="281">revise</text>
+<path class="edge" d="M288 334V382H198" marker-end="url(#graph-arrow)"/>
+</g>
+</svg>
+<h3>Where LangChain comes in</h3>
+<p>The models are named in the config as provider:model strings and built with LangChain's init_chat_model. Neither the analyst nor the critic is tied to one vendor, and the tests pass in fake models through the same factory.</p>
+<p>The MCP tools reach the graph through langchain-mcp-adapters. A run starts the MCP server over stdio and keeps one session open for the whole run, and load_mcp_tools turns the server's tools into LangChain tools. The analyst gets them through bind_tools, one call at a time, and LangGraph's ToolNode runs them. A wrapper around each call logs it, and refuses run_analysis on any dataset other than the approved plan's.</p>
+<p>The plan and the critic's verdict are structured output, from with_structured_output against Pydantic models. Every issue the critic raises is tagged from a fixed checklist of traps, such as look-ahead, contract rolls, timezones and sessions, or multiple comparisons. Output that fails validation gets one more try. If that fails too, the run ends as failed rather than guessing.</p>
 <h3>The research MCP server</h3>
-<p>Three tools, used by the graph and by Claude Code on its own, each with an access level checked against the caller's, and a visibility flag on every dataset.</p>
+<p>It is one FastMCP server with three tools. list_datasets and describe_dataset need access level read, and run_analysis needs execute. Every call carries a caller context, checked before any work, and a dataset marked private is visible only to a caller that owns the local datasets. Results are structured. A refusal comes back inside the result with a reason code, such as access denied or sandbox unavailable, so a client can act on it.</p>
+<p>The server chooses the run, never the caller. Each analysis call gets its own numbered directory, and only one sandbox runs at a time per user on the machine.</p>
 <h3>The sandbox</h3>
-<p>No network, no secrets, read-only data and hard limits, enforced with bubblewrap, a cgroup memory limit and a seccomp filter.</p>
-<h3>The eval</h3>
-<p>A fixed set of questions on a seeded synthetic dataset with planted effects and traps, each repeated k times, scored on answer accuracy, trap recall and critic precision.</p>
+<p>Generated code is treated as hostile. Each run_analysis call starts a fresh sandbox in layers. A systemd user scope puts it in a cgroup that caps memory, tasks and CPU. prlimit caps file size and open files and turns off core dumps. bubblewrap gives it a cleared environment with a fixed allow-list of variables, no network and no capabilities, and mounts only what it needs, read-only: the system's /usr libraries, the Python runtime and its packages, the code, a small helper and the one dataset. Inside all that, a seccomp filter denies io_uring, BPF, the keyring calls and socket families other than Unix and IP.</p>
+<p>The code can write only to sized in-memory file systems. When it ends, the sandbox's own PID 1 kills every other process, and the host copies out a JSON result and up to four PNG figures, each checked. A self-test runs before the first call. If the sandbox can't be set up, the call is refused, because there is no unsandboxed fallback. I red-teamed it with 22 probe scripts, about 40 escape and exhaustion attempts.</p>
+<svg class="arch" role="img" aria-labelledby="sbx-title" aria-describedby="sbx-desc" viewBox="0 0 360 400" xmlns="http://www.w3.org/2000/svg">
+<title id="sbx-title">The sandbox's layers, from the outside in: a systemd scope, prlimit, bubblewrap and a seccomp filter around the generated code.</title>
+<desc id="sbx-desc">The outermost layer is a systemd user scope, a cgroup that caps memory, tasks and CPU. Inside it, prlimit caps file size and open files and turns off core dumps. Inside that, bubblewrap gives a cleared environment with a fixed allow-list of variables, no network, no capabilities and only read-only mounts (the system libraries, the Python runtime, the code and the dataset), apart from /out, /tmp and /dev/shm, which are sized in-memory file systems. Inside that, a seccomp filter denies system calls such as io_uring, bpf and the keyring calls. At the centre, the generated code runs under a fixed launcher, which kills every other process when the code ends. The host then copies out only a JSON result and up to four checked PNG figures.</desc>
+<defs><marker id="sbx-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<g>
+<rect class="layer" x="4" y="4" width="352" height="310" rx="6"/><text x="16" y="24">systemd scope (cgroup)</text><text class="small" x="16" y="40">memory, tasks, CPU</text>
+<rect class="layer" x="20" y="50" width="320" height="252" rx="6"/><text x="32" y="70">prlimit</text><text class="small" x="32" y="86">file size, open files, no core</text>
+<rect class="layer" x="36" y="96" width="288" height="194" rx="6"/><text x="48" y="116">bubblewrap</text><text class="small" x="48" y="132">no network, env allow-list, no caps</text>
+<rect class="layer" x="52" y="142" width="256" height="96" rx="6"/><text x="64" y="162">seccomp filter</text><text class="small" x="64" y="178">io_uring, bpf, keyring denied</text>
+<rect class="hl" x="68" y="188" width="224" height="40" rx="4"/><text x="180" y="213" text-anchor="middle">Generated code</text>
+<text class="small" x="48" y="260">/usr, /data, /code: read-only</text>
+<text class="small" x="48" y="278">/out, /tmp: sized, in memory</text>
+<path class="edge" d="M180 314V338" marker-end="url(#sbx-arrow)"/>
+<rect class="box" x="60" y="340" width="240" height="52" rx="4"/><text x="180" y="362" text-anchor="middle">Host copies out</text><text class="small" x="180" y="380" text-anchor="middle">result.json, up to 4 PNGs</text>
+</g>
+</svg>
 <h3>The Claude Code harness</h3>
-<p>The same loop without API keys: a /research skill, analyst and critic subagents, and a permission rule on code execution.</p>
+<p>The same loop runs in Claude Code with no API keys. A /research skill drives it. Only the research-analyst subagent calls run_analysis, and a research-critic subagent reviews each pass with the same checklist and verdict model as the graph. run_analysis is on the project's ask list, so a person approves every analysis call, while listing and describing datasets go through without a prompt.</p>
+<p>Hooks check every research call and keep the run's record. A hook can deny a call but never allows one, and a hook that fails, fails closed. The harness writes its report in the same format as the graph.</p>
+<h3>The eval</h3>
+<p>The eval asks each question from a fixed set several times. The data is a seeded synthetic dataset whose generator plants effects and traps, and a reference implementation computes the expected answers. Besides answer accuracy, the scorer measures trap recall, the share of passes that fell into a trap where the critic raised that trap's tag. It also measures critic precision, the share of the critic's issues tagged with one of the question's traps that were raised on a pass that really fell into it. The scorecard records the seed and the config.</p>
+<h3>Publishing</h3>
+<p>Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips metadata chunks from figures. This site then records a person's check of each export, with a hash of every file, before the build will use it.</p>
 </section>
 <section aria-labelledby="runs-h">
 <h2 id="runs-h">Recorded runs</h2>
@@ -187,8 +259,28 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 </section>
 <section aria-labelledby="built-h">
 <h2 id="built-h">How it was built</h2>
-<p>Spec first: every part had a written spec with testable acceptance criteria before any code, and the sandbox's threat model was written before the sandbox.</p>
-<p>Several rounds of adversarial review by a second model on the specs and the code, with findings fixed and recorded, and tests written before the implementation.</p>
+<p>Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.</p>
+<p>A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code.</p>
+</section>
+<section aria-labelledby="next-h">
+<h2 id="next-h">With more time</h2>
+<p>In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes.</p>
+<h3>Run the red-team probes on every push</h3>
+<p>The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. So far the probe catalogue has only been run on my WSL2 machine, not yet on the CI runner.</p>
+<h3>Finish the simpler verification plan</h3>
+<p>I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch.</p>
+<h3>Run the LangGraph eval with real models</h3>
+<p>During development the project uses no paid model API. The graph is tested with fake models, and the Claude Code harness runs on a subscription. Running the eval through the graph with real models is a deliberate later step, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.</p>
+<h3>Add a canary on real market data</h3>
+<p>Real futures data stays on my machine. The vendor's licence doesn't allow showing anything derived from it without a redistribution plan, which is why everything here is synthetic. A weekly canary is specified that fetches one fixed week, checks the bar count and the contract roll, and deletes the data. It stays off until the vendor confirms in writing that processing on a hosted CI runner is allowed.</p>
+<h3>Give the Claude Code harness a token budget and resume</h3>
+<p>The graph caps tokens and resumes from its checkpoint. The Claude Code harness does neither yet. A subscription gives it no per-call token counts it can rely on, and an interrupted run is closed rather than resumed. Closing both gaps would bring the harness level with the graph.</p>
+<h3>Let formatting back into reports</h3>
+<p>Model-written text goes into a report as plain text, with every punctuation character escaped. That came after several rounds of trying to contain Markdown inside it by tracking its block structure, and plain text was the safer choice. Formatting could come back through a renderer with an explicit allow-list, checked against more than one Markdown parser, the way this site renders the reports it shows.</p>
+<h3>Add overfitting checks from López de Prado</h3>
+<p>The agent already fixes its test in a plan before any analysis runs, and the critic already checks that multiple comparisons are corrected for (Bonferroni, Holm or a joint test) or at least disclosed. Unlike the other steps, this one isn't in the specs yet. It would take the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and both the checklist and the analyst's guidance would call for purged and embargoed cross-validation, so overlapping labels can't leak across folds.</p>
+<h3>Widen CI</h3>
+<p>The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure.</p>
 </section>
 </main>
 <footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="/privacy">Privacy</a></footer>

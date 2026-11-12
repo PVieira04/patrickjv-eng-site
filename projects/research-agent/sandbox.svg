@@ -1,0 +1,16 @@
+<svg class="arch" role="img" aria-labelledby="sbx-title" aria-describedby="sbx-desc" viewBox="0 0 360 400" xmlns="http://www.w3.org/2000/svg">
+<title id="sbx-title">The sandbox's layers, from the outside in: a systemd scope, prlimit, bubblewrap and a seccomp filter around the generated code.</title>
+<desc id="sbx-desc">The outermost layer is a systemd user scope, a cgroup that caps memory, tasks and CPU. Inside it, prlimit caps file size and open files and turns off core dumps. Inside that, bubblewrap gives a cleared environment with a fixed allow-list of variables, no network, no capabilities and only read-only mounts (the system libraries, the Python runtime, the code and the dataset), apart from /out, /tmp and /dev/shm, which are sized in-memory file systems. Inside that, a seccomp filter denies system calls such as io_uring, bpf and the keyring calls. At the centre, the generated code runs under a fixed launcher, which kills every other process when the code ends. The host then copies out only a JSON result and up to four checked PNG figures.</desc>
+<defs><marker id="sbx-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
+<g>
+<rect class="layer" x="4" y="4" width="352" height="310" rx="6"/><text x="16" y="24">systemd scope (cgroup)</text><text class="small" x="16" y="40">memory, tasks, CPU</text>
+<rect class="layer" x="20" y="50" width="320" height="252" rx="6"/><text x="32" y="70">prlimit</text><text class="small" x="32" y="86">file size, open files, no core</text>
+<rect class="layer" x="36" y="96" width="288" height="194" rx="6"/><text x="48" y="116">bubblewrap</text><text class="small" x="48" y="132">no network, env allow-list, no caps</text>
+<rect class="layer" x="52" y="142" width="256" height="96" rx="6"/><text x="64" y="162">seccomp filter</text><text class="small" x="64" y="178">io_uring, bpf, keyring denied</text>
+<rect class="hl" x="68" y="188" width="224" height="40" rx="4"/><text x="180" y="213" text-anchor="middle">Generated code</text>
+<text class="small" x="48" y="260">/usr, /data, /code: read-only</text>
+<text class="small" x="48" y="278">/out, /tmp: sized, in memory</text>
+<path class="edge" d="M180 314V338" marker-end="url(#sbx-arrow)"/>
+<rect class="box" x="60" y="340" width="240" height="52" rx="4"/><text x="180" y="362" text-anchor="middle">Host copies out</text><text class="small" x="180" y="380" text-anchor="middle">result.json, up to 4 PNGs</text>
+</g>
+</svg>

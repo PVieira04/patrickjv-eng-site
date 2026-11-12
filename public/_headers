@@ -69,30 +69,30 @@
 
 # Projects (F-005): each page, and each Markdown and JSON copy; figures get only the /* headers.
 /projects/
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/index.md
   Content-Type: text/markdown; charset=utf-8
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /projects/research-agent
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent.md
   Content-Type: text/markdown; charset=utf-8
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /projects/research-agent/runs/20261112T163326Z-468489/
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T163326Z-468489/index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T163326Z-468489/report.json
   Content-Type: application/json; charset=utf-8
@@ -103,10 +103,10 @@
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /projects/research-agent/runs/20261112T165438Z-76a84d/
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T165438Z-76a84d/index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T165438Z-76a84d/report.json
   Content-Type: application/json; charset=utf-8
@@ -117,10 +117,10 @@
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /projects/research-agent/runs/20261112T165719Z-a93bec/
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T165719Z-a93bec/index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T165719Z-a93bec/report.json
   Content-Type: application/json; charset=utf-8
@@ -131,10 +131,10 @@
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 /projects/research-agent/runs/20261112T165943Z-8eb45f/
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T165943Z-8eb45f/index.html
-  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-kbjRCdRGzBWSNTcG1JPavLv0xFopBe12BwlPfmcUz8A='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-DkHv5dT9dREhGFHTWzj8tcII5ox4sQb26h6um9ngnXo='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
 
 /projects/research-agent/runs/20261112T165943Z-8eb45f/report.json
   Content-Type: application/json; charset=utf-8

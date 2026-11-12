@@ -1,6 +1,6 @@
 # Projects
 
-Things I have built outside work, written up with how they were built and what they measured.
+Things I have built outside work, with how I built them and how I tested them.
 
 ## [Research agent](https://patrickjv.com/projects/research-agent.md)
 
