@@ -602,7 +602,7 @@ test("F-005 (D3): --record-scorecard records the scorecard with the same checks,
     refuses(s, { dir: s.dir, expect: sc((d) => { d.runs[0].dataset.licence = "Licensed"; }), kind: "scorecard" }, /D6/);
     refuses(s, { dir: s.dir, expect: sc((d) => { d.fingerprint.sha256 = "0".repeat(64); }), kind: "scorecard" }, /fingerprint\.sha256/);
     refuses(s, { dir: s.dir, expect: sc((d) => { d.fingerprint.config.models.analyst = "~/models/x"; }), kind: "scorecard" }, /scorecard\.json.*tilde_home/);
-    refuses(s, { dir: s.dir, expect: sc((d) => { d.fingerprint.config.models.critic = "wimbledon-model"; }), kind: "scorecard" }, /scorecard\.json.*employer/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.fingerprint.config.models.critic = "fintech-model"; }), kind: "scorecard" }, /scorecard\.json.*employer/);
     refuses(s, { dir: s.dir, expect: sc((d) => { d.scorecard_version = "2.0.0"; }), kind: "scorecard" }, /scorecard_version/);
     // A newer scorecard replaces the old one.
     const next = "eval-20261112T090000Z";
