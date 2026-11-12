@@ -69,7 +69,7 @@ As **the owner**, I want **only exports I have read, byte for byte, to be commit
 - **F-003 in the research-agent index** (MCP tools `list_research` and `get_research_report` on the site's MCP server, and the later live research Worker): a separate spec. This page uses no MCP or WebMCP tool and adds none.
 - A live demo, any execution on the website, or any model spend.
 - Publishing the research-agent code. The page says "The code is available on request" and links to `/book`.
-- **Real-data (Databento) results.** When Databento answers the four questions in the research-agent spec, opening the D6 gate is a change to this spec with the answer attached.
+- **Real-data (Databento) results, for good.** Databento answered on 11 Nov 2026: publishing anything derived from their data needs a paid plan. The showcase is synthetic-only, and the D6 gate stays closed.
 - **The generator's constants** (planted effect sizes, trap parameters) are not published; reports may state measured estimates.
 - A general "projects" CMS. Kaizen Kingdom and the marine-weather agent stay as side projects on the homepage.
 - Changes to the homepage nav.
