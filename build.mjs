@@ -25,7 +25,9 @@ import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
 import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROVIDER_NAMES } from "./mcp/booking-config.js";
 import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
-import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, parseJson, MANIFEST, PROJECT } from "./lib/projects.mjs";
+import { gzipSync } from "node:zlib";
+import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, parseJson, publishedData, textErrors, ENUMS, MANIFEST, PROJECT } from "./lib/projects.mjs";
+import { renderProjects, TEMPLATE_VARS } from "./lib/project-pages.mjs";
 
 export const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -974,14 +976,169 @@ const pageCsp = (ic, formAction = "'none'") => [
 ].join("; ");
 
 // ---------------------------------------------------------------------------------------------
+// F-005: the /projects pages. The copy is content.json pages.projects (D5); the published runs and
+// scorecard are what the manifest governs (lib/projects.mjs); architecture.svg is inlined after
+// the SVG guard. Every page gets the writing pages' inline-code guards, the 30 KB gzip cap, the
+// output scan, the employer denylist and .denylist.local, on its source and its visible text.
+// ---------------------------------------------------------------------------------------------
+export const ARCHITECTURE_SVG = `${PROJECT}/architecture.svg`;
+export const GZIP_CAP = 30_720;
+export const gzipSize = (html) => gzipSync(Buffer.from(html, "utf8"), { level: 9 }).length;
+
+// The SVG guard: role="img" on the root, whose first element child is a non-empty <title>; no
+// script, style, foreignObject, animation or image element; no on… or style attribute; every href
+// a same-document fragment; url() only as url(#…).
+const SVG_BANNED = new Set(["script", "style", "foreignobject", "animate", "set", "animatetransform", "animatemotion", "image"]);
+export function checkSvg(svg) {
+  const errors = [];
+  const roots = parseHtml(svg).children.filter((n) => n.tag);
+  if (roots.length !== 1 || roots[0].tag !== "svg") return [`${ARCHITECTURE_SVG}: must be a single <svg> element`];
+  const root = roots[0];
+  if (root.attrs.role !== "img") errors.push(`${ARCHITECTURE_SVG}: the <svg> needs role="img"`);
+  const first = root.children.find((n) => n.tag);
+  if (first?.tag !== "title" || !first.raw.trim()) errors.push(`${ARCHITECTURE_SVG}: the first element in the <svg> must be a non-empty <title>`);
+  for (const el of [root, ...elements(root, { visible: false })]) {
+    if (SVG_BANNED.has(el.tag)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> is not allowed`);
+    for (const [a, v] of Object.entries(el.attrs)) {
+      if (a === "style" || /^on/.test(a)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> has a ${a} attribute; style it with a class in the page's <style>`);
+      if ((a === "href" || a === "xlink:href") && !v.startsWith("#")) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> ${a} must be a same-document fragment (#…)`);
+      if (/url\(/i.test(v) && v.replace(/url\(\s*#[^)\s]+\s*\)/gi, "").match(/url\(/i)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> ${a} may use url() only as url(#…)`);
+    }
+  }
+  return errors;
+}
+
+// The shape of pages.projects (D5): every string is visible copy (copy.*) or a named field (head.*,
+// templates.*, labels.*, empty.*); `launched` is the one boolean; keys starting with "_" are notes.
+// "s" is a string, ["s"] a non-empty list of strings, [{…}] a non-empty list of that shape.
+const enumMap = (list) => Object.fromEntries(list.map((k) => [k, "s"]));
+const keys = (...ks) => Object.fromEntries(ks.map((k) => [k, "s"]));
+const PROJECTS_SHAPE = {
+  launched: "boolean",
+  head: { index: keys("title", "description"), showcase: keys("title", "description") },
+  copy: {
+    synthetic: "s",
+    index: { heading: "s", intro: "s", entry: keys("title", "summary", "stack") },
+    showcase: { heading: "s", lead: "s", code: "s", code_link: "s", what_heading: "s", what: ["s"], architecture_heading: "s", architecture: [keys("heading", "text")], runs_heading: "s", built_heading: "s", built: ["s"] },
+  },
+  templates: Object.fromEntries(Object.keys(TEMPLATE_VARS).map((k) => [k, "s"])),
+  labels: {
+    status: enumMap(ENUMS.status), outcome: enumMap(ENUMS.outcome), tag: enumMap(ENUMS.tag), stop_reason: enumMap(ENUMS.stop_reason), harness: enumMap(ENUMS.harness), role: enumMap(ENUMS.role),
+    section: keys("plan", "critic", "report", "figures", "links"),
+    run: keys("finished", "harness", "models", "status", "outcome", "dataset"),
+    plan: keys("hypothesis", "dataset", "window", "method", "statistic", "significance"),
+    links: keys("markdown", "json", "back"),
+    scorecard: { ...keys("heading", "date", "repeats", "harness", "models", "seed", "aggregate", "na", "se_na"), columns: keys("question", "correct", "trap_recall", "critic_precision") },
+    card: keys("link", "harness", "status", "outcome", "role"),
+  },
+  empty: keys("runs", "issues"),
+};
+export function checkProjectsCopy(p) {
+  const errors = [];
+  const where = (path) => `content.json pages.projects${path ? "." + path : ""}`;
+  (function walk(v, shape, path) {
+    if (shape === "boolean") { if (typeof v !== "boolean") errors.push(`${where(path)} must be true or false`); return; }
+    if (shape === "s") { if (typeof v !== "string" || !v.trim()) errors.push(`${where(path)} must be a non-empty string`); return; }
+    if (Array.isArray(shape)) {
+      if (!Array.isArray(v) || !v.length) return errors.push(`${where(path)} must be a non-empty list`);
+      return v.forEach((x, i) => walk(x, shape[0], `${path}.${i}`));
+    }
+    if (!v || typeof v !== "object" || Array.isArray(v)) return errors.push(`${where(path)} must be an object`);
+    for (const k of Object.keys(v)) if (!k.startsWith("_") && !Object.hasOwn(shape, k)) errors.push(`${where(path ? `${path}.${k}` : k)} is neither visible copy (copy.*) nor a named field (head, templates, labels, empty); remove it or give it a check`);
+    for (const k of Object.keys(shape)) {
+      if (!Object.hasOwn(v, k)) errors.push(`${where(path ? `${path}.${k}` : k)} is missing`);
+      else walk(v[k], shape[k], path ? `${path}.${k}` : k);
+    }
+  })(p, PROJECTS_SHAPE, "");
+  for (const [name, t] of Object.entries(p?.templates ?? {})) {
+    if (typeof t !== "string" || !TEMPLATE_VARS[name]) continue;
+    for (const [, k] of t.matchAll(/\{([^{}]*)\}/g)) if (!TEMPLATE_VARS[name].includes(k)) errors.push(`${where(`templates.${name}`)} uses {${k}}, which isn't one of its placeholders (${TEMPLATE_VARS[name].map((x) => `{${x}}`).join(", ") || "none"})`);
+    if (/[{}]/.test(t.replace(/\{([a-z_]+)\}/g, (m, k) => (TEMPLATE_VARS[name].includes(k) ? "" : m)))) errors.push(`${where(`templates.${name}`)} has a { or } left after its placeholders are filled`);
+  }
+  if (p?.copy?.showcase && typeof p.copy.showcase.code === "string" && typeof p.copy.showcase.code_link === "string" && !p.copy.showcase.code.includes(p.copy.showcase.code_link)) errors.push(`${where("copy.showcase.code_link")} must be part of copy.showcase.code (it becomes the link to /book)`);
+  return errors;
+}
+
+// The checks on the rendered pages: inline-code guards, one <h1>, the gzip cap, the scan and both
+// denylists (source and visible text), the copy (each copy.* string the whole visible text of an
+// element), the head fields, the named strings each page uses, and US-1's keywords.
+export function projectPageErrors(out, p, ctx) {
+  const errors = [];
+  const visible = {}, docs = {};
+  for (const [f, html] of Object.entries(out.html)) {
+    const name = f.slice("public/".length);
+    const doc = docs[f] = parseHtml(html);
+    visible[f] = textOf(doc);
+    errors.push(...inlineCode(html, { styles: 1, scripts: 0 }).errors.map((x) => `${name}: ${x}`));
+    if (elements(doc, { visible: false }).filter((el) => el.tag === "h1").length !== 1) errors.push(`${name} must have exactly one <h1>`);
+    const z = gzipSize(html);
+    if (z > GZIP_CAP) errors.push(`${name} is ${z.toLocaleString("en-GB")} bytes gzipped, over the ${GZIP_CAP.toLocaleString("en-GB")}-byte cap (F-005: shorten the report, or don't publish it)`);
+    errors.push(...textErrors(name, html, ctx), ...textErrors(`${name} (visible text)`, visible[f], ctx));
+  }
+  for (const [f, v] of Object.entries(out.files)) {
+    if (f.endsWith(".html") || f.endsWith(".png")) continue;
+    errors.push(...textErrors(f.slice("public/".length), Buffer.isBuffer(v) ? v.toString("utf8") : v, ctx));
+  }
+  const allText = new Set(Object.values(docs).flatMap((d) => elements(d).map(textOf)));
+  (function walk(v, path) {
+    if (typeof v === "string") { if (!allText.has(v)) errors.push(`content.json pages.projects.${path} is not the whole visible text of any element on the /projects pages`); }
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (!k.startsWith("_")) walk(x, `${path}.${k}`);
+  })(p.copy, "copy");
+  const head = (f) => {
+    const all = elements(docs[f], { visible: false }), meta = (a, k) => all.find((el) => el.tag === "meta" && el.attrs[a] === k)?.attrs.content;
+    return { title: all.find((el) => el.tag === "title" && el.parent.tag === "head")?.raw, description: meta("name", "description"), ogTitle: meta("property", "og:title"), ogDescription: meta("property", "og:description") };
+  };
+  for (const [k, f] of [["index", "public/projects/index.html"], ["showcase", "public/projects/research-agent.html"]]) {
+    const h = head(f);
+    if (decodeEntities(h.title ?? "") !== p.head[k].title || h.ogTitle !== p.head[k].title) errors.push(`content.json pages.projects.head.${k}.title is not the page's <title> and og:title`);
+    if (h.description !== p.head[k].description || h.ogDescription !== p.head[k].description) errors.push(`content.json pages.projects.head.${k}.description is not the page's meta description and og:description`);
+  }
+  for (const u of out.uses) {
+    const shown = visible[u.file] + " " + decodeEntities(head(u.file).title ?? "");
+    for (const lit of u.literals) if (!shown.includes(lit)) errors.push(`content.json pages.projects.${u.path} does not show on ${u.file.slice("public/".length)}`);
+  }
+  // US-1: a recruiter's search terms, in the title, the description and the lead paragraph.
+  const lead = elements(docs["public/projects/research-agent.html"]).find((el) => el.tag === "p" && hasClass(el, "lead"));
+  for (const word of ["LangGraph", "LangChain"]) {
+    for (const [what, text] of [["title", p.head.showcase.title], ["meta description", p.head.showcase.description], ["lead paragraph", lead ? textOf(lead) : ""]]) {
+      if (!text.includes(word)) errors.push(`the showcase's ${what} must name ${word} (F-005 US-1)`);
+    }
+  }
+  return errors;
+}
+
+// Everything the build needs from projects/: the errors of every check, and the rendered output
+// (null when the copy or the SVG can't be rendered). `tree` is readProjectsTree's result.
+export function projectsOutput(root, c, tree, ctx) {
+  const errors = checkProjects(tree, ctx);
+  const p = c.pages?.projects;
+  const copyErrors = checkProjectsCopy(p);
+  errors.push(...copyErrors);
+  let svg = null;
+  try { svg = readFileSync(join(root, ARCHITECTURE_SVG), "utf8"); } catch { errors.push(`${ARCHITECTURE_SVG} is missing (the showcase inlines it)`); }
+  if (svg !== null) errors.push(...checkSvg(svg));
+  if (copyErrors.length) return { errors, out: null };
+  const data = errors.length ? { runs: [], scorecard: null } : publishedData(tree);
+  if (p.launched && (!data.runs.length || !data.scorecard)) errors.push("content.json pages.projects.launched is true, but launch needs at least one published run and the scorecard (F-005 D9)");
+  const footer = `<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="${PRIVACY_PATH}">Privacy</a></footer>`;
+  const out = renderProjects({ p, ...data, svg: svg?.trim() ?? "", kit: { site: SITE, style: WRITING_STYLE, safeJson, footer } });
+  errors.push(...projectPageErrors(out, p, ctx));
+  return { errors, out };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Rendering: every generated file, as a function of the content and the dateModified value.
 // ---------------------------------------------------------------------------------------------
-function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, bookingCfg) {
+// `projects` is projectsOutput()'s rendered output (or null); `launched` lists it (F-005 D9).
+function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, bookingCfg, projects = null) {
   // F-002 (US-7): the one booking guide, with booking.json's timings and meeting types filled in.
   const guide = bookingGuide(c, bookingCfg);
   const writing = renderWriting(posts);
   const city = c.person.location.split(",")[0].trim();
   const title = `${c.person.name} — ${c.person.headline}, ${city}`;
+  // F-005 (D9): while not launched, the /projects pages are absent from index.md, llms.txt and the sitemap.
+  const listed = projects && c.pages.projects.launched ? projects.listing : null;
+  const projectsMd = listed ? ["## Projects", "", `- [${listed.showcase.title}](${listed.showcase.md}): ${listed.showcase.description}`, ...listed.runs.map((r) => `- [${r.question.replace(/\s*\n\s*/g, " ").replace(/[\\[\]]/g, "\\$&")}](${r.md}) (checked ${r.checked})`), ""] : [];
 
   // ---- JSON-LD ----
   const id = (frag) => ({ "@id": SITE + "#" + frag });
@@ -1068,6 +1225,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
     "## Skills", "", ...c.skills.map((s) => `- ${s}`), "",
     "## Quick answers", "", ...c.faq.flatMap((f) => [`### ${f.q}`, "", f.a, ""]),
     "## Writing", "", ...writing.sorted.map((p) => `- [${p.title}](${SITE}writing/${p.slug}.md) (${p.date}): ${p.description}`), "",
+    ...projectsMd,
     "## How to book a call", "", `The same guide is at [${SITE}book.md](${SITE}book.md).`, "", guide,
     "## Links", "", ...links,
   ].join("\n");
@@ -1083,6 +1241,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
     "## Background", "", ...c.background.flatMap((p) => [p, ""]),
     "## Quick answers", "", ...c.faq.map((f) => `- **${f.q}**: ${f.a}`), "",
     "## Writing", "", ...writing.sorted.map((p) => `- [${p.title}](${SITE}writing/${p.slug}.md): ${p.description}`), "",
+    ...projectsMd,
     "## How to book a call", "", `The same guide is at [${SITE}book.md](${SITE}book.md).`, "", guide,
     "## Links", "", ...links,
     "## Machine-readable", "",
@@ -1100,7 +1259,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
   <url><loc>${SITE}book</loc><lastmod>${date}</lastmod></url>
   <url><loc>${SITE}privacy</loc><lastmod>${date}</lastmod></url>
 ${writing.sorted.map((p) => `  <url><loc>${SITE}writing/${p.slug}</loc><lastmod>${p.date}</lastmod></url>`).join("\n")}
-</urlset>
+${listed ? [`  <url><loc>${SITE}projects/</loc><lastmod>${date}</lastmod></url>`, `  <url><loc>${listed.showcase.url}</loc><lastmod>${date}</lastmod></url>`, ...listed.runs.map((r) => `  <url><loc>${r.page}</loc><lastmod>${r.checked}</lastmod></url>`)].join("\n") + "\n" : ""}</urlset>
 `;
 
   // ---- robots.txt ---- Content Signals: https://contentsignals.org/
@@ -1155,6 +1314,21 @@ Sitemap: ${SITE}sitemap.xml
   // "/*" carries no CSP; each known non-HTML path gets the baseline explicitly; the 404 page
   // (served at arbitrary paths) carries its own policy in a <meta http-equiv> tag instead.
   const baseCsp = ["default-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'"].join("; ");
+  // F-005 (D10): one exact rule per /projects page (clean URL and file name) and per Markdown or
+  // JSON copy; none for figures; and, while not launched, /projects/* carrying only noindex.
+  const projectFiles = Object.keys(projects?.files ?? {}).sort();
+  const projectRules = projectFiles.flatMap((f) => {
+    const path = "/" + f.slice("public/".length);
+    if (f.endsWith(".html")) {
+      const csp = pageCsp(inlineCode(projects.html[f], { styles: 1, scripts: 0 }));
+      const clean = path.endsWith("/index.html") ? path.slice(0, -"index.html".length) : path.slice(0, -".html".length);
+      return [`${clean}\n  Content-Security-Policy: ${csp}`, `${path}\n  Content-Security-Policy: ${csp}`];
+    }
+    if (f.endsWith(".md")) return [`${path}\n  Content-Type: text/markdown; charset=utf-8\n  Content-Security-Policy: ${baseCsp}`];
+    if (f.endsWith(".json")) return [`${path}\n  Content-Type: application/json; charset=utf-8\n  Content-Security-Policy: ${baseCsp}`];
+    return [];
+  });
+  if (projects && !c.pages.projects.launched) projectRules.push("/projects/*\n  X-Robots-Tag: noindex");
   const notFoundCsp = [
     "default-src 'none'", "img-src 'self'", "font-src 'self'", `style-src ${nf.styles.map(cspHash).join(" ")}`,
     "base-uri 'none'", "form-action 'none'",
@@ -1210,7 +1384,10 @@ ${BOOK_PATH}.html
 ${writingRules}
 
 ${writingMd()}
-
+${projectRules.length ? `
+# Projects (F-005): each page, and each Markdown and JSON copy; figures get only the /* headers.
+${projectRules.join("\n\n")}
+` : ""}
 ${CV_PDF}
   Content-Type: application/pdf
   Cache-Control: public, max-age=3600
@@ -1236,7 +1413,7 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
     : html404.replace(/<meta charset="utf-8">/, `<meta charset="utf-8">\n${cspMeta}`);
 
   return {
-    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/book.md": guide, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, "public/book.html": bookHtml, ...writing.files },
+    files: { "public/_headers": headers, "public/404.html": html404Out, "public/index.html": html, "public/index.md": md, "public/book.md": guide, "public/llms.txt": llms, "public/sitemap.xml": sitemap, "public/robots.txt": robots, "public/cv.html": cvHtml, "public/privacy.html": privacyHtml, "public/book.html": bookHtml, ...writing.files, ...projects?.files },
     inlineErrors: [...page.errors, ...nf.errors.map((e) => "404.html: " + e), ...cvPage.errors.map((e) => "cv.html: " + e), ...privacyPage.errors.map((e) => "privacy.html: " + e), ...bookPage.errors.map((e) => "book.html: " + e), ...Object.values(writingCsp).flatMap((w) => w.errors), ...headerErrors],
     md, llms,
   };
@@ -1339,11 +1516,21 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const bookingCfg = readOr("booking.json") ? JSON.parse(read("booking.json")) : BOOKING_CONFIG;
   // F-004 (D7): the same validation as the Worker's, before anything is rendered from it.
   try { validateConfig(bookingCfg); } catch (e) { return { errors: [e.message], stale: [], removed: [], date: null }; }
-  const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00", bookingCfg).files;
+  // F-005: the /projects pages, rendered from the published tree once every check on it has run.
+  // The manifest governs projects/research-agent/runs/ and scorecard/; every published file is
+  // checked as --record checked it (the export contract, fields and enumerations, the D6 gate, the
+  // PNG check, the output scan, the employer denylist and, when present, .denylist.local), at most 8
+  // runs fit the _headers rule budget (D10), and the pages get the checks of projectPageErrors.
+  const ctx = { employerMention, denylist: loadDenylist(root) };
+  let projects;
+  try { projects = projectsOutput(root, c, readProjectsTree(root), ctx); } catch (e) { projects = { errors: [`projects: ${e.message}`], out: null }; }
+  const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00", bookingCfg, projects.out).files;
   // Images the page references by path (src, srcset, icons, og:image / twitter:image).
   const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
   const assetDigests = referenced.map((f) => [f, sha256(readFileSync(p(`public/${f}`))).toString("hex")]);
-  const outputs = [...CONTENT_OUTPUTS, ...Object.keys(probe).filter((f) => f.startsWith("public/writing/")).sort()].map((f) => [f, probe[f]]);
+  // F-005: the /projects pages and copies join the content hash, figures (and other Buffers) by sha256.
+  const outputs = [...CONTENT_OUTPUTS, ...Object.keys(probe).filter((f) => f.startsWith("public/writing/") || f.startsWith(OWNED + "/")).sort()]
+    .map((f) => [f, Buffer.isBuffer(probe[f]) ? sha256(probe[f]).toString("hex") : probe[f]]);
   const hash = sha256(JSON.stringify({ outputs, assets: assetDigests })).toString("hex");
   let state = null;
   try { state = JSON.parse(readOr("build-state.json") ?? "null"); } catch { state = null; }
@@ -1352,7 +1539,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   else if (check) { errors.push("build-state.json does not match the generated output (run npm run build)"); date = state?.date ?? today; }
   else date = today;
 
-  const { files, inlineErrors, md, llms } = render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, bookingCfg);
+  const { files, inlineErrors, md, llms } = render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, bookingCfg, projects.out);
   files["build-state.json"] = JSON.stringify({ hash, date }, null, 2) + "\n";
 
   // ---- checks (all before any write) ----
@@ -1368,11 +1555,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   if (did !== DID_SHA256) errors.push(`public/.well-known/did.json changed (sha256 ${did}); it backs did:web sign-in`);
   errors.push(...checkSecurityTxt(read("public/.well-known/security.txt"), now));
   errors.push(...checkMicrosoftSecret(bookingCfg, now));
-  // F-005: the manifest governs projects/research-agent/runs/ and scorecard/; every published file
-  // is checked as --record checked it (the export contract, fields and enumerations, the D6 gate,
-  // the PNG check, the output scan, the employer denylist and, when present, .denylist.local), and
-  // at most 8 runs fit the _headers rule budget (D10).
-  try { errors.push(...checkProjects(readProjectsTree(root), { employerMention, denylist: loadDenylist(root) })); } catch (e) { errors.push(`projects: ${e.message}`); }
+  errors.push(...projects.errors);
 
   // F-005 (D4): every entry under public/projects/ that this build would not write is a stray:
   // --check names it, a build deletes it (and every directory that leaves empty) in the same staged

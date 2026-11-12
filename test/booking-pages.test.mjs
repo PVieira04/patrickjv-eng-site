@@ -770,7 +770,7 @@ test("F-004 security: /book's and the homepage's form-action is 'self' plus exac
     const dir = mkdtempSync(join(tmpdir(), "site-f004-"));
     try {
       for (const f of ["content.json", "cv.json", "build-state.json"]) cpSync(join(ROOT, f), join(dir, f));
-      for (const d of ["writing", "public"]) cpSync(join(ROOT, d), join(dir, d), { recursive: true });
+      for (const d of ["writing", "public", "projects"]) cpSync(join(ROOT, d), join(dir, d), { recursive: true });
       writeFileSync(join(dir, "booking.json"), JSON.stringify(withSignin(providers, trial)));
       assert.deepEqual(build({ root: dir, now: Date.parse("2026-10-12T00:00:00Z") }).errors, []);
       const headers = readFileSync(join(dir, "public/_headers"), "utf8");

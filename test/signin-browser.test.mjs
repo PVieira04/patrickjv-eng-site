@@ -30,7 +30,7 @@ const PROVIDER_HOSTS = { "accounts.google.com": "google", "login.microsoftonline
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const f004Dir = mkdtempSync(join(tmpdir(), "signin-f004-"));
 for (const f of ["content.json", "cv.json", "build-state.json"]) cpSync(join(ROOT, f), join(f004Dir, f));
-for (const d of ["writing", "public"]) cpSync(join(ROOT, d), join(f004Dir, d), { recursive: true });
+for (const d of ["writing", "public", "projects"]) cpSync(join(ROOT, d), join(f004Dir, d), { recursive: true });
 const F004_SIGNIN = { providers: ["google", "microsoft"], trial: ["altimist"], microsoftSecretExpires: "2099-01-01" };
 writeFileSync(join(f004Dir, "booking.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(ROOT, "booking.json"), "utf8")), signin: F004_SIGNIN }));
 const f004Build = build({ root: f004Dir });

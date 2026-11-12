@@ -680,16 +680,18 @@ test("F-005 (US-4): --record runs the build's checks on the whole would-be tree:
 import { build } from "../build.mjs";
 
 const NOW = Date.parse("2026-11-12T12:00:00Z");
-// A scratch copy of the site's inputs with the fixture run and scorecard recorded and alt text
-// written, as the owner would leave it before `npm run build`.
+// A scratch copy of the site's inputs with the fixture run and scorecard recorded, alt text
+// written and the site built, as the owner would leave it before committing.
 function publishedSite() {
   const s = sandbox();
-  for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public"]) cpSync(join(ROOT, f), join(s.root, f), { recursive: true });
+  for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public", "projects"]) cpSync(join(ROOT, f), join(s.root, f), { recursive: true });
   assert.deepEqual(record({ root: s.root, dir: s.dir, expect: runExport(s.dir), today: TODAY }).errors, []);
   writeAlt(s.root);
   const sdir = join(s.base, "sc");
   assert.deepEqual(record({ root: s.root, dir: sdir, expect: writeExport(sdir, { kind: "scorecard", id: EVAL_ID, files: scorecardFiles() }), kind: "scorecard", today: TODAY }).errors, []);
   s.run = join(s.root, "projects/research-agent/runs", RUN_ID);
+  // ... then `npm run build`: the published run and scorecard change the /projects pages (PR 3).
+  assert.deepEqual(build({ root: s.root, today: TODAY, now: NOW }).errors, []);
   return s;
 }
 const editManifest = (s, f) => { const m = manifestOf(s.root); f(m); writeFileSync(join(s.root, MANIFEST), JSON.stringify(m, null, 2) + "\n"); };
@@ -818,7 +820,7 @@ test("F-005 (US-4): .denylist.local fails the local build on a term in exported 
   let s = publishedSite();
   try {
     writeFileSync(join(s.root, ".denylist.local"), "zorblax\n");
-    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "no term present");
+    assert.deepEqual(build({ root: s.root, now: NOW }).errors, [], "no term present");
     republish(s, "report.md", "# Research report\n\nAs we did at Zorblax.\n");
     buildFails(s, /report\.md matches a term in \.denylist\.local/);
   } finally { s.done(); }
@@ -828,7 +830,7 @@ test("F-005 (US-4): .denylist.local fails the local build on a term in exported 
     editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A Zorblax chart."; });
     buildFails(s, /published\.json matches a term in \.denylist\.local/);
     editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A Zorblaxian chart."; });
-    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "inside a longer word");
+    assert.deepEqual(build({ root: s.root, now: NOW }).errors, [], "inside a longer word");
     writeFileSync(join(s.root, ".denylist.local"), "trap_caught\n");
     editManifest(s, (m) => { m.runs[RUN_ID].role = "trap_caught"; });
     buildFails(s, /published\.json matches a term in \.denylist\.local/);
