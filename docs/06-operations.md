@@ -56,7 +56,7 @@ Production does not depend on any of these: deleting them changes nothing live.
 
 - `Workers Builds: patrickjv-eng-site` in progress or completed → pass with a notice. The build was not dropped; whether it **succeeded** is `build-result`'s alert below, so a failed build alerts once, not twice.
 - Still `queued` (or any status short of in progress) at 12 minutes → **error "still 'queued' after 12 minutes"**.
-- No check run after 12 minutes → **error "Cloudflare didn't build `<sha>`"**. Fix: dashboard → Workers & Pages → `patrickjv-eng-site` → Builds → retry the latest `main` build; if there is nothing to retry, push a commit that changes a file inside the site's watch paths. **Unverified:** whether a dashboard retry works for a build that was dropped entirely (see the manual-fallback note under [Deploying](#deploying)). An empty commit does **not** help: it changes no watched file, so Workers Builds builds nothing (and `deploy-watch` passes it).
+- No check run after 12 minutes → **error "Cloudflare didn't build `<sha>`"**. Fix: dashboard → Workers & Pages → `patrickjv-eng-site` → Builds → retry the latest `main` build; if there is nothing to retry, push a commit that changes a file inside the site's watch paths. **Unverified:** whether a dashboard retry works for a build that was dropped entirely (see the manual-fallback note under [Deploying](#deploying)). An empty commit does **not** help: it changes no watched file, so Workers Builds builds nothing, and `deploy-watch` (which treats an empty change list as served) polls it and fails "didn't build" for it too. The message also says how many of the 13 check-runs calls failed.
 - Every check-runs call failed → **error "could not read check runs"** (a GitHub API problem, not a verdict on the build).
 
 It watches the site Worker only, not `patrickjv-mcp`. Unverified: whether a quick second push makes Workers Builds skip the first commit on purpose, which would also raise "didn't build" for the first push (the second push's own run then shows whether production caught up).
@@ -316,6 +316,7 @@ mcp-publisher publish
 | **Overdue** (was ~20 Oct) | Check indexing (Search Console, Bing), search "Patrick Vieira platform engineer", ask ChatGPT/Claude/Perplexity; then promote the AEO learning-log entry |
 | Open | Launch the F-004 providers: set `signin.providers` in `booking.json` once the Microsoft app registration and Altimist ID client exist (specs/F-004, D6 runbook below) |
 | Open | F-002 P3: retire anonymous booking (the `/book` email form) and anonymous `request_intro` — needs its own spec pass |
+| Open | `monitor.yml` "main is deployed" fails open: a failed compare call, an empty file list or a diff past the compare API's 300-file cap reads as "only files the site build ignores" and passes. Make it fail closed like `deploy-watch.yml` |
 | Open | F-001 launch steps 9 and 13 (guest-list privacy check, first real booking) |
 | Done | Writing section (8 Oct 2026, two write-ups) |
 

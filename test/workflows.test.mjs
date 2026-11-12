@@ -120,15 +120,19 @@ const runBlocks = (y) => {
   const out = [];
   const lines = y.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^(\s*)(?:- )?run:(.*)$/);
+    const m = lines[i].match(/^(\s*(?:- )?)run:(.*)$/);
     if (!m || /^\s*#/.test(lines[i])) continue;
     const rest = m[2].trim();
-    if (rest && !/^[|>][+-]?\d*[+-]?(\s+#.*)?$/.test(rest)) { out.push(rest); continue; }
-    const body = [];
+    const block = !rest || /^[|>][+-]?\d*[+-]?(\s+#.*)?$/.test(rest);
+    // Body: every following line indented past the run: key's column (for a one-line value, its
+    // plain-scalar continuation lines, which are part of the script too).
+    const body = block ? [] : [rest];
     for (i++; i < lines.length && (lines[i].trim() === "" || lines[i].search(/\S/) > m[1].length); i++) body.push(lines[i]);
     i--;
-    const ind = Math.min(...body.filter((l) => l.trim()).map((l) => l.search(/\S/)));
-    out.push(body.map((l) => l.slice(ind)).join("\n").replace(/\n+$/, ""));
+    const rows = block ? body : body.slice(1);
+    const ind = Math.min(...rows.filter((l) => l.trim()).map((l) => l.search(/\S/)));
+    const text = rows.map((l) => l.slice(ind)).join("\n").replace(/\n+$/, "");
+    out.push(block ? text : [rest, text].filter(Boolean).join("\n"));
   }
   return out;
 };
@@ -147,8 +151,9 @@ test("workflows: no ${{ }} inside any run: script, and every run: key is checked
 });
 
 test("runBlocks: extracts inline, |, >-, |2 and next-line run: forms", () => {
-  const y = "      - run: echo a\n      - run: >-\n          echo b\n      - run: |2\n          echo c\n      - run:\n          echo ${{ x }}\n";
-  assert.deepEqual(runBlocks(y), ["echo a", "echo b", "echo c", "echo ${{ x }}"]);
+  const y = "      - run: echo a\n      - run: >-\n          echo b\n      - run: |2\n          echo c\n      - run:\n          echo ${{ x }}\n" +
+    "      - run: echo d\n          ${{ y }}\n        env:\n          A: b\n      - name: n\n        run: |\n          echo e\n        shell: bash\n";
+  assert.deepEqual(runBlocks(y), ["echo a", "echo b", "echo c", "echo ${{ x }}", "echo d\n${{ y }}", "echo e"]);
 });
 
 // deploy-watch.yml: Workers Builds sometimes silently drops a main build that arrives while a branch
@@ -189,14 +194,15 @@ test("no workflow or docs/06 recommends an empty commit (it changes no watched f
 // also runs inside every Workers Builds build, so they skip (never fail) where that cannot work.
 const shellSkip = (() => {
   if (process.platform === "win32") return "skipped on Windows: the workflow script is bash";
-  const b = spawnSync("bash", ["-c", "command -v seq sed head tail >/dev/null && echo ok"], { encoding: "utf8" });
-  if (b.error || b.stdout.trim() !== "ok") return "skipped: bash with seq, sed, head and tail is not available";
+  // The same constructs as the workflow script and the fake gh.
+  const b = spawnSync("bash", ["-e", "-c", 'x=$(seq 0 1); while read -r l; do :; done < <(tail -n +2 <<< "$x"); sed -n 1p /dev/null; head -n 1 /dev/null; cat /dev/null; echo ok'], { encoding: "utf8", timeout: 10000 });
+  if (b.error || b.stdout.trim() !== "ok") return "skipped: bash (with seq, tail, sed, head, cat, process substitution and here-strings) is not usable";
   let d;
   try {
     d = mkdtempSync(join(tmpdir(), "deploy-watch-probe-"));
     writeFileSync(join(d, "probe"), "#!/usr/bin/env bash\necho ok\n");
     chmodSync(join(d, "probe"), 0o755);
-    const r = spawnSync(join(d, "probe"), { encoding: "utf8" });
+    const r = spawnSync(join(d, "probe"), { encoding: "utf8", timeout: 10000 });
     if (r.error || r.stdout.trim() !== "ok") return `skipped: cannot run executables from ${tmpdir()} (noexec?)`;
   } catch (e) {
     return `skipped: temp-dir probe failed (${e.message})`;
@@ -205,7 +211,11 @@ const shellSkip = (() => {
   }
   return false;
 })();
-const shTest = (name, fn) => test(name, { skip: shellSkip }, fn);
+// In GitHub Actions (test.yml) the environment must support them: fail there rather than skip.
+const shTest = (name, fn) =>
+  process.env.GITHUB_ACTIONS === "true" && shellSkip
+    ? test(name, () => assert.fail(`GitHub Actions cannot run the deploy-watch script tests: ${shellSkip}`))
+    : test(name, { skip: shellSkip }, fn);
 
 const SHA = "b".repeat(40);
 const watchScript = runBlocks(raw("deploy-watch.yml"))[0];
@@ -295,6 +305,7 @@ shTest("deploy-watch: no site build after 12 minutes -> fail loudly with what to
   assert.equal(r.code, 1, r.out);
   assert.equal(r.polls, 13, "polls at 0, 1, ... 12 minutes");
   assert.match(r.out, new RegExp(`::error[^:]*::Cloudflare didn't build ${SHA}: retry the build in the dashboard`));
+  assert.match(r.out, /1 of 13 check-runs calls failed/);
 });
 
 shTest("deploy-watch: every check-runs call failing -> 'could not read check runs', not 'didn't build'", () => {

@@ -96,6 +96,6 @@ jobs:
             echo "### Workers Builds site build for $SHA still $status after 12 minutes" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "::error title=No Workers Builds site build::Cloudflare didn't build $SHA: retry the build in the dashboard (Workers & Pages → patrickjv-eng-site → Builds), or push a commit that changes a file the site build watches. (No 'Workers Builds: patrickjv-eng-site' check run after 12 minutes; served changes:$served)"
+          echo "::error title=No Workers Builds site build::Cloudflare didn't build $SHA: retry the build in the dashboard (Workers & Pages → patrickjv-eng-site → Builds), or push a commit that changes a file the site build watches. (No 'Workers Builds: patrickjv-eng-site' check run after 12 minutes; $errors of 13 check-runs calls failed; served changes:$served)"
           echo "### Cloudflare didn't build $SHA (no site build after 12 minutes)" >> "$GITHUB_STEP_SUMMARY"
           exit 1
