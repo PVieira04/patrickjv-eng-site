@@ -1148,7 +1148,7 @@ function render(c, cv, posts, html0, html404, imageFiles, fontFiles, date, booki
   const title = `${c.person.name} — ${c.person.headline}, ${city}`;
   // F-005 (D9): while not launched, the /projects pages are absent from index.md, llms.txt and the sitemap.
   const listed = projects && c.pages.projects.launched ? projects.listing : null;
-  const projectsMd = listed ? ["## Projects", "", `- [${listed.showcase.title}](${listed.showcase.md}): ${listed.showcase.description}`, ...listed.runs.map((r) => `- [${r.question.replace(/\s*\n\s*/g, " ").replace(/[\\[\]]/g, "\\$&")}](${r.md}) (checked ${r.checked})`), ""] : [];
+  const projectsMd = listed ? ["## Projects", "", `- [${listed.showcase.title}](${listed.showcase.md}): ${listed.showcase.description}`, ...listed.runs.map((r) => `- [${mdInline(r.question)}](${r.md}) (checked ${r.checked})`), ""] : [];
 
   // ---- JSON-LD ----
   const id = (frag) => ({ "@id": SITE + "#" + frag });

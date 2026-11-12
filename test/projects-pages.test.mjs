@@ -952,3 +952,17 @@ test("F-005 (D7): the build and --record refuse a run page whose rendered report
     assert.ok(projectPageErrors(o, P, { employerMention, denylist: [] }).some((e) => e.includes(`runs/${runId(1)}/index.html: report.md renders <a>`)));
   } finally { s.done(); }
 });
+
+test("F-005 (US-3, D7): a lone \\r (or \\r\\n) in a question or a model id can't start a Markdown line in research-agent.md, llms.txt or index.md", () => {
+  const s = site();
+  try {
+    const q = "Q?\r\r## x\r\n## y";
+    ok(launched(s, [run(1, { edit: (d) => { d.question = q; } })], { card: edit(scorecard(), (d) => { d.fingerprint.config.models.analyst = "Q?\r\r## x"; }) }));
+    for (const f of ["projects/research-agent.md", "llms.txt", "index.md"]) {
+      const lines = out(s, f).split(/\r\n|\r|\n/);
+      assert.deepEqual(lines.filter((l) => /^## [xy]/.test(l)), [], f);
+      assert.ok(out(s, f).includes("Q? ## x ## y"), `${f}: the question on one line`);
+    }
+    assert.ok(out(s, "projects/research-agent.md").includes("analyst Q? ## x, critic"), "the model id on one line");
+  } finally { s.done(); }
+});
