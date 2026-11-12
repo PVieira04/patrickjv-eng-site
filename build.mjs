@@ -10,8 +10,8 @@
 //
 // Nothing is written unless every check passes. Writing itself is staged (temporary files, then
 // renames) with a best-effort rollback; it is not transactional — see writeStaged().
-import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { marked } from "marked";
@@ -1242,23 +1242,44 @@ const MANIFEST = "projects/research-agent/published.json";
 const MAX_RUNS = 8;
 const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/book.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
-// Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
-// over the original. This is NOT transactional: a failure part-way through the renames leaves some
-// outputs new and some old. On any failure it removes the temporary files and restores the files
-// it had already replaced (from `previous`, name -> old text or null if absent), then rethrows with
-// `rolledBack` (true if every restore succeeded). `io` exists so tests can inject failures.
-export function writeStaged(root, files, previous, io = { writeFileSync, renameSync, unlinkSync }) {
+// Write `files` (name -> text or Buffer) under `root`: every file to "<name>.tmp" first, then
+// rename each over the original. This is NOT transactional: a failure part-way through leaves some
+// outputs new and some old. `removal` (F-005 D4, used only under public/projects/) is deleted in the
+// same write, before the outputs: `files` (name -> its bytes, read before deletion), `links` (name ->
+// readlink target; the link is removed, never followed) and `dirs` (emptied directories, deepest
+// first). Missing parent directories of outputs are created. On any failure it undoes all of it:
+// removes the temporary files, restores the files it had already replaced (from `previous`, name ->
+// old bytes or null if absent), removes the directories it created, recreates the directories,
+// files and links it removed, then rethrows with `rolledBack` (true if every step succeeded). `io`
+// exists so tests can inject failures.
+const IO = { writeFileSync, renameSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync };
+export function writeStaged(root, files, previous, io = IO, removal = {}) {
+  io = { ...IO, ...io };
   const p = (f) => join(root, f);
-  const staged = [], replaced = [];
+  const { files: gone = {}, links = {}, dirs = [] } = removal;
+  const deleted = [], unlinked = [], rmdirs = [], created = [], staged = [], replaced = [];
   try {
+    for (const f of Object.keys(gone)) { io.unlinkSync(p(f)); deleted.push(f); }
+    for (const f of Object.keys(links)) { io.unlinkSync(p(f)); unlinked.push(f); }
+    for (const d of dirs) { io.rmdirSync(p(d)); rmdirs.push(d); }
+    for (const f of Object.keys(files)) {
+      const parts = dirname(f).split(/[\\/]/).filter((x) => x && x !== ".");
+      for (let i = 1; i <= parts.length; i++) {
+        const d = parts.slice(0, i).join("/");
+        if (!existsSync(p(d))) { io.mkdirSync(p(d)); created.push(d); }
+      }
+    }
     for (const f of Object.keys(files)) { io.writeFileSync(p(f) + ".tmp", files[f]); staged.push(f); }
     for (const f of Object.keys(files)) { io.renameSync(p(f) + ".tmp", p(f)); replaced.push(f); }
   } catch (e) {
     let rolledBack = true;
-    for (const f of staged.filter((f) => !replaced.includes(f))) { try { io.unlinkSync(p(f) + ".tmp"); } catch { rolledBack = false; } }
-    for (const f of replaced) {
-      try { if (previous[f] === null) io.unlinkSync(p(f)); else io.writeFileSync(p(f), previous[f]); } catch { rolledBack = false; }
-    }
+    const undo = (fn) => { try { fn(); } catch { rolledBack = false; } };
+    for (const f of staged.filter((f) => !replaced.includes(f))) undo(() => io.unlinkSync(p(f) + ".tmp"));
+    for (const f of replaced) undo(() => { if (previous[f] === null) io.unlinkSync(p(f)); else io.writeFileSync(p(f), previous[f]); });
+    for (const d of [...created].reverse()) undo(() => io.rmdirSync(p(d)));
+    for (const d of [...rmdirs].reverse()) undo(() => io.mkdirSync(p(d)));
+    for (const f of deleted) undo(() => io.writeFileSync(p(f), gone[f]));
+    for (const f of unlinked) undo(() => io.symlinkSync(links[f], p(f)));
     throw Object.assign(e, { writePhase: true, rolledBack });
   }
 }

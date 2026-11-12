@@ -2,7 +2,7 @@
 // embedding, security.txt validation, content-hash dates and validate-before-write.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, renameSync, unlinkSync, existsSync, symlinkSync, readlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -452,4 +452,48 @@ test("F-005 (D10): more than 8 runs in the manifest fails the build; 8 passes", 
     manifest(9);
     for (const check of [true, false]) assert.ok(build({ root: dir, check, now: NOW }).errors.some((e) => /9 runs.*at most 8/.test(e)), `check=${check}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// A PNG-like Buffer that is not valid UTF-8 and holds a \r\n: any text decoding or line-ending
+// conversion on the way changes it.
+const BINARY = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from([0xff, 0xfe, 0xc3, 0x28, 0x0d, 0x0a, 0x00, 0x80])]);
+
+test("F-005 (D3, D4): writeStaged writes Buffers byte for byte and creates missing directories", () => {
+  const dir = mkdtempSync(join(tmpdir(), "site-write-"));
+  try {
+    const f = "public/projects/research-agent/runs/r/calls/1/out/x.png";
+    writeStaged(dir, { [f]: BINARY }, { [f]: null });
+    assert.ok(readFileSync(join(dir, f)).equals(BINARY));
+    assert.deepEqual(readdirSync(join(dir, "public/projects/research-agent/runs/r/calls/1/out")), ["x.png"], "no temp file left");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("F-005 (D4): writeStaged deletes files, links and emptied directories in the same staged write, and a failure restores all of it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "site-write-"));
+  const outside = mkdtempSync(join(tmpdir(), "site-outside-"));
+  try {
+    const at = (f) => join(dir, f);
+    mkdirSync(at("p/old/calls/1/out"), { recursive: true });
+    writeFileSync(at("p/old/calls/1/out/x.png"), BINARY);
+    writeFileSync(at("p/keep.png"), BINARY);
+    writeFileSync(join(outside, "target.txt"), "outside");
+    symlinkSync(join(outside, "target.txt"), at("p/link"));
+    const removal = { files: { "p/old/calls/1/out/x.png": readFileSync(at("p/old/calls/1/out/x.png")) }, links: { "p/link": readlinkSync(at("p/link")) }, dirs: ["p/old/calls/1/out", "p/old/calls/1", "p/old/calls", "p/old"] };
+    const files = { "p/keep.png": Buffer.from("new"), "p/new/a/b.png": BINARY };
+    const previous = { "p/keep.png": readFileSync(at("p/keep.png")), "p/new/a/b.png": null };
+    let renames = 0;
+    const io = { writeFileSync, unlinkSync, renameSync: (x, y) => { if (++renames === 2) throw new Error("EIO"); renameSync(x, y); } };
+    assert.throws(() => writeStaged(dir, files, previous, io, removal), (e) => e.writePhase && e.rolledBack === true);
+    assert.ok(readFileSync(at("p/old/calls/1/out/x.png")).equals(BINARY), "deleted PNG restored byte for byte");
+    assert.ok(readFileSync(at("p/keep.png")).equals(BINARY), "replaced file restored byte for byte");
+    assert.equal(readlinkSync(at("p/link")), join(outside, "target.txt"), "link recreated with the same target");
+    assert.equal(readFileSync(join(outside, "target.txt"), "utf8"), "outside", "link target untouched");
+    assert.ok(!existsSync(at("p/new")), "directories the write created are removed");
+    assert.deepEqual(readdirSync(at("p")).sort(), ["keep.png", "link", "old"], "no temp files");
+    // Without the failure, the same write deletes the strays and the emptied directories.
+    writeStaged(dir, files, previous, undefined, removal);
+    assert.deepEqual(readdirSync(at("p")).sort(), ["keep.png", "new"]);
+    assert.ok(readFileSync(at("p/new/a/b.png")).equals(BINARY));
+    assert.equal(readFileSync(join(outside, "target.txt"), "utf8"), "outside", "deleting the link leaves its target");
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
