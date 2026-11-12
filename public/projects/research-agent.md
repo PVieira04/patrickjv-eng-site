@@ -86,7 +86,7 @@ A second model reviewed the specs and the code adversarially over several rounds
 
 ## With more time
 
-In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. Most of the next steps add checks, so the system catches more of its own mistakes.
+In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes.
 
 ### Run the red-team probes on every push
 
@@ -94,7 +94,7 @@ The 22 probe scripts from the sandbox's red-team are kept in the repository, but
 
 ### Finish the simpler verification plan
 
-I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, on a fresh machine that holds none of my keys or sign-ins, and makes the Claude Code behaviour probes a command I run and watch.
+I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch.
 
 ### Run the LangGraph eval with real models
 
@@ -114,7 +114,7 @@ Model-written text goes into a report as plain text, with every punctuation char
 
 ### Add overfitting checks from López de Prado
 
-The agent already fixes its test in a plan before any analysis runs, and the critic already asks for a Bonferroni or Holm correction when several tests were tried. The next step takes the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and the eval and the analyst's guidance would use purged and embargoed cross-validation, so overlapping labels can't leak across folds.
+The agent already fixes its test in a plan before any analysis runs, and the critic already checks that multiple comparisons are corrected for (Bonferroni, Holm or a joint test) or at least disclosed. Unlike the other steps, this one isn't in the specs yet. It would take the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and both the checklist and the analyst's guidance would call for purged and embargoed cross-validation, so overlapping labels can't leak across folds.
 
 ### Widen CI
 
