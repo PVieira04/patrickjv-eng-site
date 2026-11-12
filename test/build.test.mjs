@@ -2,7 +2,7 @@
 // embedding, security.txt validation, content-hash dates and validate-before-write.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, cpSync, mkdtempSync, writeFileSync, rmSync, readdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -437,4 +437,19 @@ test("F-005 (D10): wildcard rules: /* takes security headers but never a CSP; /p
   for (const r of ["/fonts/*", "/projects/research-agent/*", "/blog/:slug", "/writing/*"]) {
     assert.match(checkHeaders(sec + `\n${r}\n  X-Robots-Tag: noindex\n`).join(), /wildcard rule/, r);
   }
+});
+
+test("F-005 (D10): more than 8 runs in the manifest fails the build; 8 passes", () => {
+  const dir = scratch();
+  try {
+    const manifest = (n) => {
+      const runs = Object.fromEntries(Array.from({ length: n }, (_, i) => [`20261111T14300${i}Z-a1b2c3`, {}]));
+      mkdirSync(join(dir, "projects/research-agent"), { recursive: true });
+      writeFileSync(join(dir, "projects/research-agent/published.json"), JSON.stringify({ manifest_version: "1.0.0", runs }));
+    };
+    manifest(8);
+    assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, []);
+    manifest(9);
+    for (const check of [true, false]) assert.ok(build({ root: dir, check, now: NOW }).errors.some((e) => /9 runs.*at most 8/.test(e)), `check=${check}`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

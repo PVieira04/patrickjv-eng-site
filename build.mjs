@@ -1238,6 +1238,8 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
+const MANIFEST = "projects/research-agent/published.json";
+const MAX_RUNS = 8;
 const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/book.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
 // Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
@@ -1307,6 +1309,13 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   if (did !== DID_SHA256) errors.push(`public/.well-known/did.json changed (sha256 ${did}); it backs did:web sign-in`);
   errors.push(...checkSecurityTxt(read("public/.well-known/security.txt"), now));
   errors.push(...checkMicrosoftSecret(bookingCfg, now));
+  // F-005 (D10): four _headers rules per published run keep the file under its 100-rule cap only
+  // up to 8 runs. The manifest's own format and checks come with --record.
+  const manifest = readOr(MANIFEST);
+  if (manifest !== null) {
+    const n = Object.keys(JSON.parse(manifest).runs ?? {}).length;
+    if (n > MAX_RUNS) errors.push(`${MANIFEST} lists ${n} runs; at most ${MAX_RUNS} can be published (the _headers rule budget, F-005 D10)`);
+  }
 
   const stale = Object.entries(files).filter(([f, t]) => readOr(f) !== t).map(([f]) => f);
   if (check && stale.length) errors.push(`out of date (run npm run build): ${stale.join(", ")}`);
