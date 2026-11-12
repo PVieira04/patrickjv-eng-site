@@ -1,7 +1,7 @@
 // Helpers for the F-005 tests: build PNGs chunk by chunk and write synthetic export folders in the
 // shape research-agent's `research publish` writes them (export.json with sorted keys, 2-space
 // indent, trailing newline). Every fixture is hand-made synthetic data, never a real export.
-import { mkdirSync, writeFileSync, readFileSync, cpSync, readdirSync, lstatSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, cpSync, readdirSync, lstatSync, rmSync, readlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { crc32, deflateSync } from "node:zlib";
@@ -91,7 +91,9 @@ export function readTree(dir) {
   (function walk(rel) {
     for (const name of readdirSync(join(dir, rel)).sort()) {
       const f = rel ? `${rel}/${name}` : name;
-      if (lstatSync(join(dir, f)).isDirectory()) walk(f);
+      const st = lstatSync(join(dir, f));
+      if (st.isSymbolicLink()) out[f] = Buffer.from("symlink -> " + readlinkSync(join(dir, f)));
+      else if (st.isDirectory()) walk(f);
       else if (f !== "export.json") out[f] = readFileSync(join(dir, f));
     }
   })("");

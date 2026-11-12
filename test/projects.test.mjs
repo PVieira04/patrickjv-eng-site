@@ -476,7 +476,7 @@ test("F-005 (US-4, D2): --record fails, writing nothing, on each export.json con
       ["no export.json", () => { runExport(s.dir); rmSync(join(s.dir, "export.json")); return "0".repeat(64); }, /export\.json/],
       ["an id that doesn't match the folder's report", () => runExport(s.dir, { id: "20261111T143000Z-ffffff", edit: (x) => { x.id = "20261111T143000Z-ffffff"; } }), /run_id/],
       ["a bad run id pattern", () => runExport(s.dir, { edit: (x) => { x.id = "run-1"; } }), /id/],
-      ["a bad figure path", () => runExport(s.dir, { files: { "calls/0/out/x.png": png(), "report.json": reportWith((d) => { d.figures = ["calls/0/out/x.png"]; }) } }), /figure/],
+      ["a bad figure path", () => runExport(s.dir, { files: { "calls/0/out/x.png": png(), "report.json": reportWith((d) => { d.figures = ["calls/0/out/x.png"]; }) } }), /calls\/0\/out\/x\.png/],
       ["a figure report.json doesn't name", () => runExport(s.dir, { files: { "calls/2/out/extra.png": png() } }), /calls\/2\/out\/extra\.png/],
       ["a figure report.json names that isn't there", () => runExport(s.dir, { files: { "report.json": reportWith((d) => { d.figures.push("calls/2/out/gone.png"); }) } }), /calls\/2\/out\/gone\.png/],
       ["a failed PNG check", () => runExport(s.dir, { files: { "calls/1/out/vol_by_minute.png": png({ extra: [chunk("tEXt", Buffer.from("k\0v"))] }) } }), /PNG|tEXt/],
@@ -951,4 +951,118 @@ test("F-005 (US-4): Python's \\s includes \\x1c-\\x1f and \\x85, which JavaScrip
     assert.ok(scanHits(`x${c}~/notes`).includes("tilde_home"), `tilde_home after U+${c.charCodeAt(0).toString(16)}`);
     assert.ok(scanHits(`x${c}C:\\Users\\x`).includes("windows_user_path"));
   }
+});
+
+// ---- Review fixes: minors ----
+import { readRegular } from "../lib/projects.mjs";
+import { formatRecordFailure } from "../build.mjs";
+import { linkSync } from "node:fs";
+
+test("F-005 (US-2, D3): models.planner, .analyst and .critic must match the model id pattern", () => {
+  for (const k of ["planner", "analyst", "critic"]) {
+    for (const v of ["Example:model", "no-colon", ":model", "example:", "example:has space", "x".repeat(33) + ":m", 7]) {
+      assert.match(reportErrors(edit(report(), (d) => { d.models[k] = v; })).join(), new RegExp(`models\\.${k}`), `${k}=${v}`);
+    }
+    assert.match(reportErrors(edit(report(), (d) => { delete d.models[k]; })).join(), new RegExp(`models\\.${k}`));
+  }
+  assert.deepEqual(reportErrors(edit(report(), (d) => { d.models.analyst = "claude-code:some.Model_1-x"; })), []);
+});
+
+test("F-005 (D3): readRegular opens without following a link and refuses anything but a regular file", { skip: process.platform === "win32" && "no FIFOs or unprivileged symlinks on Windows" }, () => {
+  const s = sandbox();
+  try {
+    writeFileSync(join(s.base, "f"), "x");
+    assert.equal(readRegular(join(s.base, "f")).toString(), "x");
+    symlinkSync(join(s.base, "f"), join(s.base, "link"));
+    assert.throws(() => readRegular(join(s.base, "link")));
+    execFileSync("mkfifo", [join(s.base, "pipe")]);
+    assert.throws(() => readRegular(join(s.base, "pipe")), /not a regular file/, "a FIFO is refused without blocking");
+    assert.throws(() => readRegular(s.base), /not a regular file/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record refuses a symlinked export folder passed with a trailing slash", { skip: process.platform === "win32" && "no unprivileged symlinks on Windows" }, () => {
+  const s = sandbox();
+  try {
+    const real = join(s.base, "real");
+    const expect = runExport(real);
+    symlinkSync(real, s.dir);
+    refuses(s, { dir: s.dir + "/", expect }, /symlink/);
+    refuses(s, { dir: s.dir + "//", expect }, /symlink/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record refuses export.json paths with .., absolute paths, and hard-linked files", () => {
+  const s = sandbox();
+  try {
+    writeFileSync(join(s.base, "outside.md"), "x");
+    const listOutside = (path) => runExport(s.dir, { edit: (x) => { x.files.unshift({ path, sha256: sha(Buffer.from("x")), bytes: 1 }); x.files.sort((a, b) => (a.path < b.path ? -1 : 1)); } });
+    refuses(s, { dir: s.dir, expect: listOutside("../outside.md") }, /\.\.\/outside\.md/);
+    refuses(s, { dir: s.dir, expect: listOutside(join(s.base, "outside.md")) }, /outside\.md/);
+    refuses(s, { dir: s.dir, expect: listOutside("calls/../../outside.md") }, /outside\.md/);
+    const expect = runExport(s.dir);
+    rmSync(join(s.dir, "report.md"));
+    writeFileSync(join(s.base, "elsewhere.md"), runFiles()["report.md"]);
+    linkSync(join(s.base, "elsewhere.md"), join(s.dir, "report.md"));
+    refuses(s, { dir: s.dir, expect }, /report\.md.*hard link/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record refuses an export folder inside the repository", () => {
+  const s = sandbox();
+  try {
+    const inside = join(s.root, "exports/run");
+    refuses(s, { dir: inside, expect: runExport(inside) }, /inside the repository/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record refuses an existing runs/<id>/ that isn't in the manifest, even with --replace", () => {
+  const s = sandbox();
+  try {
+    mkdirSync(join(s.root, "projects/research-agent/runs", RUN_ID), { recursive: true });
+    writeFileSync(join(s.root, "projects/research-agent/runs", RUN_ID, "left-over.md"), "x");
+    const expect = runExport(s.dir);
+    refuses(s, { dir: s.dir, expect }, /runs\/20261111T143000Z-a1b2c3\/ already exists but isn't in the manifest/);
+    refuses(s, { dir: s.dir, expect, replace: true }, /already exists but isn't in the manifest/);
+  } finally { s.done(); }
+});
+
+test("F-005 (D3, D4): a symlinked projects/ or projects/research-agent/ fails the build", { skip: process.platform === "win32" && "no unprivileged symlinks on Windows" }, () => {
+  for (const which of ["projects", "projects/research-agent"]) {
+    const s = publishedSite();
+    try {
+      const moved = join(s.base, "moved");
+      renameSync(join(s.root, which), moved);
+      symlinkSync(moved, join(s.root, which));
+      buildFails(s, new RegExp(`${which.replace("/", "\\/")} is a symlink`));
+    } finally { s.done(); }
+  }
+});
+
+test("F-005 (US-4, D3): names that collide with Object.prototype are ordinary names: runs/constructor/, runs/__proto__/ and a file named toString are not in the manifest", () => {
+  for (const [dir, file] of [["constructor", "x.md"], ["__proto__", "x.md"], [RUN_ID, "toString"]]) {
+    const s = publishedSite();
+    try {
+      mkdirSync(join(s.root, "projects/research-agent/runs", dir), { recursive: true });
+      writeFileSync(join(s.root, "projects/research-agent/runs", dir, file), "x");
+      buildFails(s, new RegExp(`runs/${dir.replace(/_/g, "_")}/${file} is not in the manifest`));
+    } finally { s.done(); }
+  }
+});
+
+test("F-005 (US-4): the --record failure header says 'nothing written' only when that is true", () => {
+  assert.match(formatRecordFailure({ errors: ["x"] }), /nothing written/);
+  assert.match(formatRecordFailure({ error: Object.assign(new Error("disk full"), { writePhase: true, rolledBack: true }) }), /rolled back.*nothing written|nothing written.*rolled back/);
+  const partial = formatRecordFailure({ error: Object.assign(new Error("disk full"), { writePhase: true, rolledBack: false }) });
+  assert.doesNotMatch(partial, /nothing written/);
+  assert.match(partial, /rollback incomplete/);
+});
+
+test("F-005 (US-4): the empty-alt refusal during --record names the run whose alt text to write first", () => {
+  const s = sandbox();
+  try {
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect: runExport(s.dir), today: TODAY }).errors, []);
+    const id = "20261112T090000Z-0f0f0f";
+    refuses(s, { dir: s.dir, expect: runExport(s.dir, { id, files: { "report.json": reportWith((d) => { d.run_id = id; }) } }) }, new RegExp(`write run ${RUN_ID}'s alt text before recording another`));
+  } finally { s.done(); }
 });

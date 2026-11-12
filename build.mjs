@@ -15,8 +15,8 @@
 //
 // Nothing is written unless every check passes. Writing itself is staged (temporary files, then
 // renames) with a best-effort rollback; it is not transactional — see writeStaged().
-import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync, lstatSync, readlinkSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { realpathSync, readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync, lstatSync, readlinkSync } from "node:fs";
+import { join, dirname, relative, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { marked } from "marked";
@@ -1408,6 +1408,12 @@ export function build({ root = process.cwd(), check = false, today = new Date().
 // unchanged, and its role is kept. A scorecard always replaces the published one.
 export function record({ root = process.cwd(), dir, expect, kind = "run", replace = false, today = new Date().toISOString().slice(0, 10), io, read } = {}) {
   if (typeof expect !== "string" || !/^[0-9a-f]{64}$/.test(expect)) return { errors: ["--expect <export digest> is required: the sha256 of export.json that research publish printed last"] };
+  // The export must come from outside this repository: a folder inside it could be committed as is.
+  if (typeof dir !== "string" || !dir) return { errors: ["the export folder is required"] };
+  try {
+    const rel = relative(realpathSync(root), realpathSync(dir));
+    if (!rel || (!rel.startsWith("..") && !isAbsolute(rel))) return { errors: [`the export folder ${dir} is inside the repository; research publish writes it outside, so keep it there`] };
+  } catch { /* a missing folder is reported by readExport */ }
   const ex = readExport(dir, kind, read);
   const errors = [];
   if (ex.digest && ex.digest !== expect) errors.push("the export digest (sha256 of export.json) does not match --expect: this is not the export you read");
@@ -1425,7 +1431,8 @@ export function record({ root = process.cwd(), dir, expect, kind = "run", replac
   const oldFiles = (kind === "run" ? tree.runs[id] : tree.scorecard) ?? new Map();
   const oldDirs = kind === "run" ? tree.runDirs[id] ?? [] : [];
   if (kind === "run") {
-    const old = m.runs[id];
+    const old = Object.hasOwn(m.runs, id) ? m.runs[id] : undefined;
+    if (!old && Object.hasOwn(tree.runs, id)) return { errors: [`${PROJECT}/runs/${id}/ already exists but isn't in the manifest; remove it (or restore its manifest entry) first`] };
     if (old && !replace) return { errors: [`run ${id} is already published; to re-export it, read the new export, then rerun with --replace`] };
     let figures = [];
     try { figures = parseJson(ex.files.get("report.json").toString("utf8")).figures; } catch { /* reported by checkProjects below */ }
@@ -1453,6 +1460,16 @@ export function record({ root = process.cwd(), dir, expect, kind = "run", replac
   return { errors: [], id, written: Object.keys(files), removed: [...Object.keys(removal.files), ...removal.dirs] };
 }
 
+// The message for a failed --record: "nothing written" only when that is true. `r.error` is a thrown
+// error (from the write, with writePhase and rolledBack, or an unexpected one); else `r.errors`.
+export function formatRecordFailure(r) {
+  const e = r.error;
+  if (e?.writePhase && !e.rolledBack) return `RECORD FAILED while writing (${e.message}); rollback incomplete, so projects/ may be partly written — check git status and restore it before rerunning`;
+  if (e?.writePhase) return `RECORD FAILED while writing (${e.message}); rolled back, nothing written`;
+  if (e) return `RECORD FAILED (${e.message})`;
+  return "RECORD FAILED (nothing written)\n" + r.errors.join("\n");
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && (process.argv.includes("--record") || process.argv.includes("--record-scorecard"))) {
   const args = process.argv.slice(2);
   const kind = args.includes("--record-scorecard") ? "scorecard" : "run";
@@ -1462,10 +1479,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href &
   if (!dir) r = { errors: [`usage: node build.mjs ${kind === "run" ? "--record" : "--record-scorecard"} <export-dir> --expect <export digest>${kind === "run" ? " [--replace]" : ""}`] };
   else {
     try { r = record({ dir, expect: value("--expect"), kind, replace: args.includes("--replace") }); } catch (e) {
-      r = { errors: [e.writePhase ? `failed while writing (${e.message}); ${e.rolledBack ? "rolled back" : "rollback incomplete — check git status"}` : e.message] };
+      r = { error: e, errors: [e.message] };
     }
   }
-  if (r.errors.length) { console.error("RECORD FAILED (nothing written)\n" + r.errors.join("\n")); process.exit(1); }
+  if (r.errors.length) { console.error(formatRecordFailure(r)); process.exit(1); }
   console.log(kind === "run"
     ? `recorded run ${r.id} into ${PROJECT}/runs/${r.id}/. Next: write each figure's alt text (and the optional role) in ${MANIFEST}, then npm run build and npm test, then commit.`
     : `recorded scorecard ${r.id} into ${PROJECT}/scorecard/. Next: npm run build and npm test, then commit.`);
