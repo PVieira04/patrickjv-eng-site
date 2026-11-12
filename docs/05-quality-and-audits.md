@@ -51,6 +51,10 @@ Per path — **each CSP is set by exactly one rule**, and `/*` sets none:
 | `/.well-known/did.json` | Baseline CSP (content type left to the asset server: `application/json`) |
 | Each file in `public/fonts/` (one exact rule per file, no `/fonts/*`) | `Cache-Control: public, max-age=2592000` (30 days, then revalidated by ETag); baseline CSP |
 | Each image in `public/` (photos, favicons, icons, share card) | `Cache-Control: public, max-age=86400` (one day); baseline CSP |
+| `/projects/`, `/projects/index.html`, `/projects/research-agent`, `/projects/research-agent.html`, and each run's `/projects/research-agent/runs/<id>/` and `…/runs/<id>/index.html` (F-005) | Page CSP without `script-src` or `connect-src`: `default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-…'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests` |
+| `/projects/index.md`, `/projects/research-agent.md`, and each run's `report.md` and `report.json` | Explicit `Content-Type` with `charset=utf-8` (`text/markdown` or `application/json`); baseline CSP |
+| `/projects/*` (only while `pages.projects.launched` is `false`) | `X-Robots-Tag: noindex` and nothing else: the one wildcard rule besides `/*`, and the build fails if it carries any other header |
+| Run figures (`…/runs/<id>/calls/<N>/out/<name>.png`) | No rule of their own: the `/*` security headers (with `nosniff`) and the asset server's default caching. A PNG served as `image/png` with `nosniff` can't run script |
 | Anything else (including the 404 page, even under `/fonts/`) | No CSP header and no `_headers` cache policy; `404.html` carries its own policy in a `<meta http-equiv="Content-Security-Policy">`: `default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-…'; base-uri 'none'; form-action 'none'` (framing is still blocked by `X-Frame-Options: DENY`) |
 
 The page CSP allows exactly the page's single inline `<style>` and single inline WebMCP `<script>` by hash (the JSON-LD block is a data block and is never executed). The build recomputes every hash on every run; inline `style="…"` attributes and `on…` handlers are banned (they would need `'unsafe-inline'`). Verified in a real browser: no "Refused…" violations, and the page loads with **zero third-party requests**. The MCP and redirect Workers send their own security headers on every response (see [04](04-mcp-and-webmcp.md#cost-and-abuse-controls)).
@@ -64,6 +68,17 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 **Soft 404 at `/404` — accepted (review C3-F9).** The asset server also serves the 404 file at its own clean URL, so `GET /404` returns **200** with the not-found page. It is harmless — the page carries `noindex`, nothing links to it and it is not in the sitemap — and a fix (a `_redirects` rule or renaming the file) would change asset-server behaviour that differs between `wrangler dev` and production (the 6 Oct incident), so it is left as is unless a production-verified fix appears.
 
 `/.well-known/security.txt` (RFC 9116): contact `hello@patrickjv.com`, expires 2027-10-06 — the build fails 30 days before expiry, or if `Expires` is invalid or more than a year ahead.
+
+<a id="projects-f-005"></a>
+### Projects (F-005)
+
+**Rule budget.** Workers static assets allow at most **100 rules** in `_headers`; the build fails above that, and above 8 published runs. `/projects` adds 6 fixed rules, 4 per run and, while dark, the `/projects/*` rule: at most 78 rules with 8 runs.
+
+**Size budget, enforced by the build and `--record`:** every generated `/projects` page at most **30,720 bytes** after `zlib.gzipSync(html, { level: 9 })`; each figure at most 200 KB and at most 1 MB of figures per run. A report too long for the cap fails the build rather than being truncated.
+
+**Lighthouse and axe budget** for the index, the showcase and one run page, mobile and desktop, measured on the dark deploy before launch and again after it: Performance, Accessibility and Best Practices 100; every SEO audit passes except `robots-txt` (as on `/writing/`) and, before launch only, `is-crawlable` (the pages are `noindex` on purpose); LCP (mobile) at most 1.5 s; CLS at most 0.02; axe 0 violations in dark and light. The headless-Chromium test (`test/projects-browser.test.mjs`) already checks the real CSP, same-origin requests and no sideways scroll at 360 px and at 320 px with 200 % text.
+
+**Results: not run yet.** The pre-launch run (dark deploy) and the post-launch SEO re-run are recorded here when they happen ([runbook](06-operations.md#projects-runbooks)).
 
 ## Privacy
 

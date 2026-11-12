@@ -27,7 +27,7 @@ npm run deploy   # manual fallback: npm test, then deploy both Workers (Workers 
 npm run smoke -- https://patrickjv.com --aliases --mcp --registry --strict-https --dns   # check the live site
 ```
 
-`smoke.mjs` flags: `--aliases` (redirect hosts, no NEL/`Report-To` headers on the primary and alias hosts, HSTS on the `pvieira.co.uk` redirect), `--mcp` (read-only MCP lifecycle plus the `patrickjv/health` readiness check: FAIL unless `request_intro` is configured), `--registry` (MCP Registry listing), `--strict-https` (turn the HTTP→HTTPS WARN into a FAIL), `--dns` (CAA, DMARC and DNSSEC on `patrickjv.com` via DNS-over-HTTPS). Every check prints **PASS**, **WARN** or **FAIL**; the run exits 1 only on a FAIL. Every check requires its exact success status and media type, and deterministic files (`/`, `index.md`, `llms.txt`, `robots.txt`, `sitemap.xml`, `security.txt`, the portrait, share card and favicon) must be byte-identical to the repo ("deployed = repo"), so the smoke also fails while commits are undeployed. Base checks: 17; with all four check flags: 33.
+`smoke.mjs` flags: `--aliases` (redirect hosts, no NEL/`Report-To` headers on the primary and alias hosts, HSTS on the `pvieira.co.uk` redirect), `--mcp` (read-only MCP lifecycle plus the `patrickjv/health` readiness check: FAIL unless `request_intro` is configured), `--registry` (MCP Registry listing), `--strict-https` (turn the HTTP→HTTPS WARN into a FAIL), `--dns` (CAA, DMARC and DNSSEC on `patrickjv.com` via DNS-over-HTTPS). Every check prints **PASS**, **WARN** or **FAIL**; the run exits 1 only on a FAIL. Every check requires its exact success status and media type, and deterministic files (`/`, `index.md`, `llms.txt`, `robots.txt`, `sitemap.xml`, `security.txt`, the portrait, share card and favicon) must be byte-identical to the repo ("deployed = repo"), so the smoke also fails while commits are undeployed. The `/projects` checks (F-005) follow `projects/research-agent/published.json`: the four fixed pages, the showcase CSP, a missing run directory's 404 and the showcase's `X-Robots-Tag` (`noindex` until launch, absent after), plus each run's page, `report.md`, `report.json` and figures. Base checks: 31 with two writing posts and no published run (3 more per run, 1 per figure, and 1 for the first figure's `X-Robots-Tag`).
 
 ### Changing the wording
 
@@ -44,10 +44,14 @@ cv.json                   Source for /cv and /cv.pdf (the only output that names
 build.mjs                 Generates machine-readable copies + _headers; drift and safety checks
 build-state.json          Content hash of the generated output + the date it was first built (dateModified)
 lib/agent-data.mjs        Public profile data shared by the page's WebMCP tools and the MCP server
+lib/projects.mjs          F-005: the research-agent export contract, manifest, PNG check, synthetic-only gate and output scan (build.mjs --record runs them)
+lib/project-pages.mjs     F-005: renders /projects/, the showcase and each run page, and their Markdown copies
+projects/research-agent/  F-005 sources: architecture.svg, and from the first --record, published.json (the manifest) and the checked exports under runs/ and scorecard/
 public/                   Static site (served by the patrickjv-eng-site Worker, assets only)
   index.html              The page (hand-written body; head metadata, JSON-LD and WebMCP data spliced in by the build)
   404.html                Not-found page (served with status 404; carries its own CSP <meta>)
   index.md, llms.txt      Markdown version and LLM briefing (generated)
+  projects/               /projects pages, Markdown copies and run files (generated; the build deletes anything else here)
   _headers                Security headers, per-path CSP, content types, caching (generated)
   .well-known/            did.json (DID document — never edit), security.txt, mcp-registry-auth
   fonts/                  Self-hosted IBM Plex (OFL)
@@ -55,9 +59,9 @@ mcp/                      patrickjv-mcp Worker: remote MCP server on the route p
   server.json             MCP Registry entry (com.patrickjv/profile); also the server's version
   booking-*.js            Booking (F-001, F-002, F-004): config and slots, Google Calendar, guest email, sign-in providers, the BookingStore Durable Object
 test/                     Build, smoke (against a local mock site), workflow and WebMCP (page script in a VM) tests
-lib/smoke-lib.mjs         Pure helpers for smoke.mjs (media type, CSP count, MCP body, redirect, readiness, NEL and DNS verdicts)
-smoke.mjs                 Live checks (did.json, pages, headers/CSP, redirects, NEL, MCP lifecycle + readiness, Registry, DNS)
-docs/specs/               Feature specs F-001 to F-004 (booking, sign-in, calendar picker, more providers) and the F-001 spikes
+lib/smoke-lib.mjs         Pure helpers for smoke.mjs (media type, CSP per path, CSP count, MCP body, redirect, readiness, NEL, DNS and X-Robots-Tag verdicts; the /projects paths from published.json)
+smoke.mjs                 Live checks (did.json, pages, /projects, headers/CSP, redirects, NEL, MCP lifecycle + readiness, Registry, DNS)
+docs/specs/               Feature specs F-001 to F-005 (booking, sign-in, calendar picker, more providers, research-agent showcase) and the F-001 spikes
 designs/                  Archived design round (PROVENANCE.md), favicon candidates, icon + share-card generators (npm run images; hashes in images.json)
 writing/                  Write-ups (Markdown + front matter) → /writing/<slug> and /writing/<slug>.md, listed at /writing/
 infra/                    Read-only export of the Cloudflare dashboard config (cloudflare-export.mjs → cloudflare/*.json; docs/06)
@@ -76,7 +80,7 @@ docs/                     Full documentation (start below)
 | [05 — Quality and audits](docs/05-quality-and-audits.md) | Lighthouse, accessibility, security headers, CSP, caching, privacy, responsive and print checks, how to re-run audits |
 | [06 — Operations](docs/06-operations.md) | Deploying, CI, monitoring, rollback, keys and secrets, incidents, renewals, open follow-ups |
 | [07 — History and decisions](docs/07-history-and-decisions.md) | How the site was made on 6 Oct 2026: design competition, reviews, decisions and lessons |
-| [Specs](docs/specs/) | F-001 booking (shipped), F-002 confirm by signing in (P1 shipped), F-003 calendar picker (shipped), F-004 Microsoft and Altimist ID sign-in (built, not launched) |
+| [Specs](docs/specs/) | F-001 booking (shipped), F-002 confirm by signing in (P1 shipped), F-003 calendar picker (shipped), F-004 Microsoft and Altimist ID sign-in (built, not launched), F-005 research-agent showcase at `/projects` (built, not launched) |
 | [Review (6–7 Oct 2026)](docs/reviews/2026-10-06-merged-review.md) | Merged adversarial review findings (rounds 1–3), with the status of each |
 
 ## Rules that must not be broken
