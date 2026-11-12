@@ -318,7 +318,7 @@ test("smoke FAILs each false-PASS case from the round-2 review", async () => {
 });
 
 // ---- F-005: /projects against a scratch site with synthetic runs published ----
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { build } from "../build.mjs";
@@ -382,14 +382,32 @@ const ROBOTS_PATHS = ["/projects/research-agent", "/projects/research-agent.md",
 const passes = (r, pattern) => r.lines.some((l) => l.startsWith("PASS ") && pattern.test(l));
 const re = (s) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
-test("F-005 (US-3, D9): smoke on the repository as it is (no runs, launched false) checks the four /projects paths, the showcase CSP, the 404 and noindex", async () => {
-  const r = await runSmoke({});
+// What a correct run must PASS for the checkout at `root`, read from its own published.json and
+// launch switch, so the assertions hold in any state: before the first export, with runs, launched.
+function assertProjectsSmoke(r, root) {
   assert.deepEqual(r.fails, [], r.lines.join("\n"));
-  for (const p of PROJECT_PATHS.slice(0, 4)) assert.ok(passes(r, re(`${p}: 200 `)), `${p}\n${r.lines.join("\n")}`);
+  const mf = join(root, "projects/research-agent/published.json");
+  const manifest = existsSync(mf) ? JSON.parse(readFileSync(mf, "utf8")) : undefined;
+  const isLaunched = JSON.parse(readFileSync(join(root, "content.json"), "utf8")).pages.projects.launched === true;
+  for (const [p] of projectPages(manifest)) assert.ok(r.lines.some((l) => l.startsWith(`PASS ${p}: 200 `) && /deployed = repo/.test(l)), `${p}\n${r.lines.join("\n")}`);
   assert.ok(passes(r, /\/projects\/research-agent: exactly one CSP, = public\/_headers/), r.lines.join("\n"));
   assert.ok(passes(r, /runs\/20000101T000000Z-000000\/: 404, at most one CSP/), r.lines.join("\n"));
-  for (const p of ROBOTS_PATHS.slice(0, 2)) assert.ok(passes(r, re(`${p}: X-Robots-Tag: noindex`)), p);
-  assert.ok(!r.lines.some((l) => /\.png: X-Robots-Tag/.test(l)), "no figure published, so no figure checked");
+  const fig = firstFigure(manifest);
+  const robots = ["/projects/research-agent", "/projects/research-agent.md", ...(fig ? [fig] : [])];
+  const label = isLaunched ? "no X-Robots-Tag (launched)" : "X-Robots-Tag: noindex (not launched)";
+  for (const p of robots) assert.ok(passes(r, re(`${p}: ${label}`)), `${p}\n${r.lines.join("\n")}`);
+  assert.equal(r.lines.filter((l) => /X-Robots-Tag/.test(l)).length, robots.length, "one X-Robots-Tag check per listed response, and no figure checked when none is published");
+}
+
+test("F-005 (US-3, D9): smoke on the repository as it is checks the /projects paths its published.json lists, the showcase CSP, the 404 and X-Robots-Tag for its launch state", async () => {
+  assertProjectsSmoke(await runSmoke({}), ROOT);
+});
+
+test("F-005 (US-3, D9): the repository-state assertions hold in other states too: runs published, and launched", async () => {
+  for (const launched of [false, true]) {
+    const s = projectsSite({ launched });
+    try { assertProjectsSmoke(await runSmoke({}, [], s.root), s.root); } finally { s.done(); }
+  }
 });
 
 test("F-005 (US-3, D9): smoke against a correct dark deploy with runs: every page, run file and figure 200 and deployed = repo, noindex on the first figure, no FAIL", async () => {

@@ -48,6 +48,24 @@ test("F-005: the spec names every named field content.json → pages.projects us
   assert.doesNotMatch(spec, /`labels\.author`/, "there is no labels.author");
   for (const t of ["test/projects-pages.test.mjs", "`_`", "allow-list of elements and attributes", "SVG element allow-list", "A rejected run may not name figures", "`plan` may be null only"])
     assert.ok(spec.includes(t), `the spec says ${t}`);
+  const launch = spec.slice(spec.indexOf("## Launch"), spec.indexOf("## SEO and meta"));
+  assert.match(launch, /removes `pages\.projects\._status`/, "the launch steps remove the draft note");
+  assert.match(launch, /`launched: true` fails while `pages\.projects\._status` is present/, "the build check names the _status rule");
+  const acs = spec.slice(spec.indexOf("## Acceptance Criteria"), spec.indexOf("## Edge cases"));
+  assert.match(acs, /A string under `pages\.projects` of neither kind, and not a `_` note, fails/, "the D5 AC exempts notes");
+  assert.match(acs, /\*\*\(D5\)\*\* Notes:/, "an AC for the notes rule");
+  assert.match(acs, /\*\*\(D9\)\*\* `launched: true` fails while `pages\.projects\._status` is present/, "an AC for the _status launch rule");
+  assert.match(spec.slice(spec.indexOf("### `/projects/research-agent`"), spec.indexOf("### `/projects/research-agent/runs")), /\*\*Footer\*\*, the writing pages' hard-coded footer \(not `copy\.\*`\)/, "Page content says the footer isn't copy, as Decision 2 cites");
+  assert.match(spec.slice(spec.indexOf("## Smoke monitor"), spec.indexOf("## Acceptance Criteria")), /lexicographic/, "the smoke's first figure is by lexicographic path order");
+});
+
+test("F-005 (US-4): the unpublish runbook says unpublishing the last run after launch fails the build, and the two ways out", () => {
+  const ops = doc("docs/06-operations.md");
+  const un = ops.slice(ops.indexOf("### Unpublish a run"), ops.indexOf("### Curation"));
+  assert.match(un, /last published run/);
+  assert.match(un, /fails/);
+  assert.match(un, /publish a replacement/i);
+  assert.match(un, /launched` to `false`/);
 });
 
 // ---- Output scan: F-001e's SCAN_RULES, verbatim, and the local denylist ----

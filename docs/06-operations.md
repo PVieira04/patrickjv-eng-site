@@ -228,6 +228,8 @@ For the same run id after F-001e changes its export format: read the new export,
 
 Delete `projects/research-agent/runs/<run_id>/` and the run's entry in `published.json`, then `npm run build`. The build owns `public/projects/`: it deletes every output for the run (its page, its copies, its figures and the emptied directories) and its entries in the showcase and, once launched, in the sitemap, `llms.txt` and `index.md`. Commit and push. The run stays in git history.
 
+**After launch, the last published run can't be unpublished on its own:** `launched: true` needs at least one published run, so removing the last one fails the build. Either publish a replacement first and then unpublish, or unlaunch in the same PR: set `pages.projects.launched` to `false` and remove the "Research agent" side project from `content.json` and its card from `public/index.html` (the build requires those three to go together).
+
 ### Curation
 
 Aim for three to five runs that show the whole loop: one where the critic catches a planted trap (`trap_caught`), one rejected plan (`rejected_plan`) and one clean pass (`clean_pass`). Run cards are ordered by role in that order, then newest first.

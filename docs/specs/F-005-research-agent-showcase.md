@@ -268,7 +268,7 @@ Sections, in order (headings are working titles; final copy is approved by the o
 4. **Eval scorecard.** The header and the one table described in "Scorecard → What the page shows", in the same focusable scroll wrapper as report tables.
 5. **Recorded runs.** One card per run: the question, the harness ("LangGraph agent" or "Claude Code harness"), status, review outcome, role, link. Ordered by role (`trap_caught`, `rejected_plan`, `clean_pass`, then no role), then by `finished_at` newest first, then by run id.
 6. **How it was built.** Spec-first: a written spec with testable acceptance criteria for every part before code; several rounds of adversarial review by a second model on specs and code, findings fixed and recorded; tests before implementation; the sandbox's threat model written first. No employer, client, team or internal tool names.
-7. **Footer**, as the writing pages.
+7. **Footer**, the writing pages' hard-coded footer (not `copy.*`).
 
 ### `/projects/research-agent/runs/<run_id>/`
 
@@ -332,11 +332,11 @@ No MCP or WebMCP tool changes (F-003 in the research-agent index).
 
 `index.html` is hand-written and the build only checks it, so launch is **one PR** that:
 
-1. sets `pages.projects.launched` to `true`;
+1. sets `pages.projects.launched` to `true` and removes `pages.projects._status` (the draft-copy note), once the owner has approved the copy;
 2. adds a `side_projects` entry "Research agent" to `content.json` with `url: "/projects/research-agent"`;
 3. adds the matching card to the side projects section of `public/index.html`, with a link to `/projects/research-agent`.
 
-That PR is opened only after the **pre-launch checks on the dark deploy** pass (see Acceptance Criteria). **Build check (new):** `launched` is `true` if and only if `content.json` has a side project with `url` `/projects/research-agent` **and** that entry's card in `index.html` links to it. A side project's `url`, when not null, must be the `href` of a link in its own card (new coverage for the field, which is unchecked today). The runbook in `docs/06` lists the pre-launch checks, the three steps and the post-launch checks.
+That PR is opened only after the **pre-launch checks on the dark deploy** pass (see Acceptance Criteria). **Build check (new):** `launched` is `true` if and only if `content.json` has a side project with `url` `/projects/research-agent` **and** that entry's card in `index.html` links to it; and `launched: true` fails while `pages.projects._status` is present. A side project's `url`, when not null, must be the `href` of a link in its own card (new coverage for the field, which is unchecked today). The runbook in `docs/06` lists the pre-launch checks, the three steps and the post-launch checks.
 
 ---
 
@@ -386,7 +386,7 @@ Enforced by the build, pre-merge (and by `--record` for the pages it would rende
 - For each run: `runs/<id>/`, `runs/<id>/report.md`, `runs/<id>/report.json` and every figure: 200, exact media type, deployed = repo (figures compared as bytes).
 - `/projects/research-agent`: exactly one CSP, equal to its `_headers` rule.
 - `/projects/research-agent/runs/20000101T000000Z-000000/`: 404 with at most one CSP.
-- While not launched: `X-Robots-Tag: noindex` on `/projects/research-agent`, `/projects/research-agent.md` and, if any figure is published, on the first figure (the first figure path of the first run, by run id, that has one). After launch: `X-Robots-Tag` absent on the same responses. "Launched" is `pages.projects.launched` in the checked-out commit.
+- While not launched: `X-Robots-Tag: noindex` on `/projects/research-agent`, `/projects/research-agent.md` and, if any figure is published, on the first figure: of the first run, in lexicographic run-id order, that has a figure, its first figure path in lexicographic order of the manifest's file paths. After launch: `X-Robots-Tag` absent on the same responses. "Launched" is `pages.projects.launched` in the checked-out commit.
 
 `test/smoke.test.mjs` gains each against the local mock, broken one way at a time.
 
@@ -401,7 +401,8 @@ Every criterion names the user story (US) or decision (D) it serves, and the PR 
 **Pages**
 - [ ] **(US-1, US-2)** The build writes `/projects/` and `/projects/research-agent` with the sections of "Page content" in order. Test parses the output for headings and order.
 - [ ] **(US-1)** The showcase's `<title>`, meta description and lead paragraph each contain "LangGraph" and "LangChain"; the build fails otherwise. Test removes each in turn.
-- [ ] **(D5)** Visible copy: every `copy.*` string is the whole visible text of an element in a generated projects page. Named fields: each `head.*` value appears in its head tag; each `templates.*` value uses only known placeholder names and has no `{` left in the template text after substitution; each `labels.*` map covers every enum value in "Enumerations" (except `summary.author`, which is never shown, so there is no label map for it) and every section key; each `empty.*` message appears in its empty state. A string under `pages.projects` of neither kind fails. One test per kind, each with a failing fixture.
+- [ ] **(D5)** Visible copy: every `copy.*` string is the whole visible text of an element in a generated projects page. Named fields: each `head.*` value appears in its head tag; each `templates.*` value uses only known placeholder names and has no `{` left in the template text after substitution; each `labels.*` map covers every enum value in "Enumerations" (except `summary.author`, which is never shown, so there is no label map for it) and every section key; each `empty.*` message appears in its empty state. A string under `pages.projects` of neither kind, and not a `_` note, fails. One test per kind, each with a failing fixture.
+- [ ] **(D5)** Notes: a key under `pages.projects` starting with `_` is neither kind, is not rendered and doesn't fail the build. Test.
 - [ ] **(D5)** Full fixture set: a build over fixtures covering every state (each status, outcome, tag, stop reason, harness and role; a run with and without figures; no runs; with and without the scorecard; `launched` true and false) renders every string under `pages.projects` in at least one page. Test.
 - [ ] **(D5, D9)** A build with no runs and no scorecard (`launched: false`, the state of `main` until the first export) passes `npm run build` and `--check`, and doesn't require state-specific strings to appear. Test.
 - [ ] **(D5, D7)** Templates fill in a single pass: a question containing `{question}` or `{` renders literally and passes the build. Test.
@@ -488,6 +489,7 @@ private_key        -----BEGIN [A-Z ]*PRIVATE KEY-----
 - [ ] **(US-3, D9)** `launched: false`: `llms.txt`, `index.md` and `sitemap.xml` don't list the pages, every new HTML page has `noindex`, and `_headers` has the `/projects/*` `X-Robots-Tag: noindex` rule. Test.
 - [ ] **(US-3, D9)** `launched: true`: `llms.txt`, `index.md` and `sitemap.xml` list the pages and each run, and no `/projects/*` `X-Robots-Tag` rule or `noindex` meta exists. Test.
 - [ ] **(D9)** `launched: true` with no run or no scorecard fails the build. Test.
+- [ ] **(D9)** `launched: true` fails while `pages.projects._status` is present. Test.
 - [ ] **(D9)** Launch check: `launched` without the side-projects entry and its link, or the entry and link without `launched`, fails the build; a side project `url` that isn't the `href` of a link in its card fails. Tests per case.
 - [ ] **(US-3)** JSON-LD on each new page parses; every `@id` reference resolves to the homepage graph (`#person`), the showcase (`#software`) or the page itself; a run's `about` is the showcase's `#software` and its `datePublished` is its manifest `checked` date. Test.
 - [ ] **(D1)** SVG guard: one test per banned element or attribute in "CSP and third parties" (including `<style>`), a `url()` to anything but a fragment, a missing `role="img"`, a `<title>` that isn't the first element child, and an external `<use href>` and `xlink:href`.
