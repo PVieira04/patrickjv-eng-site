@@ -1,14 +1,16 @@
-# Fails loudly when a push to main gets no Cloudflare Workers Builds deploy of the site. Workers
+# Fails loudly when a push to main gets no Cloudflare Workers Builds build of the site. Workers
 # Builds sometimes silently drops a main build that arrives while a branch build is running (it
 # happened to #28 and #31): no check run, no failure, nothing deployed. See docs/06 ("Monitoring").
 #
-# - If every file the push changed is outside the site's build watch paths (the excludes docs/*,
-#   README.md, designs/*), there is no build to expect: pass without checking.
+# - If every file the push changed (both names of a rename) is outside the site's build watch paths
+#   (the excludes docs/*, README.md, designs/*), there is no build to expect: pass without checking.
+#   Fail closed: a force-push, no previous commit, a failed compare call, an empty change list or
+#   300+ files (the compare API lists at most 300) all count as served and are checked.
 # - Otherwise poll the pushed commit's check runs every 60 s for up to 12 minutes for
-#   "Workers Builds: patrickjv-eng-site" (app cloudflare-workers-and-pages): success passes; any
-#   other conclusion fails naming the build; no check run at all fails ("Cloudflare didn't build").
-#   A build seen but still running at 12 minutes passes with a notice: monitor.yml's build-result
-#   job alerts on its result.
+#   "Workers Builds: patrickjv-eng-site" (app cloudflare-workers-and-pages). Once it is in progress
+#   or completed the build was not dropped: pass. Its conclusion is monitor.yml build-result's
+#   alert, not this one's (no double alert). Fail if there is no check run after 12 minutes, if it
+#   is still queued (or any status short of in progress) then, or if every check-runs call failed.
 #
 # Cost: one small job, no checkout, about 12 minutes at worst per main push — free, as Actions
 # minutes on standard runners are free for public repos. Read-only: only the run's own GITHUB_TOKEN.
@@ -29,51 +31,71 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
           BEFORE: ${{ github.event.before }}
+          FORCED: ${{ github.event.forced }}
         run: |
           # Must match the site Worker's build watch-path EXCLUDES in the Cloudflare dashboard
           # (docs/06, "Deploying") and monitor.yml's "main is deployed". Change all three together.
           served=""
           if [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
-            served="(no previous commit)"
-          elif ! files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$SHA" --jq '.files[].filename'); then
-            served="(could not list the changed files)"
+            served=" (no previous commit)"
+          elif [ "$FORCED" = true ]; then
+            served=" (force-push)"
+          elif ! out=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$SHA" \
+              --jq '(.files | length), (.files[] | .filename, (.previous_filename // empty))'); then
+            served=" (could not list the changed files)"
           else
-            while read -r f; do
-              [ -n "$f" ] || continue
-              case "$f" in
-                docs/*|README.md|designs/*) ;;
-                *) served="$served $f" ;;
-              esac
-            done <<< "$files"
+            n=$(head -n 1 <<< "$out")
+            if ! [ "$n" -gt 0 ] 2>/dev/null; then
+              served=" (empty change list)"
+            elif [ "$n" -ge 300 ]; then
+              served=" ($n files: the compare API lists at most 300)"
+            else
+              while read -r f; do
+                [ -n "$f" ] || continue
+                case "$f" in
+                  docs/*|README.md|designs/*) ;;
+                  *) served="$served $f" ;;
+                esac
+              done < <(tail -n +2 <<< "$out")
+            fi
           fi
           if [ -z "$served" ]; then echo "$SHA changes only files the site build ignores; no build expected"; exit 0; fi
           echo "Served changes:$served"
 
-          seen=""
+          status=""
+          errors=0
           for poll in $(seq 0 12); do
             if [ "$poll" -gt 0 ]; then sleep 60; fi
-            build=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?check_name=Workers%20Builds%3A%20patrickjv-eng-site" \
-              --jq '([.check_runs[] | select(.app.slug == "cloudflare-workers-and-pages" and .name == "Workers Builds: patrickjv-eng-site")][0] // empty) | "\(.status) \(.conclusion) \(.details_url)"') || build=""
+            if ! build=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?check_name=Workers%20Builds%3A%20patrickjv-eng-site" \
+                --jq '([.check_runs[] | select(.app.slug == "cloudflare-workers-and-pages" and .name == "Workers Builds: patrickjv-eng-site")][0] // empty) | "\(.status) \(.conclusion) \(.details_url)"'); then
+              errors=$((errors + 1))
+              echo "::warning::minute $poll: could not read check runs for $SHA"
+              continue
+            fi
             case "$build" in
               "")
                 echo "minute $poll: no site build for $SHA yet" ;;
-              "completed success "*)
-                echo "Workers Builds: patrickjv-eng-site built and deployed $SHA"
-                exit 0 ;;
-              completed\ *)
+              "completed "*)
                 rest=${build#completed }
-                echo "::error title=Workers Builds failed: patrickjv-eng-site::Workers Builds: patrickjv-eng-site concluded '${rest%% *}' for $SHA; the site was NOT updated. ${rest#* }"
-                echo "### Workers Builds FAILED: patrickjv-eng-site at $SHA (${rest%% *})" >> "$GITHUB_STEP_SUMMARY"
-                exit 1 ;;
+                echo "::notice::Workers Builds: patrickjv-eng-site completed for $SHA (${rest%% *}); monitor.yml's build-result job reports its conclusion"
+                exit 0 ;;
+              "in_progress "*)
+                echo "::notice::Workers Builds: patrickjv-eng-site is in_progress for $SHA; monitor.yml's build-result job reports its conclusion"
+                exit 0 ;;
               *)
-                seen=1
-                echo "minute $poll: site build is ${build%% *}" ;;
+                status=${build%% *}
+                echo "minute $poll: site build is $status" ;;
             esac
           done
-          if [ -n "$seen" ]; then
-            echo "::notice::the site build for $SHA is still running after 12 minutes; monitor.yml alerts if it fails"
-            exit 0
+          if [ "$errors" -eq 13 ]; then
+            echo "::error title=deploy-watch could not read check runs::could not read check runs for $SHA: every call failed, so whether Cloudflare built it is unknown"
+            exit 1
           fi
-          echo "::error title=No Workers Builds site build::Cloudflare didn't build $SHA: retry the build in the dashboard or push an empty commit. (No 'Workers Builds: patrickjv-eng-site' check run after 12 minutes; served changes:$served)"
+          if [ -n "$status" ]; then
+            echo "::error title=Workers Builds site build stuck::Workers Builds: patrickjv-eng-site for $SHA is still '$status' after 12 minutes: check the build in the dashboard (Workers & Pages → patrickjv-eng-site → Builds)"
+            echo "### Workers Builds site build for $SHA still $status after 12 minutes" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "::error title=No Workers Builds site build::Cloudflare didn't build $SHA: retry the build in the dashboard (Workers & Pages → patrickjv-eng-site → Builds), or push a commit that changes a file the site build watches. (No 'Workers Builds: patrickjv-eng-site' check run after 12 minutes; served changes:$served)"
           echo "### Cloudflare didn't build $SHA (no site build after 12 minutes)" >> "$GITHUB_STEP_SUMMARY"
           exit 1

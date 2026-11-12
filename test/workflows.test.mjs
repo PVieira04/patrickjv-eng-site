@@ -113,33 +113,47 @@ test("workflows: every action pinned to a full commit SHA, checkout/setup-node o
 });
 
 // run: scripts take values through env, never ${{ }} (no expression injection into the shell).
+// Every run: key must be extracted (inline, block with any indicator, or next-line form), so an
+// unusual form cannot slip a script past the check.
+const isRunKey = (l) => /^\s*(?:- )?run:/.test(l);
 const runBlocks = (y) => {
   const out = [];
   const lines = y.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const one = lines[i].match(/^\s*(?:- )?run: (?![|>])(.+)$/);
-    if (one) { out.push(one[1]); continue; }
-    const m = lines[i].match(/^(\s*)(?:- )?run: \|\s*$/);
-    if (!m) continue;
+    const m = lines[i].match(/^(\s*)(?:- )?run:(.*)$/);
+    if (!m || /^\s*#/.test(lines[i])) continue;
+    const rest = m[2].trim();
+    if (rest && !/^[|>][+-]?\d*[+-]?(\s+#.*)?$/.test(rest)) { out.push(rest); continue; }
     const body = [];
     for (i++; i < lines.length && (lines[i].trim() === "" || lines[i].search(/\S/) > m[1].length); i++) body.push(lines[i]);
     i--;
     const ind = Math.min(...body.filter((l) => l.trim()).map((l) => l.search(/\S/)));
-    out.push(body.map((l) => l.slice(ind)).join("\n"));
+    out.push(body.map((l) => l.slice(ind)).join("\n").replace(/\n+$/, ""));
   }
   return out;
 };
 
-test("workflows: no ${{ }} inside any run: script", () => {
+test("workflows: no ${{ }} inside any run: script, and every run: key is checked", () => {
   for (const f of workflows) {
+    const keys = raw(f).split("\n").filter((l) => !/^\s*#/.test(l) && isRunKey(l)).length;
     const blocks = runBlocks(raw(f));
-    assert.ok(blocks.length > 0, f);
-    for (const b of blocks) assert.doesNotMatch(b, /\$\{\{/, f);
+    assert.ok(keys > 0, f);
+    assert.equal(blocks.length, keys, `${f}: every run: key extracted`);
+    for (const b of blocks) {
+      assert.ok(b.trim(), `${f}: empty run: script`);
+      assert.doesNotMatch(b, /\$\{\{/, f);
+    }
   }
 });
 
+test("runBlocks: extracts inline, |, >-, |2 and next-line run: forms", () => {
+  const y = "      - run: echo a\n      - run: >-\n          echo b\n      - run: |2\n          echo c\n      - run:\n          echo ${{ x }}\n";
+  assert.deepEqual(runBlocks(y), ["echo a", "echo b", "echo c", "echo ${{ x }}"]);
+});
+
 // deploy-watch.yml: Workers Builds sometimes silently drops a main build that arrives while a branch
-// build is running (#28, #31). This workflow fails when a served push to main gets no site build.
+// build is running (#28, #31). It alerts only when a served push gets no site check run, or one that
+// never leaves the queue; a build's conclusion is monitor.yml build-result's alert, not this one's.
 const watch = code("deploy-watch.yml");
 
 test("deploy-watch.yml: push to main only, read-only checks + contents, one small job, no secrets", () => {
@@ -147,32 +161,68 @@ test("deploy-watch.yml: push to main only, read-only checks + contents, one smal
   assert.equal([...watch.matchAll(/\n  [\w-]+:\n    runs-on:/g)].length, 1, "exactly one job");
   assert.match(watch, /runs-on: ubuntu-24\.04\n    timeout-minutes: 15/);
   assert.match(watch, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(watch, /FORCED: \$\{\{ github\.event\.forced \}\}/);
   assert.match(raw("deploy-watch.yml"), /^#.*12 minutes[\s\S]*free[\s\S]*public/m, "header notes the worst-case minutes");
 });
 
-test("deploy-watch.yml: ignores exactly the site watch-path excludes and polls the site check run every 60 s for 12 minutes", () => {
+test("deploy-watch.yml: ignores exactly the site watch-path excludes (renames count both names); polls the site check run every 60 s", () => {
   const m = watch.match(/case "\$f" in\n\s+(\S+)\) ;;/);
   assert.ok(m, "ignore case arm");
   assert.deepEqual(m[1].split("|"), SITE_WATCH_EXCLUDES);
+  assert.ok(watch.includes("(.files | length), (.files[] | .filename, (.previous_filename // empty))"), "count and both names of a rename");
+  assert.match(watch, /-ge 300/);
   assert.ok(watch.includes(`select(.app.slug == "${APP}" and .name == "${SITE_CHECK}")`), "site check run, right app");
   assert.match(watch, /check-runs\?check_name=Workers%20Builds%3A%20patrickjv-eng-site/);
   assert.match(watch, /sleep 60/);
 });
 
-// Runs the real run: script under bash with fake gh and sleep on PATH.
+test("monitor.yml 'main is deployed' counts both names of a rename", () => {
+  assert.ok(stepOf(jobOf(monitor, "smoke"), "main is deployed").includes(".files[] | .filename, (.previous_filename // empty)"));
+});
+
+test("no workflow or docs/06 recommends an empty commit (it changes no watched file, so builds nothing)", () => {
+  assert.doesNotMatch(raw("deploy-watch.yml"), /push an empty commit|allow-empty/);
+  assert.doesNotMatch(readFileSync(new URL("../docs/06-operations.md", import.meta.url), "utf8"), /push an empty commit|allow-empty/);
+});
+
+// The behaviour tests run the real run: script under bash with fake gh and sleep on PATH. npm test
+// also runs inside every Workers Builds build, so they skip (never fail) where that cannot work.
+const shellSkip = (() => {
+  if (process.platform === "win32") return "skipped on Windows: the workflow script is bash";
+  const b = spawnSync("bash", ["-c", "command -v seq sed head tail >/dev/null && echo ok"], { encoding: "utf8" });
+  if (b.error || b.stdout.trim() !== "ok") return "skipped: bash with seq, sed, head and tail is not available";
+  let d;
+  try {
+    d = mkdtempSync(join(tmpdir(), "deploy-watch-probe-"));
+    writeFileSync(join(d, "probe"), "#!/usr/bin/env bash\necho ok\n");
+    chmodSync(join(d, "probe"), 0o755);
+    const r = spawnSync(join(d, "probe"), { encoding: "utf8" });
+    if (r.error || r.stdout.trim() !== "ok") return `skipped: cannot run executables from ${tmpdir()} (noexec?)`;
+  } catch (e) {
+    return `skipped: temp-dir probe failed (${e.message})`;
+  } finally {
+    if (d) rmSync(d, { recursive: true, force: true });
+  }
+  return false;
+})();
+const shTest = (name, fn) => test(name, { skip: shellSkip }, fn);
+
+const SHA = "b".repeat(40);
 const watchScript = runBlocks(raw("deploy-watch.yml"))[0];
-function runWatch({ files, polls, before = "a".repeat(40) }) {
+// files: changed paths (a string, or { filename, previous } for a rename), or null = the compare call
+// fails. polls: one entry per check-runs call — "" no check run, "ERR" the call fails, else
+// "<status> <conclusion> <url>". The fake returns what the workflow's --jq filter would print.
+function runWatch({ files, polls = [], before = "a".repeat(40), forced = "false", count }) {
   const d = mkdtempSync(join(tmpdir(), "deploy-watch-"));
   try {
-    writeFileSync(join(d, "files"), files.join("\n") + "\n");
+    const names = files ? files.flatMap((f) => (typeof f === "string" ? [f] : [f.filename, f.previous])) : [];
+    writeFileSync(join(d, "compare"), files ? [count ?? files.length, ...names].join("\n") + "\n" : "");
     writeFileSync(join(d, "polls"), polls.join("\n") + "\n");
     writeFileSync(join(d, "n"), "0");
-    // gh api: compare -> the changed files; check-runs -> the next poll's "<status> <conclusion> <url>"
-    // ("" = no check run yet). The --jq filter is the workflow's; the fake returns its output.
     writeFileSync(join(d, "gh"), `#!/usr/bin/env bash
 case "$*" in
-  *compare/*) cat "${d}/files" ;;
-  *check-runs*) n=$(cat "${d}/n"); echo $((n + 1)) > "${d}/n"; sed -n "$((n + 1))p" "${d}/polls" ;;
+  *compare/*) ${files ? `cat "${d}/compare"` : "exit 1"} ;;
+  *check-runs*) n=$(cat "${d}/n"); echo $((n + 1)) > "${d}/n"; line=$(sed -n "$((n + 1))p" "${d}/polls"); [ "$line" = ERR ] && exit 1; echo "$line" ;;
   *) exit 9 ;;
 esac
 `);
@@ -181,51 +231,78 @@ esac
     chmodSync(join(d, "sleep"), 0o755);
     const r = spawnSync("bash", ["-e", "-c", watchScript], {
       encoding: "utf8",
-      env: { PATH: `${d}:${process.env.PATH}`, GITHUB_STEP_SUMMARY: join(d, "summary"), GITHUB_REPOSITORY: "o/r", SHA: "b".repeat(40), BEFORE: before, GH_TOKEN: "x" },
+      env: { PATH: `${d}:${process.env.PATH}`, GITHUB_STEP_SUMMARY: join(d, "summary"), GITHUB_REPOSITORY: "o/r", SHA, BEFORE: before, FORCED: forced, GH_TOKEN: "x" },
     });
     return { code: r.status, out: r.stdout + r.stderr, polls: Number(readFileSync(join(d, "n"), "utf8")) };
   } finally {
     rmSync(d, { recursive: true, force: true });
   }
 }
+const DOCS = ["docs/06-operations.md", "README.md", "designs/x.png"];
+const ok = ["completed success u"];
 
-test("deploy-watch: a push touching only docs/, README.md, designs/ passes without polling", () => {
-  const r = runWatch({ files: ["docs/06-operations.md", "README.md", "designs/x.png"], polls: [] });
+shTest("deploy-watch: a push touching only docs/, README.md, designs/ passes without polling", () => {
+  const r = runWatch({ files: DOCS });
   assert.equal(r.code, 0, r.out);
   assert.equal(r.polls, 0);
 });
 
-test("deploy-watch: the site build appears and succeeds -> pass", () => {
-  const r = runWatch({ files: ["docs/a.md", "build.mjs"], polls: ["", "", "in_progress null u", "completed success u"] });
+// Fail closed: anything that leaves the change list unknown counts as served, so it is checked.
+for (const [what, args] of [
+  ["a rename out of a served path into docs/", { files: [{ filename: "docs/old-build.mjs", previous: "build.mjs" }] }],
+  ["a compare listing 300 files (the API's cap), all docs", { files: Array.from({ length: 300 }, (_, i) => `docs/f${i}.md`) }],
+  ["an empty change list", { files: [] }],
+  ["a failed compare call", { files: null }],
+  ["a force-push", { files: DOCS, forced: "true" }],
+  ["a push with no previous commit (zero before)", { files: DOCS, before: "0".repeat(40) }],
+]) {
+  shTest(`deploy-watch: ${what} is checked, not skipped`, () => {
+    const r = runWatch({ ...args, polls: ok });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.polls, 1, r.out);
+  });
+}
+
+shTest("deploy-watch: the site build appears and succeeds -> pass", () => {
+  const r = runWatch({ files: ["docs/a.md", "build.mjs"], polls: ["", "", "queued null u", "completed success u"] });
   assert.equal(r.code, 0, r.out);
   assert.equal(r.polls, 4);
 });
 
-test("deploy-watch: the site build fails -> fail, naming the build", () => {
-  const r = runWatch({ files: ["build.mjs"], polls: ["queued null u", "completed failure https://dash/build/1"] });
-  assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /::error title=Workers Builds failed: patrickjv-eng-site::/);
-  assert.match(r.out, /failure/);
-  assert.match(r.out, /https:\/\/dash\/build\/1/);
+shTest("deploy-watch: a failed build passes here (no double alert): build-result in monitor.yml alerts on it", () => {
+  const r = runWatch({ files: ["build.mjs"], polls: ["completed failure https://dash/build/1"] });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /::error/);
+  assert.match(r.out, /failure[\s\S]*build-result/);
 });
 
-test("deploy-watch: no site build after 12 minutes -> fail loudly with what to do", () => {
-  const r = runWatch({ files: ["content.json"], polls: [] });
+shTest("deploy-watch: a build in progress is not a dropped build: notice naming the status, stop polling", () => {
+  const r = runWatch({ files: ["content.json"], polls: ["", "in_progress null u"] });
+  assert.equal(r.code, 0, r.out);
+  assert.equal(r.polls, 2);
+  assert.match(r.out, /::notice::.*in_progress/);
+});
+
+shTest("deploy-watch: a build still queued at 12 minutes fails, naming the status", () => {
+  const r = runWatch({ files: ["content.json"], polls: Array(13).fill("queued null u") });
+  assert.equal(r.code, 1, r.out);
+  assert.equal(r.polls, 13);
+  assert.match(r.out, /::error[^\n]*still 'queued' after 12 minutes/);
+});
+
+shTest("deploy-watch: no site build after 12 minutes -> fail loudly with what to do", () => {
+  const r = runWatch({ files: ["content.json"], polls: ["ERR"] });
   assert.equal(r.code, 1, r.out);
   assert.equal(r.polls, 13, "polls at 0, 1, ... 12 minutes");
-  assert.match(r.out, new RegExp(`::error[^:]*::Cloudflare didn't build ${"b".repeat(40)}: retry the build in the dashboard or push an empty commit`));
+  assert.match(r.out, new RegExp(`::error[^:]*::Cloudflare didn't build ${SHA}: retry the build in the dashboard`));
 });
 
-test("deploy-watch: a build still running at 12 minutes is not a dropped build (monitor alerts on its result)", () => {
-  const r = runWatch({ files: ["content.json"], polls: Array(13).fill("in_progress null u") });
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /::notice::/);
-});
-
-test("deploy-watch: a push with no previous commit (zero before) is checked, not skipped", () => {
-  const r = runWatch({ files: ["docs/a.md"], polls: ["completed success u"], before: "0".repeat(40) });
-  assert.equal(r.code, 0, r.out);
-  assert.equal(r.polls, 1);
+shTest("deploy-watch: every check-runs call failing -> 'could not read check runs', not 'didn't build'", () => {
+  const r = runWatch({ files: ["content.json"], polls: Array(13).fill("ERR") });
+  assert.equal(r.code, 1, r.out);
+  assert.equal(r.polls, 13);
+  assert.match(r.out, /::error[^\n]*could not read check runs/);
+  assert.doesNotMatch(r.out, /didn't build/);
 });
 
 // The repo is public: the intro mailbox lives in the INTRO_TO_ADDRESS Worker secret, never in config.
