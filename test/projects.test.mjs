@@ -312,7 +312,7 @@ test("F-005 (US-4, D6): the scorecard gate: no non-null repeat, a non-null repea
 });
 
 // ---- --record and --record-scorecard: the export contract, and every check before any write ----
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, lstatSync, symlinkSync, existsSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, symlinkSync, existsSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { record } from "../build.mjs";
@@ -814,5 +814,38 @@ test("F-005 (US-4): .denylist.local fails the local build on a term in exported 
     assert.deepEqual(comments.stale, [], "nothing differs from the build without the file");
     const withFile = snapshot(s.root); delete withFile[".denylist.local"];
     assert.deepEqual(withFile, after, "a comments-only file behaves exactly as an absent one");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record reports a missing or unparseable report.json as a check failure, writing nothing", () => {
+  const s = sandbox();
+  try {
+    refuses(s, { dir: s.dir, expect: runExport(s.dir, { files: { "report.json": "{ not json" } }) }, /report\.json is not valid JSON/);
+    const files = runFiles(); delete files["report.json"];
+    refuses(s, { dir: s.dir, expect: writeExport(s.dir, { files }) }, /report\.json is missing/);
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): --record keeps an unknown key already in published.json, so the check refuses it rather than dropping it", () => {
+  const s = sandbox();
+  try {
+    mkdirSync(join(s.root, "projects/research-agent"), { recursive: true });
+    writeFileSync(join(s.root, MANIFEST), JSON.stringify({ manifest_version: "1.0.0", runs: {}, approved: true }));
+    refuses(s, { dir: s.dir, expect: runExport(s.dir) }, /unknown key "approved"/);
+  } finally { s.done(); }
+});
+
+test("F-005 (D2, D4): an injected write failure during --record --replace restores the published run and manifest byte for byte", () => {
+  const s = sandbox();
+  try {
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect: runExport(s.dir), today: TODAY }).errors, []);
+    writeAlt(s.root);
+    const before = snapshot(s.root);
+    const expect = writeExport(s.dir, { files: { "report.md": runFiles()["report.md"], "calls/2/out/other.png": png(), "report.json": reportWith((d) => { d.figures = ["calls/2/out/other.png"]; }) } });
+    let n = 0;
+    const io = { renameSync: (a, b) => { if (++n === 2) throw new Error("injected"); return renameSync(a, b); } };
+    assert.throws(() => record({ root: s.root, dir: s.dir, expect, today: TODAY, replace: true, io }), (e) => e.writePhase && e.rolledBack);
+    assert.deepEqual(snapshot(s.root), before);
+    assert.ok(existsSync(join(s.root, "projects/research-agent/runs", RUN_ID, "calls/1/out")), "the removed directory is recreated");
   } finally { s.done(); }
 });

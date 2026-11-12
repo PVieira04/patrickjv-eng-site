@@ -1427,7 +1427,10 @@ export function record({ root = process.cwd(), dir, expect, kind = "run", replac
   if (kind === "run") {
     const old = m.runs[id];
     if (old && !replace) return { errors: [`run ${id} is already published; to re-export it, read the new export, then rerun with --replace`] };
-    const figures = JSON.parse(ex.files.get("report.json").toString("utf8")).figures;
+    let figures = [];
+    try { figures = JSON.parse(ex.files.get("report.json").toString("utf8")).figures; } catch { /* reported by checkProjects below */ }
+    if (!Array.isArray(figures)) figures = [];
+    figures = figures.filter((f) => typeof f === "string");
     const kept = (f) => old?.files?.[f] === hashes[f] && typeof old?.alt?.[f] === "string" ? old.alt[f] : "";
     m.runs[id] = { ...stamp, ...(old && "role" in old ? { role: old.role } : {}), files: hashes, alt: Object.fromEntries(figures.map((f) => [f, kept(f)])) };
     tree.runs[id] = ex.files;
