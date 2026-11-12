@@ -323,6 +323,7 @@ const cspHash = (s) => "'sha256-" + sha256(Buffer.from(s, "utf8")).toString("bas
 // exact path (no "*" or ":placeholder"), set once — then no path, not even a missing one that
 // falls through to 404.html, can receive a CSP from two rules or from a wildcard.
 const MAX_HEADER_RULES = 100;
+const SITE_WIDE_HEADERS = ["Strict-Transport-Security", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "Cross-Origin-Opener-Policy", "X-Frame-Options"];
 export function checkHeaders(headers) {
   const errors = [];
   const blocks = headers.split(/\n(?=\S)/).filter((blk) => !/^\s*#/.test(blk));
@@ -338,8 +339,13 @@ export function checkHeaders(headers) {
   for (const blk of rules) {
     const [path, ...lines] = blk.split("\n");
     const r = path.trim();
-    if (r === "/*" || !/[*:]/.test(r)) continue;
+    if (!/[*:]/.test(r)) continue;
     const names = lines.filter((l) => l.trim()).map((l) => l.trim().split(":")[0]);
+    if (r === "/*") {
+      const other = names.filter((n) => n !== "Content-Security-Policy" && !SITE_WIDE_HEADERS.includes(n));
+      if (other.length) errors.push(`_headers: /* may carry only the security headers (${SITE_WIDE_HEADERS.join(", ")}); found ${other.join(", ")}`);
+      continue;
+    }
     if (r !== "/projects/*") errors.push(`_headers has a wildcard rule (${r}); only /* and /projects/* are allowed — use exact paths so a missing file gets only the 404 page's headers`);
     else if (names.some((n) => n !== "X-Robots-Tag")) errors.push(`_headers: /projects/* may carry only X-Robots-Tag (found ${names.join(", ")})`);
   }
@@ -1252,16 +1258,18 @@ const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/book.md
 // old bytes or null if absent), removes the directories it created, recreates the directories,
 // files and links it removed, then rethrows with `rolledBack` (true if every step succeeded). `io`
 // exists so tests can inject failures.
-const IO = { writeFileSync, renameSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync };
+const IO = { writeFileSync, renameSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, lstatSync };
 export function writeStaged(root, files, previous, io = IO, removal = {}) {
   io = { ...IO, ...io };
   const p = (f) => join(root, f);
   const { files: gone = {}, links = {}, dirs = [] } = removal;
   const deleted = [], unlinked = [], rmdirs = [], created = [], staged = [], replaced = [];
   try {
-    for (const f of Object.keys(gone)) { io.unlinkSync(p(f)); deleted.push(f); }
-    for (const f of Object.keys(links)) { io.unlinkSync(p(f)); unlinked.push(f); }
-    for (const d of dirs) { io.rmdirSync(p(d)); rmdirs.push(d); }
+    // Re-check each type just before removing it (cheap; narrows, but cannot close, the race).
+    const still = (f, is) => { if (!is(io.lstatSync(p(f)))) throw new Error(`${f} changed type during the build; refusing to delete it`); };
+    for (const f of Object.keys(gone)) { still(f, (s) => s.isFile()); io.unlinkSync(p(f)); deleted.push(f); }
+    for (const f of Object.keys(links)) { still(f, (s) => s.isSymbolicLink()); io.unlinkSync(p(f)); unlinked.push(f); }
+    for (const d of dirs) { still(d, (s) => s.isDirectory()); io.rmdirSync(p(d)); rmdirs.push(d); }
     for (const f of Object.keys(files)) {
       const parts = dirname(f).split(/[\\/]/).filter((x) => x && x !== ".");
       for (let i = 1; i <= parts.length; i++) {
@@ -1287,12 +1295,14 @@ export function writeStaged(root, files, previous, io = IO, removal = {}) {
 // F-005 (D4): the build owns public/projects/. Walk it with lstat, never following a link: regular
 // files and directories are listed, a symlink is recorded with its target (a stray, deleted and never
 // followed), and anything else (FIFO, socket, device), or public/projects itself being a symlink,
-// makes the build refuse to run.
+// makes the build refuse to run. The guarantee holds if the tree doesn't change during the build:
+// writeStaged re-checks each entry's type just before deleting it, which narrows that race but can't
+// close it.
 const OWNED = "public/projects";
 function ownedTree(root) {
   const tree = { files: [], links: {}, dirs: [] };
   let st;
-  try { st = lstatSync(join(root, OWNED)); } catch { return tree; }
+  try { st = lstatSync(join(root, OWNED)); } catch (e) { if (e.code === "ENOENT") return tree; throw new Error(`cannot inspect ${OWNED} (${e.code ?? e.message}); the build refuses to run`); }
   if (st.isSymbolicLink()) throw new Error(`${OWNED} is a symlink; the build refuses to run (it owns that directory)`);
   if (!st.isDirectory()) throw new Error(`${OWNED} is not a directory; the build refuses to run`);
   (function walk(rel) {
@@ -1324,7 +1334,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   // booking.json at the root (the build checks the guide against it), or the Worker's own copy.
   const bookingCfg = readOr("booking.json") ? JSON.parse(read("booking.json")) : BOOKING_CONFIG;
   // F-004 (D7): the same validation as the Worker's, before anything is rendered from it.
-  try { validateConfig(bookingCfg); } catch (e) { return { errors: [e.message], stale: [], date: null }; }
+  try { validateConfig(bookingCfg); } catch (e) { return { errors: [e.message], stale: [], removed: [], date: null }; }
   const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00", bookingCfg).files;
   // Images the page references by path (src, srcset, icons, og:image / twitter:image).
   const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
@@ -1358,7 +1368,11 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   // up to 8 runs. The manifest's own format and checks come with --record.
   const manifest = readOr(MANIFEST);
   if (manifest !== null) {
-    const n = Object.keys(JSON.parse(manifest).runs ?? {}).length;
+    let runs;
+    try { runs = JSON.parse(manifest).runs; } catch (e) { runs = e; }
+    if (runs instanceof Error) errors.push(`${MANIFEST} is not valid JSON (${runs.message})`);
+    else if (!runs || typeof runs !== "object" || Array.isArray(runs)) errors.push(`${MANIFEST}: "runs" must be an object keyed by run id`);
+    const n = runs instanceof Error || !runs || typeof runs !== "object" ? 0 : Object.keys(runs).length;
     if (n > MAX_RUNS) errors.push(`${MANIFEST} lists ${n} runs; at most ${MAX_RUNS} can be published (the _headers rule budget, F-005 D10)`);
   }
 
