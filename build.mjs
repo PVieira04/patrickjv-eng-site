@@ -10,7 +10,7 @@
 //
 // Nothing is written unless every check passes. Writing itself is staged (temporary files, then
 // renames) with a best-effort rollback; it is not transactional — see writeStaged().
-import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync, lstatSync, readlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -1284,6 +1284,30 @@ export function writeStaged(root, files, previous, io = IO, removal = {}) {
   }
 }
 
+// F-005 (D4): the build owns public/projects/. Walk it with lstat, never following a link: regular
+// files and directories are listed, a symlink is recorded with its target (a stray, deleted and never
+// followed), and anything else (FIFO, socket, device), or public/projects itself being a symlink,
+// makes the build refuse to run.
+const OWNED = "public/projects";
+function ownedTree(root) {
+  const tree = { files: [], links: {}, dirs: [] };
+  let st;
+  try { st = lstatSync(join(root, OWNED)); } catch { return tree; }
+  if (st.isSymbolicLink()) throw new Error(`${OWNED} is a symlink; the build refuses to run (it owns that directory)`);
+  if (!st.isDirectory()) throw new Error(`${OWNED} is not a directory; the build refuses to run`);
+  (function walk(rel) {
+    for (const name of readdirSync(join(root, rel)).sort()) {
+      const f = `${rel}/${name}`;
+      const e = lstatSync(join(root, f));
+      if (e.isSymbolicLink()) tree.links[f] = readlinkSync(join(root, f));
+      else if (e.isDirectory()) { tree.dirs.push(f); walk(f); }
+      else if (e.isFile()) tree.files.push(f);
+      else throw new Error(`${f} is not a regular file, directory or symlink (a FIFO, socket or device); the build refuses to run`);
+    }
+  })(OWNED);
+  return tree;
+}
+
 export function build({ root = process.cwd(), check = false, today = new Date().toISOString().slice(0, 10), now = Date.now(), io } = {}) {
   const p = (f) => join(root, f);
   const read = (f) => readFileSync(p(f), "utf8");
@@ -1338,12 +1362,29 @@ export function build({ root = process.cwd(), check = false, today = new Date().
     if (n > MAX_RUNS) errors.push(`${MANIFEST} lists ${n} runs; at most ${MAX_RUNS} can be published (the _headers rule budget, F-005 D10)`);
   }
 
-  const stale = Object.entries(files).filter(([f, t]) => readOr(f) !== t).map(([f]) => f);
+  // F-005 (D4): every entry under public/projects/ that this build would not write is a stray:
+  // --check names it, a build deletes it (and every directory that leaves empty) in the same staged
+  // write as the outputs. Outputs are compared and restored as bytes (figures are binary).
+  let tree = { files: [], links: {}, dirs: [] };
+  try { tree = ownedTree(root); } catch (e) { errors.push(e.message); }
+  const want = new Set(Object.keys(files).filter((f) => f.startsWith(OWNED + "/")));
+  const keepDirs = new Set([...want].flatMap((f) => f.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))));
+  const strayFiles = tree.files.filter((f) => !want.has(f));
+  const strayDirs = tree.dirs.filter((d) => !keepDirs.has(d)).sort((a, b) => b.split("/").length - a.split("/").length);
+  const strays = [...strayFiles, ...Object.keys(tree.links), ...strayDirs];
+  if (check && strays.length) errors.push(`${OWNED} has entries the build does not generate (run npm run build to delete them): ${strays.join(", ")}`);
+  const readBytes = (f) => {
+    if (f.startsWith(OWNED + "/") && !tree.files.includes(f)) return null; // a link or nothing: never read through
+    try { return readFileSync(p(f)); } catch { return null; }
+  };
+  const stale = Object.entries(files).filter(([f, t]) => !readBytes(f)?.equals(Buffer.isBuffer(t) ? t : Buffer.from(t, "utf8"))).map(([f]) => f);
   if (check && stale.length) errors.push(`out of date (run npm run build): ${stale.join(", ")}`);
   // Validation failures return before anything is written. An I/O failure while writing throws
   // (see writeStaged: staged, with a best-effort rollback, but not transactional).
-  if (!check && !errors.length) writeStaged(root, Object.fromEntries(stale.map((f) => [f, files[f]])), Object.fromEntries(stale.map((f) => [f, readOr(f)])), io);
-  return { errors, stale, date };
+  if (check || errors.length) return { errors, stale, removed: [], date };
+  const removal = { files: Object.fromEntries(strayFiles.map((f) => [f, readFileSync(p(f))])), links: tree.links, dirs: strayDirs };
+  writeStaged(root, Object.fromEntries(stale.map((f) => [f, files[f]])), Object.fromEntries(stale.map((f) => [f, readBytes(f)])), io, removal);
+  return { errors, stale, removed: strays, date };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -1359,5 +1400,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     r = { errors: [e.message], stale: [] }; // raised before any write
   }
   if (r.errors.length) { console.error(`BUILD FAILED (${CHECK ? "check" : "validation failed — nothing written"})\n` + r.errors.join("\n")); process.exit(1); }
-  console.log(CHECK ? "build check passed" : `built (dateModified ${r.date}); ${r.stale.length ? "updated: " + r.stale.join(", ") : "no changes"}`);
+  console.log(CHECK ? "build check passed" : `built (dateModified ${r.date}); ${r.stale.length ? "updated: " + r.stale.join(", ") : "no changes"}${r.removed.length ? "; removed: " + r.removed.join(", ") : ""}`);
 }
