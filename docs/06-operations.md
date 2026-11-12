@@ -2,7 +2,7 @@
 
 ## Deploying
 
-**Normal path: push to `main`. Cloudflare Workers Builds deploys** (since 7 Oct 2026, replacing the GitHub Actions `deploy.yml`; decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)). Each of the two Workers is connected to the GitHub repo `PVieira04/patrickjv-eng-site`, production branch `main`; Cloudflare clones the repo, runs the build command and then the deploy command with a **Cloudflare-managed build token**. **No Cloudflare credential is needed in GitHub** (the old Actions secret was deleted on 7 Oct — [owner clean-up](#no-ci-deploy-token-any-more-owner-clean-up)). Non-production (other-branch) builds are **off**. Node is pinned by `.node-version` (`24`).
+**Normal path: push to `main`. Cloudflare Workers Builds deploys** (since 7 Oct 2026, replacing the GitHub Actions `deploy.yml`; decision [D4](reviews/2026-10-06-merged-review.md#6-owner-decisions)). Each of the two Workers is connected to the GitHub repo `PVieira04/patrickjv-eng-site`, production branch `main`; Cloudflare clones the repo, runs the build command and then the deploy command with a **Cloudflare-managed build token**. **No Cloudflare credential is needed in GitHub** (the old Actions secret was deleted on 7 Oct — [owner clean-up](#no-ci-deploy-token-any-more-owner-clean-up)). Non-production (other-branch) builds are meant to be **off**, but are **running** on both Workers (they fail by design and deploy nothing): turning them off is an [owner action](#owner-actions-still-open). While they run, Workers Builds can silently drop a `main` build that arrives during a branch build (#28, #31); `deploy-watch.yml` catches that ([Monitoring](#monitoring)). Node is pinned by `.node-version` (`24`).
 
 | Worker | Build command | Deploy command | Build watch paths |
 |---|---|---|---|
@@ -24,11 +24,12 @@ Right after a deploy, Cloudflare can briefly serve the previous version from som
 <a id="ci"></a>
 ## CI
 
-GitHub Actions no longer deploys and holds **no secrets**. Both workflows use actions pinned to full commit SHAs — `actions/checkout` **v7.0.1** (`3d3c42e…`) and `actions/setup-node` **v7.1.0** (`949feb2…`), both on the Node 24 action runtime — plus `persist-credentials: false`, least-privilege `permissions`, the `ubuntu-24.04` runner and Node 24. **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for GitHub Actions (bumping the pinned SHA and its version comment together) and npm (dev dependencies grouped into one PR); each PR runs `test.yml`, nothing merges itself. `test/workflows.test.mjs` guards the properties below (revert-and-fail verified).
+GitHub Actions no longer deploys and holds **no secrets**. The workflows that run actions use actions pinned to full commit SHAs — `actions/checkout` **v7.0.1** (`3d3c42e…`) and `actions/setup-node` **v7.1.0** (`949feb2…`), both on the Node 24 action runtime — plus `persist-credentials: false`, least-privilege `permissions`, the `ubuntu-24.04` runner and Node 24. **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for GitHub Actions (bumping the pinned SHA and its version comment together) and npm (dev dependencies grouped into one PR); each PR runs `test.yml`, nothing merges itself. `test/workflows.test.mjs` guards the properties below (revert-and-fail verified).
 
 | Workflow | When | What |
 |---|---|---|
 | `test.yml` | Every push and pull request | `npm ci --ignore-scripts`, `npm test`. No secrets. (Workers Builds runs the same `npm test` again before each deploy.) |
+| `deploy-watch.yml` | Every push to `main` | Fails if Workers Builds never builds the push: polls the commit for `Workers Builds: patrickjv-eng-site` every 60 s for up to 12 minutes (see [Monitoring](#monitoring)). No checkout, no actions, no `${{ }}` in its script. Permissions `checks: read`, `contents: read` only. About 12 minutes at worst per push, free on a public repo. |
 | `monitor.yml` | Every 6 hours, on demand, and on every completed `Workers Builds: …` check run **for `main`** (branch builds fail by design and deploy nothing, so they are ignored; 9 Oct 2026) | Scheduled/dispatch: live smoke against the last deployed commit, plus "main is deployed". Check run: build-failure alert and post-deploy smoke (see [Monitoring](#monitoring)). Permissions `contents: read`, `checks: read` only. |
 
 **Stale SHAs and races (reviews Codex-1, Codex-6).** Workers Builds builds the commit that was pushed; there is no GitHub re-run that could redeploy an old SHA. Rollback is a deliberate `wrangler rollback`. Two residuals, both **unverified**: whether Workers Builds cancels or serialises a build that a newer push supersedes, and whether two quick pushes can finish out of order (leaving the older commit live). The monitor covers both: the post-deploy smoke is skipped if a newer `main` commit has its own site build, and the scheduled "deployed = repo" checks compare production with the newest successfully built commit, so an out-of-order finish FAILs there.
@@ -50,6 +51,15 @@ Until 7 Oct 2026 `deploy.yml` deployed with `CLOUDFLARE_API_TOKEN`, a repository
 Production does not depend on any of these: deleting them changes nothing live.
 
 ## Monitoring
+
+**`deploy-watch.yml`** — on every push to `main` (the dropped-build alert). Workers Builds sometimes drops a `main` build silently when it arrives while a branch build is running: no check run, nothing deployed, no failure anywhere (it happened to #28 and #31). If every file the push changed (`before...after`) is under the site's watch-path excludes (`docs/*`, `README.md`, `designs/*`), it passes without checking. Otherwise it polls the pushed commit's check runs every 60 s for up to 12 minutes:
+
+- `Workers Builds: patrickjv-eng-site` concluded `success` → pass.
+- Any other conclusion → **error "Workers Builds failed: patrickjv-eng-site"** with the build's link (the same failure `build-result` below reports).
+- No check run after 12 minutes → **error "Cloudflare didn't build `<sha>`: retry the build in the dashboard or push an empty commit"**. Fix: dashboard → Workers & Pages → `patrickjv-eng-site` → Builds → retry the latest `main` build, or `git commit --allow-empty -m "redeploy" && git push`.
+- Seen but still running at 12 minutes → notice and pass; `build-result` alerts on its result.
+
+It watches the site Worker only, not `patrickjv-mcp`. Unverified: whether a quick second push makes Workers Builds skip the first commit on purpose, which would also raise "didn't build" for the first push (the second push's own run then shows whether production caught up).
 
 `.github/workflows/monitor.yml` has two jobs.
 
@@ -131,7 +141,7 @@ The forward switch used the same call with `"service":"patrickjv-eng-site"`.
 | Booking secrets (F-001) | Worker secrets on `patrickjv-mcp`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` (`hello@`'s production token), `RESEND_API_KEY` (`patrickjv-booking / patrickjv-mcp / send-only`), `BOOKING_OWNER_EMAIL`, `CAL_PERSONAL_MAIN` (one per blocking calendar named in `booking.json`) | Set on 8 Oct 2026 (see [launch](#booking-launch)); `bookingReady` is false if any is missing. The OAuth client JSON lives only on Patrick's machine. Re-authorising: [runbook](#booking-runbooks) |
 | `QUOTA_SALT` | Worker secret on `patrickjv-mcp` (set 6 Oct 2026 with `wrangler secret put QUOTA_SALT -c mcp/wrangler.jsonc`) | Keys the HMAC of the quota counters' IP and sender keys. **Required**: if it is missing or shorter than 32 characters, `request_intro` is refused (tool error, logged as subsystem `config`); the read tools carry on. Not stored anywhere else and not needed elsewhere; if it is changed, the day's per-IP and per-sender counts restart (the global count does not). |
 | Workers Builds build token | Managed by Cloudflare (Workers Builds, since 7 Oct 2026) | Not in GitHub. The old GitHub Actions token `CLOUDFLARE_API_TOKEN` is unused — delete it ([owner clean-up](#token-rotation)) |
-| GitHub Actions `GITHUB_TOKEN` | Per run, automatic | `contents: read` (test); `contents: read` + `checks: read` (monitor, to read Workers Builds check runs) |
+| GitHub Actions `GITHUB_TOKEN` | Per run, automatic | `contents: read` (test); `contents: read` + `checks: read` (monitor and deploy-watch, to read Workers Builds check runs) |
 | GitHub | `gh` CLI (has `user` scope, used to set the profile website/bio) | Remove with `gh auth refresh -h github.com -r user` if unwanted |
 
 Not stored anywhere: the Immich API key used to fetch the portrait (deleted locally and revoked in Immich).
@@ -320,6 +330,7 @@ From the [review](reviews/2026-10-06-merged-review.md) (rounds 1–3). These nee
 |---|---|---|
 | R3 | `patrickjv.com` DMARC is `p=none; rua=mailto:hello@patrickjv.com; fo=1` (monitoring) | After ~2 weeks of clean aggregate reports, `p=quarantine`, then `p=reject`. `fo=1` does nothing without a `ruf` address (C3-F13) — drop it at the same edit, or leave it as harmless |
 | Codex-3 / C3-F13 | `marineweather.patrickjv.com` has its **own** DMARC `v=DMARC1; p=none;` with **no `rua`**: it overrides the apex policy and reports nowhere | Add `rua=mailto:hello@patrickjv.com`; check the actual From, DKIM (`resend._domainkey`, a **1024-bit** key — regenerate at 2048 if Resend allows) and MAIL FROM (`send.marineweather`, Amazon SES) alignment in the reports; then tighten its own policy |
+| #28, #31 | **Turn off non-production branch builds** for `patrickjv-eng-site` and `patrickjv-mcp`: Worker → Settings → Build → Branch control → untick builds for non-production branches. They run today, fail by design, deploy nothing, and can make Workers Builds drop a `main` build | Watch `deploy-watch.yml` on the next few `main` pushes; once it has stayed green for a while, it can stay as a cheap guard |
 | R4 / C3-F7 | ~~DNSSEC DS not published~~ **Resolved:** the DS record is published and resolves (checked 24 Oct 2026) | None |
 
 ## Useful commands
