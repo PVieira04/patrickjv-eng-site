@@ -10,8 +10,8 @@
 //
 // Nothing is written unless every check passes. Writing itself is staged (temporary files, then
 // renames) with a best-effort rollback; it is not transactional — see writeStaged().
-import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync, lstatSync, readlinkSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { marked } from "marked";
@@ -322,15 +322,33 @@ const cspHash = (s) => "'sha256-" + sha256(Buffer.from(s, "utf8")).toString("bas
 // detach lines, so: no detach lines; no Content-Security-Policy on "/*"; and every CSP rule is an
 // exact path (no "*" or ":placeholder"), set once — then no path, not even a missing one that
 // falls through to 404.html, can receive a CSP from two rules or from a wildcard.
+const MAX_HEADER_RULES = 100;
+const SITE_WIDE_HEADERS = ["Strict-Transport-Security", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "Cross-Origin-Opener-Policy", "X-Frame-Options"];
 export function checkHeaders(headers) {
   const errors = [];
   const blocks = headers.split(/\n(?=\S)/).filter((blk) => !/^\s*#/.test(blk));
   const cspRules = blocks.filter((blk) => /^\s+Content-Security-Policy:/m.test(blk)).map((blk) => blk.split("\n")[0].trim());
   if (/^\s*!/m.test(headers)) errors.push("_headers must not use \"! Header\" detach lines (not honoured in production)");
   if (cspRules.includes("/*")) errors.push("_headers must not set Content-Security-Policy on /* (it would combine with per-path policies)");
-  const wild = cspRules.filter((r) => r !== "/*" && /[*:]/.test(r));
-  if (wild.length) errors.push(`_headers sets Content-Security-Policy on a wildcard rule (${wild.join(", ")}); use exact paths so a missing file gets only the 404 page's policy`);
   if (new Set(cspRules).size !== cspRules.length) errors.push("_headers sets Content-Security-Policy twice for one path pattern");
+  // F-005 (D10): Cloudflare caps Workers static assets at 100 header rules. Wildcards match missing
+  // paths, so only two exist: "/*" (security headers, checked above) and "/projects/*", which may
+  // carry only X-Robots-Tag (the dark-deploy noindex).
+  const rules = blocks.filter((blk) => blk.trim());
+  if (rules.length > MAX_HEADER_RULES) errors.push(`_headers has ${rules.length} rules; Workers static assets allow at most ${MAX_HEADER_RULES}`);
+  for (const blk of rules) {
+    const [path, ...lines] = blk.split("\n");
+    const r = path.trim();
+    if (!/[*:]/.test(r)) continue;
+    const names = lines.filter((l) => l.trim()).map((l) => l.trim().split(":")[0]);
+    if (r === "/*") {
+      const other = names.filter((n) => n !== "Content-Security-Policy" && !SITE_WIDE_HEADERS.includes(n));
+      if (other.length) errors.push(`_headers: /* may carry only the security headers (${SITE_WIDE_HEADERS.join(", ")}); found ${other.join(", ")}`);
+      continue;
+    }
+    if (r !== "/projects/*") errors.push(`_headers has a wildcard rule (${r}); only /* and /projects/* are allowed — use exact paths so a missing file gets only the 404 page's headers`);
+    else if (names.some((n) => n !== "X-Robots-Tag")) errors.push(`_headers: /projects/* may carry only X-Robots-Tag (found ${names.join(", ")})`);
+  }
   return errors;
 }
 
@@ -1226,27 +1244,78 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
+const MANIFEST = "projects/research-agent/published.json";
+const MAX_RUNS = 8;
 const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/book.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
-// Write `files` (name -> text) under `root`: every file to "<name>.tmp" first, then rename each
-// over the original. This is NOT transactional: a failure part-way through the renames leaves some
-// outputs new and some old. On any failure it removes the temporary files and restores the files
-// it had already replaced (from `previous`, name -> old text or null if absent), then rethrows with
-// `rolledBack` (true if every restore succeeded). `io` exists so tests can inject failures.
-export function writeStaged(root, files, previous, io = { writeFileSync, renameSync, unlinkSync }) {
+// Write `files` (name -> text or Buffer) under `root`: every file to "<name>.tmp" first, then
+// rename each over the original. This is NOT transactional: a failure part-way through leaves some
+// outputs new and some old. `removal` (F-005 D4, used only under public/projects/) is deleted in the
+// same write, before the outputs: `files` (name -> its bytes, read before deletion), `links` (name ->
+// readlink target; the link is removed, never followed) and `dirs` (emptied directories, deepest
+// first). Missing parent directories of outputs are created. On any failure it undoes all of it:
+// removes the temporary files, restores the files it had already replaced (from `previous`, name ->
+// old bytes or null if absent), removes the directories it created, recreates the directories,
+// files and links it removed, then rethrows with `rolledBack` (true if every step succeeded). `io`
+// exists so tests can inject failures.
+const IO = { writeFileSync, renameSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, lstatSync };
+export function writeStaged(root, files, previous, io = IO, removal = {}) {
+  io = { ...IO, ...io };
   const p = (f) => join(root, f);
-  const staged = [], replaced = [];
+  const { files: gone = {}, links = {}, dirs = [] } = removal;
+  const deleted = [], unlinked = [], rmdirs = [], created = [], staged = [], replaced = [];
   try {
+    // Re-check each type just before removing it (cheap; narrows, but cannot close, the race).
+    const still = (f, is) => { if (!is(io.lstatSync(p(f)))) throw new Error(`${f} changed type during the build; refusing to delete it`); };
+    for (const f of Object.keys(gone)) { still(f, (s) => s.isFile()); io.unlinkSync(p(f)); deleted.push(f); }
+    for (const f of Object.keys(links)) { still(f, (s) => s.isSymbolicLink()); io.unlinkSync(p(f)); unlinked.push(f); }
+    for (const d of dirs) { still(d, (s) => s.isDirectory()); io.rmdirSync(p(d)); rmdirs.push(d); }
+    for (const f of Object.keys(files)) {
+      const parts = dirname(f).split(/[\\/]/).filter((x) => x && x !== ".");
+      for (let i = 1; i <= parts.length; i++) {
+        const d = parts.slice(0, i).join("/");
+        if (!existsSync(p(d))) { io.mkdirSync(p(d)); created.push(d); }
+      }
+    }
     for (const f of Object.keys(files)) { io.writeFileSync(p(f) + ".tmp", files[f]); staged.push(f); }
     for (const f of Object.keys(files)) { io.renameSync(p(f) + ".tmp", p(f)); replaced.push(f); }
   } catch (e) {
     let rolledBack = true;
-    for (const f of staged.filter((f) => !replaced.includes(f))) { try { io.unlinkSync(p(f) + ".tmp"); } catch { rolledBack = false; } }
-    for (const f of replaced) {
-      try { if (previous[f] === null) io.unlinkSync(p(f)); else io.writeFileSync(p(f), previous[f]); } catch { rolledBack = false; }
-    }
+    const undo = (fn) => { try { fn(); } catch { rolledBack = false; } };
+    for (const f of staged.filter((f) => !replaced.includes(f))) undo(() => io.unlinkSync(p(f) + ".tmp"));
+    for (const f of replaced) undo(() => { if (previous[f] === null) io.unlinkSync(p(f)); else io.writeFileSync(p(f), previous[f]); });
+    for (const d of [...created].reverse()) undo(() => io.rmdirSync(p(d)));
+    for (const d of [...rmdirs].reverse()) undo(() => io.mkdirSync(p(d)));
+    for (const f of deleted) undo(() => io.writeFileSync(p(f), gone[f]));
+    for (const f of unlinked) undo(() => io.symlinkSync(links[f], p(f)));
     throw Object.assign(e, { writePhase: true, rolledBack });
   }
+}
+
+// F-005 (D4): the build owns public/projects/. Walk it with lstat, never following a link: regular
+// files and directories are listed, a symlink is recorded with its target (a stray, deleted and never
+// followed), and anything else (FIFO, socket, device), or public/projects itself being a symlink,
+// makes the build refuse to run. The guarantee holds if the tree doesn't change during the build:
+// writeStaged re-checks each entry's type just before deleting it, which narrows that race but can't
+// close it.
+const OWNED = "public/projects";
+function ownedTree(root) {
+  const tree = { files: [], links: {}, dirs: [] };
+  let st;
+  try { st = lstatSync(join(root, OWNED)); } catch (e) { if (e.code === "ENOENT") return tree; throw new Error(`cannot inspect ${OWNED} (${e.code ?? e.message}); the build refuses to run`); }
+  if (st.isSymbolicLink()) throw new Error(`${OWNED} is a symlink; the build refuses to run (it owns that directory)`);
+  if (!st.isDirectory()) throw new Error(`${OWNED} is not a directory; the build refuses to run`);
+  (function walk(rel) {
+    for (const name of readdirSync(join(root, rel)).sort()) {
+      const f = `${rel}/${name}`;
+      const e = lstatSync(join(root, f));
+      if (e.isSymbolicLink()) tree.links[f] = readlinkSync(join(root, f));
+      else if (e.isDirectory()) { tree.dirs.push(f); walk(f); }
+      else if (e.isFile()) tree.files.push(f);
+      else throw new Error(`${f} is not a regular file, directory or symlink (a FIFO, socket or device); the build refuses to run`);
+    }
+  })(OWNED);
+  return tree;
 }
 
 export function build({ root = process.cwd(), check = false, today = new Date().toISOString().slice(0, 10), now = Date.now(), io } = {}) {
@@ -1265,7 +1334,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   // booking.json at the root (the build checks the guide against it), or the Worker's own copy.
   const bookingCfg = readOr("booking.json") ? JSON.parse(read("booking.json")) : BOOKING_CONFIG;
   // F-004 (D7): the same validation as the Worker's, before anything is rendered from it.
-  try { validateConfig(bookingCfg); } catch (e) { return { errors: [e.message], stale: [], date: null }; }
+  try { validateConfig(bookingCfg); } catch (e) { return { errors: [e.message], stale: [], removed: [], date: null }; }
   const probe = render(c, cv, posts, html0, html404, imageFiles, fontFiles, "0000-00-00", bookingCfg).files;
   // Images the page references by path (src, srcset, icons, og:image / twitter:image).
   const referenced = imageFiles.filter((f) => new RegExp(`["\\s,]/${escRe(f)}[\\s",]|patrickjv\\.com/${escRe(f)}"`).test(probe["public/index.html"]));
@@ -1295,13 +1364,41 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   if (did !== DID_SHA256) errors.push(`public/.well-known/did.json changed (sha256 ${did}); it backs did:web sign-in`);
   errors.push(...checkSecurityTxt(read("public/.well-known/security.txt"), now));
   errors.push(...checkMicrosoftSecret(bookingCfg, now));
+  // F-005 (D10): four _headers rules per published run keep the file under its 100-rule cap only
+  // up to 8 runs. The manifest's own format and checks come with --record.
+  const manifest = readOr(MANIFEST);
+  if (manifest !== null) {
+    let runs;
+    try { runs = JSON.parse(manifest).runs; } catch (e) { runs = e; }
+    if (runs instanceof Error) errors.push(`${MANIFEST} is not valid JSON (${runs.message})`);
+    else if (!runs || typeof runs !== "object" || Array.isArray(runs)) errors.push(`${MANIFEST}: "runs" must be an object keyed by run id`);
+    const n = runs instanceof Error || !runs || typeof runs !== "object" ? 0 : Object.keys(runs).length;
+    if (n > MAX_RUNS) errors.push(`${MANIFEST} lists ${n} runs; at most ${MAX_RUNS} can be published (the _headers rule budget, F-005 D10)`);
+  }
 
-  const stale = Object.entries(files).filter(([f, t]) => readOr(f) !== t).map(([f]) => f);
+  // F-005 (D4): every entry under public/projects/ that this build would not write is a stray:
+  // --check names it, a build deletes it (and every directory that leaves empty) in the same staged
+  // write as the outputs. Outputs are compared and restored as bytes (figures are binary).
+  let tree = { files: [], links: {}, dirs: [] };
+  try { tree = ownedTree(root); } catch (e) { errors.push(e.message); }
+  const want = new Set(Object.keys(files).filter((f) => f.startsWith(OWNED + "/")));
+  const keepDirs = new Set([...want].flatMap((f) => f.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))));
+  const strayFiles = tree.files.filter((f) => !want.has(f));
+  const strayDirs = tree.dirs.filter((d) => !keepDirs.has(d)).sort((a, b) => b.split("/").length - a.split("/").length);
+  const strays = [...strayFiles, ...Object.keys(tree.links), ...strayDirs];
+  if (check && strays.length) errors.push(`${OWNED} has entries the build does not generate (run npm run build to delete them): ${strays.join(", ")}`);
+  const readBytes = (f) => {
+    if (f.startsWith(OWNED + "/") && !tree.files.includes(f)) return null; // a link or nothing: never read through
+    try { return readFileSync(p(f)); } catch { return null; }
+  };
+  const stale = Object.entries(files).filter(([f, t]) => !readBytes(f)?.equals(Buffer.isBuffer(t) ? t : Buffer.from(t, "utf8"))).map(([f]) => f);
   if (check && stale.length) errors.push(`out of date (run npm run build): ${stale.join(", ")}`);
   // Validation failures return before anything is written. An I/O failure while writing throws
   // (see writeStaged: staged, with a best-effort rollback, but not transactional).
-  if (!check && !errors.length) writeStaged(root, Object.fromEntries(stale.map((f) => [f, files[f]])), Object.fromEntries(stale.map((f) => [f, readOr(f)])), io);
-  return { errors, stale, date };
+  if (check || errors.length) return { errors, stale, removed: [], date };
+  const removal = { files: Object.fromEntries(strayFiles.map((f) => [f, readFileSync(p(f))])), links: tree.links, dirs: strayDirs };
+  writeStaged(root, Object.fromEntries(stale.map((f) => [f, files[f]])), Object.fromEntries(stale.map((f) => [f, readBytes(f)])), io, removal);
+  return { errors, stale, removed: strays, date };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -1317,5 +1414,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     r = { errors: [e.message], stale: [] }; // raised before any write
   }
   if (r.errors.length) { console.error(`BUILD FAILED (${CHECK ? "check" : "validation failed — nothing written"})\n` + r.errors.join("\n")); process.exit(1); }
-  console.log(CHECK ? "build check passed" : `built (dateModified ${r.date}); ${r.stale.length ? "updated: " + r.stale.join(", ") : "no changes"}`);
+  console.log(CHECK ? "build check passed" : `built (dateModified ${r.date}); ${r.stale.length ? "updated: " + r.stale.join(", ") : "no changes"}${r.removed.length ? "; removed: " + r.removed.join(", ") : ""}`);
 }

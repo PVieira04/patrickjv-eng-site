@@ -2,9 +2,10 @@
 // embedding, security.txt validation, content-hash dates and validate-before-write.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, cpSync, mkdtempSync, writeFileSync, rmSync, readdirSync, renameSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, cpSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, renameSync, unlinkSync, existsSync, symlinkSync, readlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as buildModule from "../build.mjs";
 import { build, checkPage, inlineCode, safeJson, checkSecurityTxt, checkHeaders, writeStaged, parsePost } from "../build.mjs";
@@ -178,7 +179,7 @@ test("building twice is a no-op, and the date moves only when the output changes
     assert.ok(changed.stale.includes("build-state.json"));
     // ...and a second run converges immediately, on any later day.
     const again = build({ root: dir, today: "2099-01-03", now: NOW });
-    assert.deepEqual(again, { errors: [], stale: [], date: "2099-01-02" });
+    assert.deepEqual(again, { errors: [], stale: [], removed: [], date: "2099-01-02" });
     assert.deepEqual(build({ root: dir, check: true, today: "2099-02-01", now: NOW }).errors, []);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -410,4 +411,244 @@ test("F-004 (D7): the build fails on bad sign-in settings in booking.json, for e
       assert.ok(r.errors.some((e) => /booking\.json: signin/.test(e)), `${JSON.stringify(signin)}: ${r.errors.join("\n")}`);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }
+});
+
+// ---- F-005 PR 1: ownership of public/projects/, Buffers and _headers rules ----
+
+test("F-005 (D3): .gitattributes holds exactly the two -text lines, so git never rewrites checked bytes", () => {
+  assert.equal(readFileSync(join(ROOT, ".gitattributes"), "utf8"), "projects/** -text\npublic/projects/** -text\n");
+});
+
+test("F-005 (D10): checkHeaders fails above 100 rules and passes at 100", () => {
+  const rule = (i) => `/r${i}\n  Content-Security-Policy: default-src 'none'\n`;
+  const rules = (n) => "# comment lines are not rules\n" + Array.from({ length: n }, (_, i) => rule(i)).join("\n");
+  assert.deepEqual(checkHeaders(rules(100)), []);
+  assert.match(checkHeaders(rules(101)).join(), /101 rules.*100/);
+});
+
+test("F-005 (D10): wildcard rules: /* takes security headers but never a CSP; /projects/* takes only X-Robots-Tag; any other wildcard fails", () => {
+  const sec = "/*\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n";
+  assert.deepEqual(checkHeaders(sec), []);
+  assert.match(checkHeaders(sec + "  Content-Security-Policy: default-src 'none'\n").join(), /on \/\*/);
+  const noindex = "\n/projects/*\n  X-Robots-Tag: noindex\n";
+  assert.deepEqual(checkHeaders(sec + noindex), []);
+  for (const h of ["Content-Security-Policy: default-src 'none'", "Cache-Control: public, max-age=86400", "Content-Type: text/plain"]) {
+    assert.match(checkHeaders(sec + noindex + `  ${h}\n`).join(), /\/projects\/\* may carry only X-Robots-Tag/, h);
+  }
+  for (const r of ["/fonts/*", "/projects/research-agent/*", "/blog/:slug", "/writing/*"]) {
+    assert.match(checkHeaders(sec + `\n${r}\n  X-Robots-Tag: noindex\n`).join(), /wildcard rule/, r);
+  }
+});
+
+test("F-005 (D10): more than 8 runs in the manifest fails the build; 8 passes", () => {
+  const dir = scratch();
+  try {
+    const manifest = (n) => {
+      const runs = Object.fromEntries(Array.from({ length: n }, (_, i) => [`20261111T14300${i}Z-a1b2c3`, {}]));
+      mkdirSync(join(dir, "projects/research-agent"), { recursive: true });
+      writeFileSync(join(dir, "projects/research-agent/published.json"), JSON.stringify({ manifest_version: "1.0.0", runs }));
+    };
+    manifest(8);
+    assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, []);
+    manifest(9);
+    for (const check of [true, false]) assert.ok(build({ root: dir, check, now: NOW }).errors.some((e) => /9 runs.*at most 8/.test(e)), `check=${check}`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// A PNG-like Buffer that is not valid UTF-8 and holds a \r\n: any text decoding or line-ending
+// conversion on the way changes it.
+const BINARY = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from([0xff, 0xfe, 0xc3, 0x28, 0x0d, 0x0a, 0x00, 0x80])]);
+
+test("F-005 (D3, D4): writeStaged writes Buffers byte for byte and creates missing directories", () => {
+  const dir = mkdtempSync(join(tmpdir(), "site-write-"));
+  try {
+    const f = "public/projects/research-agent/runs/r/calls/1/out/x.png";
+    writeStaged(dir, { [f]: BINARY }, { [f]: null });
+    assert.ok(readFileSync(join(dir, f)).equals(BINARY));
+    assert.deepEqual(readdirSync(join(dir, "public/projects/research-agent/runs/r/calls/1/out")), ["x.png"], "no temp file left");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("F-005 (D4): writeStaged deletes files, links and emptied directories in the same staged write, and a failure restores all of it", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "site-write-"));
+  const outside = mkdtempSync(join(tmpdir(), "site-outside-"));
+  try {
+    const at = (f) => join(dir, f);
+    mkdirSync(at("p/old/calls/1/out"), { recursive: true });
+    writeFileSync(at("p/old/calls/1/out/x.png"), BINARY);
+    writeFileSync(at("p/keep.png"), BINARY);
+    writeFileSync(join(outside, "target.txt"), "outside");
+    symlinkSync(join(outside, "target.txt"), at("p/link"));
+    const removal = { files: { "p/old/calls/1/out/x.png": readFileSync(at("p/old/calls/1/out/x.png")) }, links: { "p/link": readlinkSync(at("p/link")) }, dirs: ["p/old/calls/1/out", "p/old/calls/1", "p/old/calls", "p/old"] };
+    const files = { "p/keep.png": Buffer.from("new"), "p/new/a/b.png": BINARY };
+    const previous = { "p/keep.png": readFileSync(at("p/keep.png")), "p/new/a/b.png": null };
+    let renames = 0;
+    const io = { writeFileSync, unlinkSync, renameSync: (x, y) => { if (++renames === 2) throw new Error("EIO"); renameSync(x, y); } };
+    assert.throws(() => writeStaged(dir, files, previous, io, removal), (e) => e.writePhase && e.rolledBack === true);
+    assert.ok(readFileSync(at("p/old/calls/1/out/x.png")).equals(BINARY), "deleted PNG restored byte for byte");
+    assert.ok(readFileSync(at("p/keep.png")).equals(BINARY), "replaced file restored byte for byte");
+    assert.equal(readlinkSync(at("p/link")), join(outside, "target.txt"), "link recreated with the same target");
+    assert.equal(readFileSync(join(outside, "target.txt"), "utf8"), "outside", "link target untouched");
+    assert.ok(!existsSync(at("p/new")), "directories the write created are removed");
+    assert.deepEqual(readdirSync(at("p")).sort(), ["keep.png", "link", "old"], "no temp files");
+    // Without the failure, the same write deletes the strays and the emptied directories.
+    writeStaged(dir, files, previous, undefined, removal);
+    assert.deepEqual(readdirSync(at("p")).sort(), ["keep.png", "new"]);
+    assert.ok(readFileSync(at("p/new/a/b.png")).equals(BINARY));
+    assert.equal(readFileSync(join(outside, "target.txt"), "utf8"), "outside", "deleting the link leaves its target");
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+});
+
+// Converge a scratch tree, then give it a pending content change, so a build has outputs to write.
+function pendingChange(dir) {
+  assert.deepEqual(build({ root: dir, today: "2098-01-01", now: NOW }).errors, []);
+  const swap = (f, a, b) => { const p = join(dir, f); writeFileSync(p, readFileSync(p, "utf8").replace(a, b)); };
+  swap("content.json", '"Python"', '"Python 3"');
+  swap("public/index.html", "</span>Python</li>", "</span>Python 3</li>");
+}
+
+test("F-005 (D4): a stray file under public/projects/ fails --check naming it; a build deletes it and every directory left empty", () => {
+  const dir = scratch();
+  try {
+    const stray = "public/projects/research-agent/runs/20261111T143000Z-a1b2c3/calls/1/out/x.png";
+    mkdirSync(join(dir, dirname(stray)), { recursive: true });
+    writeFileSync(join(dir, stray), BINARY);
+    writeFileSync(join(dir, "public/projects/notes.txt"), "by hand");
+    const checked = build({ root: dir, check: true, now: NOW });
+    assert.ok(checked.errors.some((e) => e.includes(stray) && e.includes("public/projects/notes.txt")), checked.errors.join("\n"));
+    assert.ok(existsSync(join(dir, stray)), "--check deletes nothing");
+    const built = build({ root: dir, today: "2099-01-01", now: NOW });
+    assert.deepEqual(built.errors, []);
+    assert.ok(built.removed.includes(stray));
+    assert.deepEqual(readdirSync(join(dir, "public/projects")), [], "the stray and its emptied directories are gone");
+    assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("F-005 (D4): an empty directory placed under public/projects/ is a stray too", () => {
+  const dir = scratch();
+  try {
+    mkdirSync(join(dir, "public/projects/empty/deeper"), { recursive: true });
+    assert.ok(build({ root: dir, check: true, now: NOW }).errors.some((e) => e.includes("public/projects/empty/deeper")));
+    assert.deepEqual(build({ root: dir, now: NOW }).errors, []);
+    assert.deepEqual(readdirSync(join(dir, "public/projects")), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("F-005 (D4): symlinks under public/projects/ (to a file and to a directory outside it) are strays: named by --check, deleted by a build, targets untouched", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, () => {
+  const dir = scratch();
+  const outside = mkdtempSync(join(tmpdir(), "site-outside-"));
+  try {
+    writeFileSync(join(outside, "secret.txt"), "outside");
+    mkdirSync(join(outside, "tree"));
+    writeFileSync(join(outside, "tree/inner.txt"), "inner");
+    mkdirSync(join(dir, "public/projects"));
+    symlinkSync(join(outside, "secret.txt"), join(dir, "public/projects/file-link"));
+    symlinkSync(join(outside, "tree"), join(dir, "public/projects/dir-link"));
+    const checked = build({ root: dir, check: true, now: NOW });
+    for (const l of ["public/projects/file-link", "public/projects/dir-link"]) assert.ok(checked.errors.some((e) => e.includes(l)), l);
+    assert.ok(!checked.errors.some((e) => e.includes("inner.txt")), "the walk does not follow the directory link");
+    assert.deepEqual(build({ root: dir, now: NOW }).errors, []);
+    assert.deepEqual(readdirSync(join(dir, "public/projects")), []);
+    assert.equal(readFileSync(join(outside, "secret.txt"), "utf8"), "outside");
+    assert.equal(readFileSync(join(outside, "tree/inner.txt"), "utf8"), "inner");
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+});
+
+test("F-005 (D4): an injected write failure restores deleted strays byte for byte (a PNG), recreates their directories and links, and restores replaced outputs", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, () => {
+  const dir = scratch();
+  const outside = mkdtempSync(join(tmpdir(), "site-outside-"));
+  try {
+    pendingChange(dir);
+    const stray = "public/projects/research-agent/runs/r/calls/1/out/x.png";
+    mkdirSync(join(dir, dirname(stray)), { recursive: true });
+    writeFileSync(join(dir, stray), BINARY);
+    writeFileSync(join(outside, "t.txt"), "outside");
+    symlinkSync(join(outside, "t.txt"), join(dir, "public/projects/link"));
+    const outs = ["public/index.md", "public/llms.txt", "public/index.html", "build-state.json"];
+    const before = outs.map((f) => readFileSync(join(dir, f)));
+    let renames = 0;
+    const io = { writeFileSync, unlinkSync, renameSync: (x, y) => { if (++renames === 2) throw new Error("EIO"); renameSync(x, y); } };
+    assert.throws(() => build({ root: dir, today: "2099-01-01", now: NOW, io }), (e) => e.writePhase && e.rolledBack);
+    assert.ok(readFileSync(join(dir, stray)).equals(BINARY), "deleted PNG restored byte for byte");
+    assert.equal(readlinkSync(join(dir, "public/projects/link")), join(outside, "t.txt"), "link recreated with the same target");
+    assert.equal(readFileSync(join(outside, "t.txt"), "utf8"), "outside");
+    outs.forEach((f, i) => assert.ok(readFileSync(join(dir, f)).equals(before[i]), `${f} restored`));
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+});
+
+test("F-005 (D4): a FIFO under public/projects/, or public/projects itself being a symlink, makes the build refuse to run", { skip: process.platform === "win32" && "no FIFOs or unprivileged symlinks on Windows" }, () => {
+  const dir = scratch();
+  const outside = mkdtempSync(join(tmpdir(), "site-outside-"));
+  try {
+    pendingChange(dir);
+    const state = readFileSync(join(dir, "build-state.json"));
+    mkdirSync(join(dir, "public/projects/runs"), { recursive: true });
+    execFileSync("mkfifo", [join(dir, "public/projects/runs/pipe")]);
+    writeFileSync(join(dir, "public/projects/stray.txt"), "x");
+    for (const check of [true, false]) {
+      const r = build({ root: dir, check, today: "2099-01-01", now: NOW });
+      assert.ok(r.errors.some((e) => /public\/projects\/runs\/pipe.*refuses/.test(e)), r.errors.join("\n"));
+    }
+    assert.ok(existsSync(join(dir, "public/projects/stray.txt")), "nothing deleted");
+    assert.ok(readFileSync(join(dir, "build-state.json")).equals(state), "nothing written");
+    rmSync(join(dir, "public/projects"), { recursive: true });
+    writeFileSync(join(outside, "keep.txt"), "outside");
+    symlinkSync(outside, join(dir, "public/projects"));
+    for (const check of [true, false]) {
+      const r = build({ root: dir, check, today: "2099-01-01", now: NOW });
+      assert.ok(r.errors.some((e) => /public\/projects is a symlink.*refuses/.test(e)), r.errors.join("\n"));
+    }
+    assert.equal(readFileSync(join(outside, "keep.txt"), "utf8"), "outside");
+    assert.ok(readFileSync(join(dir, "build-state.json")).equals(state), "nothing written");
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+});
+
+test("F-005 (D10): a published.json that is not JSON, or whose runs is not an object, fails the build naming the file", () => {
+  const dir = scratch();
+  try {
+    mkdirSync(join(dir, "projects/research-agent"), { recursive: true });
+    for (const body of ["{not json", JSON.stringify({ runs: [] }), JSON.stringify({ runs: "x" }), JSON.stringify({ runs: null })]) {
+      writeFileSync(join(dir, "projects/research-agent/published.json"), body);
+      const r = build({ root: dir, check: true, now: NOW });
+      assert.ok(r.errors.some((e) => e.includes("projects/research-agent/published.json")), `${body}: ${r.errors.join("\n")}`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("F-005 (D10): /* may carry only the security headers it carries today", () => {
+  const sec = "/*\n  Strict-Transport-Security: max-age=31536000\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Permissions-Policy: camera=()\n  Cross-Origin-Opener-Policy: same-origin\n  X-Frame-Options: DENY\n";
+  assert.deepEqual(checkHeaders(sec), []);
+  for (const h of ["Cache-Control: public, max-age=86400", "X-Robots-Tag: noindex", "Content-Type: text/plain"]) {
+    assert.match(checkHeaders(sec + `  ${h}\n`).join(), /\/\* may carry only/, h);
+  }
+});
+
+test("F-005 (D4): writeStaged re-checks each stray just before deleting it and refuses if its type changed (safe only if the tree doesn't change mid-build)", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "site-write-"));
+  const outside = mkdtempSync(join(tmpdir(), "site-outside-"));
+  try {
+    // Planned as a regular file, but a symlink by the time of the write.
+    writeFileSync(join(outside, "t.txt"), "outside");
+    symlinkSync(join(outside, "t.txt"), join(dir, "was-file"));
+    writeFileSync(join(dir, "was-link"), "now a file");
+    writeFileSync(join(dir, "was-dir"), "now a file");
+    for (const removal of [{ files: { "was-file": Buffer.from("x") } }, { links: { "was-link": "/nowhere" } }, { dirs: ["was-dir"] }]) {
+      assert.throws(() => writeStaged(dir, {}, {}, undefined, removal), /changed type/);
+    }
+    assert.equal(readlinkSync(join(dir, "was-file")), join(outside, "t.txt"));
+    assert.equal(readFileSync(join(dir, "was-link"), "utf8"), "now a file");
+    assert.equal(readFileSync(join(dir, "was-dir"), "utf8"), "now a file");
+    assert.equal(readFileSync(join(outside, "t.txt"), "utf8"), "outside");
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+});
+
+test("F-005: a bad booking.json returns the same result shape (removed: [])", () => {
+  const dir = scratch();
+  try {
+    writeFileSync(join(dir, "booking.json"), JSON.stringify({}));
+    const r = build({ root: dir, check: true, now: NOW });
+    assert.ok(r.errors.length > 0);
+    assert.deepEqual(r.removed, []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
