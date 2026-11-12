@@ -1053,13 +1053,14 @@ test("F-005: the showcase copy makes only claims the research-agent specs suppor
     [/\bTen questions\b/i, "the count belongs to the scorecard, not fixed copy"],
     [/every finding/i, "findings were fixed and recorded; 'every' is not claimed"],
     [/access levels per caller/i, "F-001a: an access level on every tool, checked against the caller's"],
-    [/Nothing runs until the plan is approved/i, "the eval approves plans automatically, and the Claude Code harness gates each analysis call"],
+    [/Nothing runs until the plan is approved/i, "the LangGraph eval approves plans automatically, and the Claude Code harness gates each analysis call"],
+    [/In the eval, plans are approved/i, "only the LangGraph eval approves automatically; harness eval runs (F-001d) are approved by a person"],
   ]) assert.doesNotMatch(text, claim, why);
   assert.doesNotMatch(text, /has seen the plan/, "the harness's permission prompt shows the code, not the plan");
   assert.match(text, /No analysis code runs without a person's approval/);
   assert.match(text, /pauses for the plan to be approved/, "F-001b's approval interrupt");
   assert.match(text, /asks permission before every analysis call/, "F-001d's prompt per run_analysis call");
-  assert.match(text, /In the eval, plans are approved automatically\./, "F-001c");
+  assert.match(text, /In the LangGraph eval, plans are approved automatically\./, "F-001c");
 });
 
 test("F-005 (D1, D10): a run recorded with --record and built gets its exact CSP rules, hashing the page's own <style>", () => {

@@ -6,7 +6,7 @@ Code available on request: [book a call](https://patrickjv.com/book).
 
 ## What it does
 
-A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. No analysis code runs without a person's approval: the LangGraph agent pauses for the plan to be approved, and the Claude Code harness asks permission before every analysis call. In the eval, plans are approved automatically.
+A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. No analysis code runs without a person's approval: the LangGraph agent pauses for the plan to be approved, and the Claude Code harness asks permission before every analysis call. In the LangGraph eval, plans are approved automatically.
 
 The agent then analyses the data in a sandbox, a critic model reviews the work against a checklist of known traps, and the agent writes a report with its figures. The worked example is futures one-minute bars.
 
