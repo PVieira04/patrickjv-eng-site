@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as buildModule from "../build.mjs";
 import { build, checkPage, inlineCode, safeJson, checkSecurityTxt, checkHeaders, writeStaged, parsePost } from "../build.mjs";
+import { clearRecorded } from "./projects-helpers.mjs";
 
 const { employerMention } = buildModule; // F-004 (D8)
 
@@ -503,6 +504,8 @@ test("F-005 (D4): writeStaged deletes files, links and emptied directories in th
 
 // What the build always writes under public/projects/ (F-005 PR 3), with no runs published.
 const GENERATED = ["index.html", "index.md", "research-agent.html", "research-agent.md"];
+// The D4 tests below start from a scratch tree with no published run, so these are all a build writes.
+const unpublishedScratch = () => { const dir = scratch(); clearRecorded(dir); return dir; };
 
 // Converge a scratch tree, then give it a pending content change, so a build has outputs to write.
 function pendingChange(dir) {
@@ -513,7 +516,7 @@ function pendingChange(dir) {
 }
 
 test("F-005 (D4): a stray file under public/projects/ fails --check naming it; a build deletes it and every directory left empty", () => {
-  const dir = scratch();
+  const dir = unpublishedScratch();
   try {
     const stray = "public/projects/research-agent/runs/20261111T143000Z-a1b2c3/calls/1/out/x.png";
     mkdirSync(join(dir, dirname(stray)), { recursive: true });
@@ -531,7 +534,7 @@ test("F-005 (D4): a stray file under public/projects/ fails --check naming it; a
 });
 
 test("F-005 (D4): an empty directory placed under public/projects/ is a stray too", () => {
-  const dir = scratch();
+  const dir = unpublishedScratch();
   try {
     mkdirSync(join(dir, "public/projects/empty/deeper"), { recursive: true });
     assert.ok(build({ root: dir, check: true, now: NOW }).errors.some((e) => e.includes("public/projects/empty/deeper")));
@@ -541,7 +544,7 @@ test("F-005 (D4): an empty directory placed under public/projects/ is a stray to
 });
 
 test("F-005 (D4): symlinks under public/projects/ (to a file and to a directory outside it) are strays: named by --check, deleted by a build, targets untouched", { skip: process.platform === "win32" && "creating symlinks needs elevated rights on Windows" }, () => {
-  const dir = scratch();
+  const dir = unpublishedScratch();
   const outside = mkdtempSync(join(tmpdir(), "site-outside-"));
   try {
     writeFileSync(join(outside, "secret.txt"), "outside");

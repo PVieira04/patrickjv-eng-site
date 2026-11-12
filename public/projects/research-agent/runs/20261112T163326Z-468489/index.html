@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On synth-1m, is realised 1-minute volatility higher in the f… — Research agent — Patrick Vieira</title>
+<meta name="description" content="Yes. On synth-1m, realised 1-minute volatility in the first 30 minutes after the 09:30 New York open was about twice that of the rest of the same session. The…">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/">
+<link rel="alternate" type="text/markdown" href="/projects/research-agent/runs/20261112T163326Z-468489/report.md">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:title" content="On synth-1m, is realised 1-minute volatility higher in the f… — Research agent — Patrick Vieira">
+<meta property="og:description" content="Yes. On synth-1m, realised 1-minute volatility in the first 30 minutes after the 09:30 New York open was about twice that of the rest of the same session. The…">
+<meta property="og:url" content="https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/">
+<meta property="og:image" content="https://patrickjv.com/og-card.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Report",
+  "url": "https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/",
+  "headline": "On synth-1m, is realised 1-minute volatility higher in the first 30 minutes after the 09:30 New York cash open than in the rest of the same session? Report the mean over sessions of the ratio of realised volatility in that window to realised volatility in the rest of the session as the statistic `open_vol_ratio`, and test the hypothesis that the window is more volatile at the 5% level.",
+  "about": {
+    "@id": "https://patrickjv.com/projects/research-agent#software"
+  },
+  "datePublished": "2026-11-12",
+  "inLanguage": "en-GB",
+  "author": {
+    "@id": "https://patrickjv.com/#person"
+  }
+}
+</script>
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+:root { --bg: #f4f3ee; --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --code: #e9e7e0; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0c0e11; --ink: #e7e9ec; --muted: #9aa3ae; --line: #262b33; --signal: #ffb547; --code: #1a1e24; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.0625rem; line-height: 1.65; }
+.wrap { box-sizing: border-box; max-width: 44rem; margin: 0 auto; padding: 24px 16px 64px; }
+.bar { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 0.875rem; margin-bottom: 40px; }
+a { color: var(--signal); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 2em 0 0.5em; font-weight: 600; }
+.meta { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); margin: 0 0 32px; }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--code); padding: 0.1em 0.3em; border-radius: 3px; }
+pre { background: var(--code); padding: 12px 16px; overflow-x: auto; border-radius: 4px; }
+pre code { padding: 0; background: none; }
+li { margin: 0.35em 0; }
+.posts { list-style: none; padding: 0; }
+.posts li { margin: 0 0 28px; }
+.posts a { font-size: 1.2rem; font-weight: 600; }
+.posts p { margin: 4px 0 0; color: var(--muted); }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 0.875rem; color: var(--muted); }
+
+:root { --line-strong: #b9b6ab; }
+@media (prefers-color-scheme: dark) { :root { --line-strong: #3a414c; } }
+.bar { flex-wrap: wrap; }
+main { overflow-wrap: anywhere; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+h3 { font-size: 1.0625rem; margin: 1.5em 0 0.4em; font-weight: 600; }
+.lead { font-size: 1.125rem; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 0 0 16px; }
+.facts dt { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); padding-top: 0.15em; }
+.facts dd { margin: 0; }
+@media (max-width: 480px) { .facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .facts dd { margin-bottom: 8px; } }
+.scroll { max-width: 100%; overflow-x: auto; margin: 0 0 16px; }
+.scroll pre { margin: 0; overflow: visible; }
+.scroll table { overflow-wrap: normal; }
+table { border-collapse: collapse; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+thead th { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
+.cards { list-style: none; padding: 0; }
+.cards > li { margin: 0; padding: 16px 0; border-top: 1px solid var(--line); }
+.cards h3 { margin: 0 0 8px; }
+.issues li { margin: 0.5em 0; }
+.tag { font-weight: 600; }
+figure { margin: 0 0 24px; }
+img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); }
+.arch { display: block; width: 100%; max-width: 30rem; height: auto; margin: 8px auto 24px; }
+.arch .box { fill: var(--code); stroke: var(--line-strong); }
+.arch .out { stroke-dasharray: 5 4; }
+.arch .layer { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.arch .hl { fill: none; stroke: var(--signal); stroke-width: 2; }
+.arch .edge { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.arch .head { fill: var(--muted); }
+.arch text { fill: var(--ink); font-family: var(--mono); font-size: 14px; }
+.arch .small { fill: var(--muted); font-size: 12.5px; }
+.arch .note { fill: none; stroke: var(--muted); stroke-dasharray: 1 3; stroke-linecap: round; stroke-width: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a><a href="/projects/">Projects</a></nav>
+<main>
+<h1>On synth-1m, is realised 1-minute volatility higher in the first 30 minutes after the 09:30 New York cash open than in the rest of the same session? Report the mean over sessions of the ratio of realised volatility in that window to realised volatility in the rest of the session as the statistic `open_vol_ratio`, and test the hypothesis that the window is more volatile at the 5% level.</h1>
+<dl class="facts">
+<dt>Finished</dt><dd>2026-11-12</dd>
+<dt>Harness</dt><dd>Claude Code harness</dd>
+<dt>Models</dt><dd>planner claude-code:claude-opus-5-5, analyst claude-code:claude-sonnet-5-5, critic claude-code:claude-opus-5-5</dd>
+<dt>Status</dt><dd>Completed</dd>
+<dt>Review</dt><dd>Passed review</dd>
+<dt>Dataset</dt><dd>synth-1m (synthetic)</dd>
+</dl>
+<p>Every result on this page is on a seeded synthetic dataset with planted effects and traps, not on market data.</p>
+<h2>Plan</h2>
+<dl class="facts">
+<dt>Hypothesis</dt><dd>On synth-1m, realised 1-minute volatility in the 09:30-10:00 New York window is higher than realised 1-minute volatility in the rest of the same session, i.e. the mean over sessions of the per-minute volatility ratio exceeds 1.</dd>
+<dt>Dataset</dt><dd>synth-1m</dd>
+<dt>Window</dt><dd>2023-01-02 to 2025-12-31</dd>
+<dt>Method</dt><dd>1. Load synth-1m (single symbol SYN), convert ts from UTC to America/New_York so the 09:30 open tracks DST. 2. Assign each bar to a session using the dataset's 18:00-17:00 NY session: session date = NY calendar date of (ts_ny + 6 hours), so bars from 18:00 belong to the next day's session. 3. Compute 1-minute log returns r_t = ln(close_t / close_{t-1}) within a session only: drop the first bar of every session (its return spans the 17:00-18:00 break) and drop any return whose bar is at or straddles a contract switch timestamp (all 12 switches fall exactly at 09:30 NY, so the switch-day 09:30 return would otherwise mix two contracts). 4. Window = bars with NY time in [09:30, 10:00) (30 returns, the first being 09:29 close to 09:30 close); rest = every other return in the same session (18:00 previous evening to 16:59, excluding the window). 5. Per session, realised volatility is normalised per minute so the two windows of very different length are comparable: RV_window = sqrt(mean of r^2 over window), RV_rest = sqrt(mean of r^2 over rest). 6. Keep sessions with a full 30-return window (29 on switch days after the drop) and at least 90% of the expected rest returns; report how many sessions are kept and dropped. 7. ratio_s = RV_window / RV_rest per session; open_vol_ratio = mean of ratio_s over kept sessions. Also report the median ratio, the share of sessions with ratio &gt; 1, and mean of ln(ratio_s) as robustness.</dd>
+<dt>Statistic</dt><dd>open_vol_ratio</dd>
+<dt>Significance</dt><dd>One-sided test of H0: E[ratio_s] &lt;= 1 against H1: E[ratio_s] &gt; 1, using a t-test on the per-session ratios with Newey-West HAC standard errors (lag 5 sessions, to allow for volatility clustering across days), at the 5% level. Robustness: the same one-sided HAC test on ln(ratio_s) &gt; 0.</dd>
+</dl>
+<h2>Critic</h2>
+<p>Review: Passed review</p>
+<p>The critic left no open issues.</p>
+<h2>Report</h2>
+<h3>Research report 20261112T163326Z-468489</h3>
+<p>Status: completed. Harness: claude-code. Dataset: synth-1m.</p>
+<h4>Question</h4>
+<p>On synth-1m, is realised 1-minute volatility higher in the first 30 minutes after the 09:30 New York cash open than in the rest of the same session? Report the mean over sessions of the ratio of realised volatility in that window to realised volatility in the rest of the session as the statistic `open_vol_ratio`, and test the hypothesis that the window is more volatile at the 5% level.</p>
+<h4>Plan</h4>
+<div class="scroll" role="region" aria-label="Code 1" tabindex="0">
+<pre><code class="language-toml">hypothesis = &quot;On synth-1m, realised 1-minute volatility in the 09:30-10:00 New York window is higher than realised 1-minute volatility in the rest of the same session, i.e. the mean over sessions of the per-minute volatility ratio exceeds 1.&quot;
+dataset = &quot;synth-1m&quot;
+start = 2023-01-02
+end = 2025-12-31
+method = &quot;1. Load synth-1m (single symbol SYN), convert ts from UTC to America/New_York so the 09:30 open tracks DST. 2. Assign each bar to a session using the dataset&#39;s 18:00-17:00 NY session: session date = NY calendar date of (ts_ny + 6 hours), so bars from 18:00 belong to the next day&#39;s session. 3. Compute 1-minute log returns r_t = ln(close_t / close_{t-1}) within a session only: drop the first bar of every session (its return spans the 17:00-18:00 break) and drop any return whose bar is at or straddles a contract switch timestamp (all 12 switches fall exactly at 09:30 NY, so the switch-day 09:30 return would otherwise mix two contracts). 4. Window = bars with NY time in [09:30, 10:00) (30 returns, the first being 09:29 close to 09:30 close); rest = every other return in the same session (18:00 previous evening to 16:59, excluding the window). 5. Per session, realised volatility is normalised per minute so the two windows of very different length are comparable: RV_window = sqrt(mean of r^2 over window), RV_rest = sqrt(mean of r^2 over rest). 6. Keep sessions with a full 30-return window (29 on switch days after the drop) and at least 90% of the expected rest returns; report how many sessions are kept and dropped. 7. ratio_s = RV_window / RV_rest per session; open_vol_ratio = mean of ratio_s over kept sessions. Also report the median ratio, the share of sessions with ratio &gt; 1, and mean of ln(ratio_s) as robustness.&quot;
+statistic = &quot;open_vol_ratio&quot;
+significance = &quot;One-sided test of H0: E[ratio_s] &lt;= 1 against H1: E[ratio_s] &gt; 1, using a t-test on the per-session ratios with Newey-West HAC standard errors (lag 5 sessions, to allow for volatility clustering across days), at the 5% level. Robustness: the same one-sided HAC test on ln(ratio_s) &gt; 0.&quot;
+</code></pre>
+</div>
+<h4>Method</h4>
+<p>- Converted bar timestamps from UTC to America/New_York so the 09:30 open follows DST.
+- Assigned bars to the dataset&#39;s 18:00-17:00 NY session. The session date is the NY date of ts + 6h.
+- Computed 1-minute close-to-close log returns within each session only. Dropped the first return of each session, which spans the 17:00-18:00 break.
+- Dropped the return at each of the 12 contract switches. All 12 fall exactly at 09:30 NY, so keeping them would have counted roll jumps as opening volatility.
+- Window = returns at NY 09:30-09:59 (30 returns). Rest = all other returns in the same session, including the overnight hours.
+- Per-minute realised volatility for each part: sqrt(mean r^2). Per-session ratio = RV_window / RV_rest.
+- open_vol_ratio = mean of the ratio over sessions.
+- Significance: a one-sided t-test of mean ratio &gt; 1, with Newey-West HAC standard errors at lag 5 sessions, at the 5% level. Robustness check: the same test on ln(ratio) &gt; 0.
+- One analysis call. An independent critic reviewed it and passed it with no issues.</p>
+<h4>Code</h4>
+<p>Final script: call 1, pass 1.</p>
+<div class="scroll" role="region" aria-label="Code 2" tabindex="0">
+<pre><code class="language-python">
+import numpy as np, pandas as pd, research_io
+from scipy import stats
+df = research_io.load(&quot;synth-1m&quot;)
+df = df[df.symbol==&quot;SYN&quot;].sort_values(&quot;ts&quot;).reset_index(drop=True)
+ny = df.ts.dt.tz_convert(&quot;America/New_York&quot;)
+df[&quot;ny&quot;]=ny
+df[&quot;sess&quot;]=(ny+pd.Timedelta(hours=6)).dt.date
+df[&quot;r&quot;]=np.log(df.close/df.close.shift(1))
+df[&quot;prev_ts&quot;]=df.ts.shift(1)
+df[&quot;first&quot;]=df.sess!=df.sess.shift(1)
+sw = pd.to_datetime([&quot;2023-03-09T14:30:00Z&quot;,&quot;2023-06-08T13:30:00Z&quot;,&quot;2023-09-07T13:30:00Z&quot;,&quot;2023-12-07T14:30:00Z&quot;,&quot;2024-03-07T14:30:00Z&quot;,&quot;2024-06-13T13:30:00Z&quot;,&quot;2024-09-12T13:30:00Z&quot;,&quot;2024-12-12T14:30:00Z&quot;,&quot;2025-03-13T13:30:00Z&quot;,&quot;2025-06-12T13:30:00Z&quot;,&quot;2025-09-11T13:30:00Z&quot;,&quot;2025-12-11T14:30:00Z&quot;],utc=True)
+straddle = df.ts.isin(sw) | (df.contract!=df.contract.shift(1))
+gap = (df.ts-df.prev_ts)!=pd.Timedelta(minutes=1)
+bad = df.first | straddle | gap | df.r.isna()
+d = df[~bad].copy()
+tm = d.ny.dt.hour*60+d.ny.dt.minute
+d[&quot;win&quot;]=(tm&gt;=570)&amp;(tm&lt;600)
+d[&quot;r2&quot;]=d.r**2
+g=d.groupby(&quot;sess&quot;)
+agg=pd.DataFrame({
+ &quot;nw&quot;:g.apply(lambda x:x.win.sum()),
+ &quot;nr&quot;:g.apply(lambda x:(~x.win).sum()),
+ &quot;mw&quot;:g.apply(lambda x:x.r2[x.win].mean()),
+ &quot;mr&quot;:g.apply(lambda x:x.r2[~x.win].mean())})
+swdays = set(sw.tz_convert(&quot;America/New_York&quot;).date)
+agg[&quot;need_w&quot;]=[29 if s in swdays else 30 for s in agg.index]
+all_sess = df.sess.nunique()
+agg=agg[(agg.index&gt;=pd.Timestamp(&quot;2023-01-02&quot;).date())&amp;(agg.index&lt;=pd.Timestamp(&quot;2025-12-31&quot;).date())]
+exp_rest=1349
+keep=(agg.nw&gt;=agg.need_w)&amp;(agg.nr&gt;=0.9*(exp_rest-agg.index.isin(swdays)*0))
+k=agg[keep].copy()
+k[&quot;ratio&quot;]=np.sqrt(k.mw/k.mr)
+k=k.replace([np.inf,-np.inf],np.nan).dropna(subset=[&quot;ratio&quot;])
+def hac(x,mu0,L=5):
+    x=np.asarray(x);n=len(x);e=x-x.mean()
+    s=e@e/n
+    for l in range(1,L+1):
+        s+=2*(1-l/(L+1))*(e[l:]@e[:-l])/n
+    se=np.sqrt(s/n);t=(x.mean()-mu0)/se
+    return x.mean(),se,t,stats.t.sf(t,n-1)
+m,se,t,p=hac(k.ratio,1)
+lm,lse,lt,lp=hac(np.log(k.ratio),0)
+n=len(k)
+res=dict(open_vol_ratio=m,se=se,t=t,p_one_sided=p,median=k.ratio.median(),share_gt1=(k.ratio&gt;1).mean(),
+ mean_log=lm,log_se=lse,log_t=lt,log_p=lp,n_kept=n,n_sessions_total=len(agg),n_dropped=len(agg)-n,
+ ci_low_95_twosided=m-stats.t.ppf(.975,n-1)*se,ci_high_95_twosided=m+stats.t.ppf(.975,n-1)*se,
+ nr_min=int(agg.nr.min()),nr_median=float(agg.nr.median()))
+print(res)
+concl=&quot;supported&quot; if (p&lt;0.05 and m&gt;1) else &quot;not_supported&quot;
+research_io.save_result(res,answer=dict(statistic=&quot;open_vol_ratio&quot;,value=float(m),n=int(n),conclusion=concl,
+ ci=dict(level=0.95,low=float(m-stats.t.ppf(.975,n-1)*se),high=float(m+stats.t.ppf(.975,n-1)*se))))
+</code></pre>
+</div>
+<h4>Results</h4>
+<p>Yes. On synth-1m, realised 1-minute volatility in the first 30 minutes after the 09:30 New York open was about twice that of the rest of the same session. The mean per-session ratio open_vol_ratio is 1.997 (95% CI 1.981 to 2.013, n = 783 sessions). The one-sided Newey-West test rejects H0: ratio &lt;= 1 at the 5% level (t about 122, p &lt; 0.001). Every session had a ratio above 1.</p>
+<ul>
+<li>open_vol_ratio = 1.997180684289427 (n = 783)</li>
+<li>95% interval: [1.9811416053818653, 2.0132197631969886]</li>
+<li>conclusion: supported</li>
+</ul>
+<p>| Measure | Value |
+|---|---|
+| open_vol_ratio (mean ratio) | **1.997** |
+| 95% CI (HAC, t on n-1 df) | 1.981 to 2.013 |
+| Sessions kept / dropped | 783 / 0 |
+| Median ratio | 1.985 |
+| Share of sessions with ratio &gt; 1 | 100% |
+| HAC t-stat (H0: mean ratio &lt;= 1) | about 122, one-sided p &lt; 0.001 |
+| Mean ln(ratio) | 0.683 (t about 164, p &lt; 0.001) |</p>
+<p>Per minute, the opening half-hour is about twice as volatile as the rest of the session. The effect is large, very stable, and present in every session. The hypothesis is supported at the 5% level.</p>
+<h4>Critic findings</h4>
+<p>Review: passed after 1 critic call(s).</p>
+<ul>
+<li>Pass 1: pass</li>
+</ul>
+<h4>Caveats</h4>
+<ul>
+<li>The data is synthetic, generated with seed 20261111. The result describes how the generator models the open, not a real market.</li>
+<li>&#39;Rest of the session&#39; means the full 18:00-17:00 session, including the quiet overnight hours. Comparing with the rest of the cash session only (10:00-16:00) would probably give a smaller ratio.</li>
+<li>The 12 contract-roll returns at 09:30 were excluded, so on roll days the window has 29 returns instead of 30.</li>
+<li>A 100% share of sessions above 1 and a t-stat over 100 are far more uniform than real markets usually are. This probably reflects a deterministic intraday volatility pattern in the generator.</li>
+</ul>
+<h2>Links</h2>
+<ul>
+<li><a href="/projects/research-agent/runs/20261112T163326Z-468489/report.md">Markdown</a></li>
+<li><a href="/projects/research-agent/runs/20261112T163326Z-468489/report.json">JSON</a></li>
+<li><a href="/projects/research-agent">Back to the research agent</a></li>
+</ul>
+<p class="meta">Read and published by Patrick Vieira on 2026-11-12.</p>
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="/privacy">Privacy</a></footer>
+</div>
+</body>
+</html>

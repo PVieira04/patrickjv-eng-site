@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On synth-1m, what is the total log return of the instrument … — Research agent — Patrick Vieira</title>
+<meta name="description" content="Over the whole sample (783 sessions, 2023-01-02 to 2025-12-31), the roll-adjusted total log return of SYN on synth-1m is 0.5658. The mean session log return is…">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://patrickjv.com/projects/research-agent/runs/20261112T165438Z-76a84d/">
+<link rel="alternate" type="text/markdown" href="/projects/research-agent/runs/20261112T165438Z-76a84d/report.md">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="article">
+<meta property="og:title" content="On synth-1m, what is the total log return of the instrument … — Research agent — Patrick Vieira">
+<meta property="og:description" content="Over the whole sample (783 sessions, 2023-01-02 to 2025-12-31), the roll-adjusted total log return of SYN on synth-1m is 0.5658. The mean session log return is…">
+<meta property="og:url" content="https://patrickjv.com/projects/research-agent/runs/20261112T165438Z-76a84d/">
+<meta property="og:image" content="https://patrickjv.com/og-card.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Report",
+  "url": "https://patrickjv.com/projects/research-agent/runs/20261112T165438Z-76a84d/",
+  "headline": "On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).",
+  "about": {
+    "@id": "https://patrickjv.com/projects/research-agent#software"
+  },
+  "datePublished": "2026-11-12",
+  "inLanguage": "en-GB",
+  "author": {
+    "@id": "https://patrickjv.com/#person"
+  }
+}
+</script>
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url(/fonts/ibm-plex-sans-latin-var.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url(/fonts/ibm-plex-mono-latin-400.woff2) format("woff2"); }
+:root { --bg: #f4f3ee; --ink: #14171c; --muted: #535b66; --line: #d9d7cf; --signal: #a64b00; --code: #e9e7e0; --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0c0e11; --ink: #e7e9ec; --muted: #9aa3ae; --line: #262b33; --signal: #ffb547; --code: #1a1e24; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 1.0625rem; line-height: 1.65; }
+.wrap { box-sizing: border-box; max-width: 44rem; margin: 0 auto; padding: 24px 16px 64px; }
+.bar { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 0.875rem; margin-bottom: 40px; }
+a { color: var(--signal); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 2em 0 0.5em; font-weight: 600; }
+.meta { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); margin: 0 0 32px; }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--code); padding: 0.1em 0.3em; border-radius: 3px; }
+pre { background: var(--code); padding: 12px 16px; overflow-x: auto; border-radius: 4px; }
+pre code { padding: 0; background: none; }
+li { margin: 0.35em 0; }
+.posts { list-style: none; padding: 0; }
+.posts li { margin: 0 0 28px; }
+.posts a { font-size: 1.2rem; font-weight: 600; }
+.posts p { margin: 4px 0 0; color: var(--muted); }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 0.875rem; color: var(--muted); }
+
+:root { --line-strong: #b9b6ab; }
+@media (prefers-color-scheme: dark) { :root { --line-strong: #3a414c; } }
+.bar { flex-wrap: wrap; }
+main { overflow-wrap: anywhere; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+h3 { font-size: 1.0625rem; margin: 1.5em 0 0.4em; font-weight: 600; }
+.lead { font-size: 1.125rem; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 0 0 16px; }
+.facts dt { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); padding-top: 0.15em; }
+.facts dd { margin: 0; }
+@media (max-width: 480px) { .facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .facts dd { margin-bottom: 8px; } }
+.scroll { max-width: 100%; overflow-x: auto; margin: 0 0 16px; }
+.scroll pre { margin: 0; overflow: visible; }
+.scroll table { overflow-wrap: normal; }
+table { border-collapse: collapse; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+thead th { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
+.cards { list-style: none; padding: 0; }
+.cards > li { margin: 0; padding: 16px 0; border-top: 1px solid var(--line); }
+.cards h3 { margin: 0 0 8px; }
+.issues li { margin: 0.5em 0; }
+.tag { font-weight: 600; }
+figure { margin: 0 0 24px; }
+img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); }
+.arch { display: block; width: 100%; max-width: 30rem; height: auto; margin: 8px auto 24px; }
+.arch .box { fill: var(--code); stroke: var(--line-strong); }
+.arch .out { stroke-dasharray: 5 4; }
+.arch .layer { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.arch .hl { fill: none; stroke: var(--signal); stroke-width: 2; }
+.arch .edge { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.arch .head { fill: var(--muted); }
+.arch text { fill: var(--ink); font-family: var(--mono); font-size: 14px; }
+.arch .small { fill: var(--muted); font-size: 12.5px; }
+.arch .note { fill: none; stroke: var(--muted); stroke-dasharray: 1 3; stroke-linecap: round; stroke-width: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="bar" aria-label="Site"><a href="/">← patrickjv.com</a><a href="/projects/">Projects</a></nav>
+<main>
+<h1>On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).</h1>
+<dl class="facts">
+<dt>Finished</dt><dd>2026-11-12</dd>
+<dt>Harness</dt><dd>Claude Code harness</dd>
+<dt>Models</dt><dd>planner claude-code:claude-opus-5-5, analyst claude-code:claude-sonnet-5-5, critic claude-code:claude-opus-5-5</dd>
+<dt>Status</dt><dd>Completed</dd>
+<dt>Review</dt><dd>Passed review</dd>
+<dt>Dataset</dt><dd>synth-1m (synthetic)</dd>
+</dl>
+<p>Every result on this page is on a seeded synthetic dataset with planted effects and traps, not on market data.</p>
+<h2>Plan</h2>
+<dl class="facts">
+<dt>Hypothesis</dt><dd>The mean session log return of the roll-adjusted SYN front-month future on synth-1m differs from zero.</dd>
+<dt>Dataset</dt><dd>synth-1m</dd>
+<dt>Window</dt><dd>2023-01-02 to 2025-12-31</dd>
+<dt>Method</dt><dd>Load synth-1m (symbol SYN). Convert ts from UTC to America/New_York and assign each bar to a trading session: the session runs 18:00 to 17:00 New York time, and a bar at or after 18:00 belongs to the next calendar day's session date. Keep sessions dated 2023-01-02 to 2025-12-31. Sort by ts and compute 1-minute log returns ln(close_t / close_{t-1}) only between consecutive bars of the same contract; the return across each of the 12 contract switches (a roll, not a price move) is dropped, so the series is roll-adjusted. Also drop the return across each session break (17:00 to 18:00) only if the two bars belong to different contracts; otherwise keep it in the session it lands in, so returns sum to the whole-sample move. Session log return = sum of the bar log returns assigned to that session. total_log_return = sum of all session log returns over the sample (equivalently the sum of within-contract bar log returns). Report total_log_return, the number of sessions, the mean and standard deviation of session log returns, and the unadjusted ln(last close / first close) for comparison, which includes the roll gaps.</dd>
+<dt>Statistic</dt><dd>total_log_return</dd>
+<dt>Significance</dt><dd>Two-sided test of mean session log return = 0 at the 5% level: Newey-West HAC t-test on the session log returns with lag 5 (sessions do not overlap; the lag guards against mild serial correlation), with the plain one-sample t-test reported alongside.</dd>
+</dl>
+<h2>Critic</h2>
+<p>Review: Passed review</p>
+<p>The critic left no open issues.</p>
+<h2>Report</h2>
+<h3>Research report 20261112T165438Z-76a84d</h3>
+<p>Status: completed. Harness: claude-code. Dataset: synth-1m.</p>
+<h4>Question</h4>
+<p>On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).</p>
+<h4>Plan</h4>
+<div class="scroll" role="region" aria-label="Code 1" tabindex="0">
+<pre><code class="language-toml">hypothesis = &quot;The mean session log return of the roll-adjusted SYN front-month future on synth-1m differs from zero.&quot;
+dataset = &quot;synth-1m&quot;
+start = 2023-01-02
+end = 2025-12-31
+method = &quot;Load synth-1m (symbol SYN). Convert ts from UTC to America/New_York and assign each bar to a trading session: the session runs 18:00 to 17:00 New York time, and a bar at or after 18:00 belongs to the next calendar day&#39;s session date. Keep sessions dated 2023-01-02 to 2025-12-31. Sort by ts and compute 1-minute log returns ln(close_t / close_{t-1}) only between consecutive bars of the same contract; the return across each of the 12 contract switches (a roll, not a price move) is dropped, so the series is roll-adjusted. Also drop the return across each session break (17:00 to 18:00) only if the two bars belong to different contracts; otherwise keep it in the session it lands in, so returns sum to the whole-sample move. Session log return = sum of the bar log returns assigned to that session. total_log_return = sum of all session log returns over the sample (equivalently the sum of within-contract bar log returns). Report total_log_return, the number of sessions, the mean and standard deviation of session log returns, and the unadjusted ln(last close / first close) for comparison, which includes the roll gaps.&quot;
+statistic = &quot;total_log_return&quot;
+significance = &quot;Two-sided test of mean session log return = 0 at the 5% level: Newey-West HAC t-test on the session log returns with lag 5 (sessions do not overlap; the lag guards against mild serial correlation), with the plain one-sample t-test reported alongside.&quot;
+</code></pre>
+</div>
+<h4>Method</h4>
+<p>- Loaded synth-1m (symbol SYN, 1-minute bars of a continuous front-month future).
+- Converted timestamps from UTC to America/New_York. Assigned each bar to an 18:00–17:00 session: a bar at or after 18:00 belongs to the next calendar day&#39;s session.
+- Computed 1-minute log returns ln(close_t / close_{t-1}) only between consecutive bars of the same contract. Dropped the 12 returns that cross a contract switch (rolls, not price moves), which gives a roll-adjusted series.
+- Session log return = the sum of the bar returns in that session. `total_log_return` = the sum over all sessions.
+- Tested mean session log return = 0, two-sided at 5%, with a Newey-West HAC t-test (lag 5), and reported the plain one-sample t-test alongside.
+- One analysis pass. The independent critic passed it with no open issues.</p>
+<h4>Code</h4>
+<p>Final script: call 1, pass 1.</p>
+<div class="scroll" role="region" aria-label="Code 2" tabindex="0">
+<pre><code class="language-python">
+import numpy as np, pandas as pd, research_io
+from scipy import stats
+df = research_io.load(&quot;synth-1m&quot;)
+df = df[df.symbol==&quot;SYN&quot;].sort_values(&quot;ts&quot;).reset_index(drop=True)
+ny = df.ts.dt.tz_convert(&quot;America/New_York&quot;)
+sd = ny.dt.normalize().dt.tz_localize(None)
+sd = sd.where(ny.dt.hour&lt;18, sd+pd.Timedelta(days=1))
+df[&quot;sess&quot;]=sd
+keep = (df.sess&gt;=pd.Timestamp(&quot;2023-01-02&quot;))&amp;(df.sess&lt;=pd.Timestamp(&quot;2025-12-31&quot;))
+df = df[keep].reset_index(drop=True)
+r = np.log(df.close/df.close.shift(1))
+same = df.contract==df.contract.shift(1)
+valid = same &amp; r.notna()
+dropped = int((~same &amp; r.notna()).sum())
+s = r[valid].groupby(df.sess[valid]).sum()
+n=len(s); x=s.values; m=x.mean(); sdv=x.std(ddof=1)
+total=x.sum()
+# Newey-West lag 5 on mean
+L=5; e=x-m
+g0=(e*e).sum()/n
+lrv=g0
+for l in range(1,L+1):
+    w=1-l/(L+1)
+    lrv+=2*w*(e[l:]*e[:-l]).sum()/n
+se_nw=np.sqrt(lrv/n); t_nw=m/se_nw; p_nw=2*(1-stats.t.cdf(abs(t_nw),n-1))
+t,p=stats.ttest_1samp(x,0)
+unadj=float(np.log(df.close.iloc[-1]/df.close.iloc[0]))
+res=dict(total_log_return=float(total),n_sessions=n,mean=float(m),sd=float(sdv),unadjusted=unadj,
+ dropped_returns=dropped,se_nw=float(se_nw),t_nw=float(t_nw),p_nw=float(p_nw),t_plain=float(t),p_plain=float(p))
+print(res)
+concl=&quot;supported&quot; if p_nw&lt;0.05 else &quot;not_supported&quot;
+ci=dict(level=0.95,low=float(total-1.96*se_nw*n),high=float(total+1.96*se_nw*n))
+research_io.save_result(res,answer=dict(statistic=&quot;total_log_return&quot;,value=float(total),n=n,conclusion=concl,ci=ci))
+</code></pre>
+</div>
+<h4>Results</h4>
+<p>Over the whole sample (783 sessions, 2023-01-02 to 2025-12-31), the roll-adjusted total log return of SYN on synth-1m is 0.5658. The mean session log return is 0.000723, and it differs from zero at the 5% level: Newey-West HAC t = 5.20 (p ≈ 2.6e-7), plain t = 4.93 (p ≈ 1.0e-6). The hypothesis is supported. Without the roll adjustment, ln(last/first close) is 0.8073; the 12 contract-roll gaps account for the difference of about 0.24.</p>
+<ul>
+<li>total_log_return = 0.5658025231146101 (n = 783)</li>
+<li>95% interval: [0.3524232071175124, 0.7791818391117078]</li>
+<li>conclusion: supported</li>
+</ul>
+<p>| Quantity | Value |
+|---|---|
+| `total_log_return` (roll-adjusted) | **0.5658** |
+| 95% interval for the total (HAC SE, normal) | 0.352 to 0.779 |
+| Sessions | 783 |
+| Mean session log return | 0.000723 |
+| SD of session log return | 0.00410 |
+| HAC t (lag 5) / p | 5.20 / ≈2.6e-7 |
+| Plain t / p | 4.93 / ≈1.0e-6 |
+| Unadjusted ln(last close / first close) | 0.8073 |
+| Returns dropped at contract switches | 12 |</p>
+<p>The instrument&#39;s own price move over the sample is about +0.566 in log terms, roughly +76% compounded. The mean session return is clearly positive: both tests reject zero at far below the 5% level. The naive first-to-last close figure (0.807) overstates the return, because it counts the price jumps at the 12 contract rolls as gains.</p>
+<h4>Critic findings</h4>
+<p>Review: passed after 1 critic call(s).</p>
+<ul>
+<li>Pass 1: pass</li>
+</ul>
+<h4>Caveats</h4>
+<ul>
+<li>The data is synthetic (generator seed 20261111), so the result describes the generator, not a real market.</li>
+<li>The headline figure depends on the roll treatment. Dropping the roll-crossing returns is one standard convention; a ratio back-adjustment would give the same total log return, but a difference back-adjustment would not.</li>
+<li>The 95% interval for the total scales the Newey-West standard error of the mean by the number of sessions and uses a normal 1.96 multiplier; it is an approximation.</li>
+<li>The HAC lag of 5 was chosen in advance and not tuned. The plain t-test agrees, so the conclusion does not hinge on it.</li>
+</ul>
+<h2>Links</h2>
+<ul>
+<li><a href="/projects/research-agent/runs/20261112T165438Z-76a84d/report.md">Markdown</a></li>
+<li><a href="/projects/research-agent/runs/20261112T165438Z-76a84d/report.json">JSON</a></li>
+<li><a href="/projects/research-agent">Back to the research agent</a></li>
+</ul>
+<p class="meta">Read and published by Patrick Vieira on 2026-11-12.</p>
+</main>
+<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="/privacy">Privacy</a></footer>
+</div>
+</body>
+</html>

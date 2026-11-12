@@ -76,7 +76,45 @@ Nothing reaches this page straight from a run. A publish command checks a finish
 
 ## Recorded runs
 
-No published runs yet.
+### On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.
+
+- Harness: Claude Code harness
+- Status: Completed
+- Review: Passed review
+- Shows: The critic caught a planted trap
+- Markdown: https://patrickjv.com/projects/research-agent/runs/20261112T165943Z-8eb45f/report.md
+- Read the run: https://patrickjv.com/projects/research-agent/runs/20261112T165943Z-8eb45f/
+- Read and published by Patrick Vieira on 2026-11-12.
+
+### On synth-1m, do Monday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Mondays as the statistic `monday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.
+
+- Harness: Claude Code harness
+- Status: Rejected
+- Review: Not reviewed
+- Shows: A rejected plan
+- Markdown: https://patrickjv.com/projects/research-agent/runs/20261112T165719Z-a93bec/report.md
+- Read the run: https://patrickjv.com/projects/research-agent/runs/20261112T165719Z-a93bec/
+- Read and published by Patrick Vieira on 2026-11-12.
+
+### On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).
+
+- Harness: Claude Code harness
+- Status: Completed
+- Review: Passed review
+- Shows: A clean pass
+- Markdown: https://patrickjv.com/projects/research-agent/runs/20261112T165438Z-76a84d/report.md
+- Read the run: https://patrickjv.com/projects/research-agent/runs/20261112T165438Z-76a84d/
+- Read and published by Patrick Vieira on 2026-11-12.
+
+### On synth-1m, is realised 1-minute volatility higher in the first 30 minutes after the 09:30 New York cash open than in the rest of the same session? Report the mean over sessions of the ratio of realised volatility in that window to realised volatility in the rest of the session as the statistic `open_vol_ratio`, and test the hypothesis that the window is more volatile at the 5% level.
+
+- Harness: Claude Code harness
+- Status: Completed
+- Review: Passed review
+- Shows: A clean pass
+- Markdown: https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/report.md
+- Read the run: https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/
+- Read and published by Patrick Vieira on 2026-11-12.
 
 ## How it was built
 

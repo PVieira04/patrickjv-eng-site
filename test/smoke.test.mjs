@@ -322,7 +322,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, existsSync } fro
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { build } from "../build.mjs";
-import { report, scorecard, dump, sha, png } from "./projects-helpers.mjs";
+import { report, scorecard, dump, sha, png, clearRecorded } from "./projects-helpers.mjs";
 
 const TODAY = "2026-11-12";
 const RUN_A = "20261111T140100Z-000001", RUN_B = "20261111T140200Z-000002";
@@ -345,6 +345,7 @@ function projectsSite({ launched = false } = {}) {
   const root = join(base, "site");
   mkdirSync(root);
   for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public", "projects", "smoke.mjs", "lib"]) cpSync(join(ROOT, f), join(root, f), { recursive: true });
+  clearRecorded(root);
   const put = (f, b) => { mkdirSync(dirname(join(root, f)), { recursive: true }); writeFileSync(join(root, f), b); };
   const m = { manifest_version: "1.0.0", runs: {} };
   for (const [id, figures] of [[RUN_A, {}], [RUN_B, { [FIG_1]: png({ width: 40, height: 30 }), [FIG_2]: png({ width: 20, height: 10 }) }]]) {
