@@ -1,0 +1,925 @@
+{
+  "aggregate": {
+    "score": 0.9,
+    "se": 0.05532833351724882
+  },
+  "created_at": "2026-11-12T21:04:14Z",
+  "dropped": [
+    "excluded_runs",
+    "fingerprint.config.claude_code_versions",
+    "fingerprint.config.git.commit",
+    "fingerprint.config.git.dirty",
+    "fingerprint.config.models.planners",
+    "fingerprint.config.prompts",
+    "fingerprint.config.questions_sha256",
+    "fingerprint.sha256",
+    "questions[].invalid_reports",
+    "questions[].run_ids"
+  ],
+  "eval_id": "eval-20261112T210414Z",
+  "fingerprint": {
+    "config": {
+      "caps": {
+        "analyst_max_turns": 20,
+        "critic_max_turns": 10,
+        "max_critic_calls": 3,
+        "max_pass_tool_calls": 15,
+        "max_run_tokens": null,
+        "max_run_tool_calls": 40
+      },
+      "harness": "claude-code",
+      "models": {
+        "analyst": "claude-code:claude-sonnet-5-5",
+        "critic": "claude-code:claude-opus-5-5"
+      },
+      "package_version": "0.1.0",
+      "seed": 20261111
+    }
+  },
+  "k": 5,
+  "questions": [
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "open_vol_uplift",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": 5,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "open_vol_uplift_pct_change",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": 5,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "open_vol_uplift_15m",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": 5,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 0,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "afternoon_vol_ratio",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": null,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "tuesday_drift",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": null,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "thursday_drift",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": 5,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "monday_drift",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": null,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "total_return",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": 5,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "return_2024",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": 5,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 5,
+      "critic_precision": {
+        "n": 0,
+        "x": 0
+      },
+      "id": "largest_session_move",
+      "n_repeats": 5,
+      "other_issues": {},
+      "statistic_mismatches": [],
+      "trap_handled": 5,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    }
+  ],
+  "runs": [
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift",
+      "run_id": "20261112T193820Z-2ad1e8",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift",
+      "run_id": "20261112T195652Z-2127e3",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift",
+      "run_id": "20261112T201339Z-ced480",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift",
+      "run_id": "20261112T203057Z-c9b02b",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift",
+      "run_id": "20261112T204849Z-5e06e5",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_pct_change",
+      "run_id": "20261112T194037Z-588971",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_pct_change",
+      "run_id": "20261112T195836Z-26db1f",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_pct_change",
+      "run_id": "20261112T201608Z-bc8642",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_pct_change",
+      "run_id": "20261112T203253Z-faafed",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_pct_change",
+      "run_id": "20261112T205033Z-5f5dcf",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_15m",
+      "run_id": "20261112T194221Z-19a536",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_15m",
+      "run_id": "20261112T200036Z-ab4acc",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_15m",
+      "run_id": "20261112T201752Z-7f82ef",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_15m",
+      "run_id": "20261112T203438Z-27d0ec",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open_vol_uplift_15m",
+      "run_id": "20261112T205221Z-1610a1",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "afternoon_vol_ratio",
+      "run_id": "20261112T194414Z-b9fb5b",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "afternoon_vol_ratio",
+      "run_id": "20261112T200229Z-efcd61",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "afternoon_vol_ratio",
+      "run_id": "20261112T201943Z-09f827",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "afternoon_vol_ratio",
+      "run_id": "20261112T203626Z-d8ada8",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "afternoon_vol_ratio",
+      "run_id": "20261112T205401Z-dd1d88",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "tuesday_drift",
+      "run_id": "20261112T194546Z-acf9d4",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "tuesday_drift",
+      "run_id": "20261112T200405Z-36b743",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "tuesday_drift",
+      "run_id": "20261112T202120Z-58cd02",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "tuesday_drift",
+      "run_id": "20261112T203758Z-12ca21",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "tuesday_drift",
+      "run_id": "20261112T205530Z-00b278",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "thursday_drift",
+      "run_id": "20261112T194714Z-bb5ea1",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "thursday_drift",
+      "run_id": "20261112T200541Z-be6b72",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "thursday_drift",
+      "run_id": "20261112T202252Z-69fe09",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "thursday_drift",
+      "run_id": "20261112T203955Z-0b940c",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "thursday_drift",
+      "run_id": "20261112T205702Z-879add",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "monday_drift",
+      "run_id": "20261112T194843Z-42fc06",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "monday_drift",
+      "run_id": "20261112T200718Z-ee2c0c",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "monday_drift",
+      "run_id": "20261112T202420Z-139ba3",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "monday_drift",
+      "run_id": "20261112T204119Z-acf6fb",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "monday_drift",
+      "run_id": "20261112T205834Z-0b6286",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "total_return",
+      "run_id": "20261112T195011Z-2c2bcf",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "total_return",
+      "run_id": "20261112T200854Z-fbe317",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "total_return",
+      "run_id": "20261112T202549Z-927c1a",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "total_return",
+      "run_id": "20261112T204243Z-e8fe8b",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "total_return",
+      "run_id": "20261112T210007Z-947da2",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "return_2024",
+      "run_id": "20261112T195155Z-5533e8",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "return_2024",
+      "run_id": "20261112T201027Z-f04cf5",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "return_2024",
+      "run_id": "20261112T202725Z-3a972a",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "return_2024",
+      "run_id": "20261112T204428Z-7afc9c",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "return_2024",
+      "run_id": "20261112T210139Z-f473eb",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "largest_session_move",
+      "run_id": "20261112T195504Z-df9b47",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "largest_session_move",
+      "run_id": "20261112T201159Z-860987",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "largest_session_move",
+      "run_id": "20261112T202901Z-c333ab",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "largest_session_move",
+      "run_id": "20261112T204708Z-2c3f88",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-1m",
+        "source": "synthetic:research_agent.data.synth seed=20261111",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "largest_session_move",
+      "run_id": "20261112T210310Z-f29d9f",
+      "status": "completed"
+    }
+  ],
+  "scorecard_version": "1.0.0"
+}

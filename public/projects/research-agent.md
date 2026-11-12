@@ -74,6 +74,28 @@ The eval asks each question from a fixed set several times. The data is a seeded
 
 Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips metadata chunks from figures. This site then records a person's check of each export, with a hash of every file, before the build will use it.
 
+## Eval scorecard
+
+- Date: 2026-11-12
+- Repeats per question: 5
+- Harness: Claude Code harness (50)
+- Models: analyst claude-code:claude-sonnet-5-5, critic claude-code:claude-opus-5-5
+- Seed: 20261111
+- Aggregate: 0.90 ± 0.06
+
+| Question | Correct | Trap recall | Critic precision |
+|---|---|---|---|
+| open_vol_uplift | 5 / 5 | n/a | n/a |
+| open_vol_uplift_pct_change | 5 / 5 | n/a | n/a |
+| open_vol_uplift_15m | 5 / 5 | n/a | n/a |
+| afternoon_vol_ratio | 0 / 5 | n/a | n/a |
+| tuesday_drift | 5 / 5 | n/a | n/a |
+| thursday_drift | 5 / 5 | n/a | n/a |
+| monday_drift | 5 / 5 | n/a | n/a |
+| total_return | 5 / 5 | n/a | n/a |
+| return_2024 | 5 / 5 | n/a | n/a |
+| largest_session_move | 5 / 5 | n/a | n/a |
+
 ## Recorded runs
 
 ### On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.

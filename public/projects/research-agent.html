@@ -212,6 +212,34 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <h3>Publishing</h3>
 <p>Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips metadata chunks from figures. This site then records a person's check of each export, with a hash of every file, before the build will use it.</p>
 </section>
+<section aria-labelledby="scorecard-h">
+<h2 id="scorecard-h">Eval scorecard</h2>
+<dl class="facts">
+<dt>Date</dt><dd>2026-11-12</dd>
+<dt>Repeats per question</dt><dd>5</dd>
+<dt>Harness</dt><dd>Claude Code harness (50)</dd>
+<dt>Models</dt><dd>analyst claude-code:claude-sonnet-5-5, critic claude-code:claude-opus-5-5</dd>
+<dt>Seed</dt><dd>20261111</dd>
+<dt>Aggregate</dt><dd>0.90 ± 0.06</dd>
+</dl>
+<div class="scroll" role="region" aria-label="Eval scorecard" tabindex="0">
+<table>
+<thead><tr><th scope="col">Question</th><th scope="col">Correct</th><th scope="col">Trap recall</th><th scope="col">Critic precision</th></tr></thead>
+<tbody>
+<tr><th scope="row">open_vol_uplift</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">open_vol_uplift_pct_change</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">open_vol_uplift_15m</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">afternoon_vol_ratio</th><td>0 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">tuesday_drift</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">thursday_drift</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">monday_drift</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">total_return</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">return_2024</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+<tr><th scope="row">largest_session_move</th><td>5 / 5</td><td>n/a</td><td>n/a</td></tr>
+</tbody>
+</table>
+</div>
+</section>
 <section aria-labelledby="runs-h">
 <h2 id="runs-h">Recorded runs</h2>
 <ul class="cards">
