@@ -217,10 +217,11 @@ test("F-005 (US-1, US-2): /projects/ and /projects/research-agent have the secti
     assert.deepEqual(headings(out(s, SHOWCASE)), [
       `h1 ${sh.heading}`, `h2 ${sh.what_heading}`, `h2 ${sh.architecture_heading}`, ...sh.architecture.map((a) => `h3 ${a.heading}`),
       `h2 ${P.labels.scorecard.heading}`, `h2 ${sh.runs_heading}`, `h3 ${report().question}`, `h2 ${sh.built_heading}`,
+      `h2 ${sh.next_heading}`, ...sh.next.map((n) => `h3 ${n.heading}`),
     ]);
     const lead = visible(body(out(s, SHOWCASE)).match(/<p class="lead">[\s\S]*?<\/p>\s*<p>([\s\S]*?)<\/p>/)[1]);
-    assert.equal(lead, sh.code, "the lead, then 'Code available on request'");
-    assert.match(body(out(s, SHOWCASE)), /<a href="\/book">book a call<\/a>/);
+    assert.equal(lead, sh.code, "the lead, then 'The code is available on request'");
+    assert.ok(body(out(s, SHOWCASE)).includes(`<a href="/book">${sh.code_link}</a>`));
     assert.match(body(out(s, SHOWCASE)), /<footer>Patrick Vieira · <a href="\/">patrickjv.com<\/a>/);
     assert.deepEqual(headings(out(s, "projects/index.html")), [`h1 ${P.copy.index.heading}`]);
     const ix = body(out(s, "projects/index.html"));
@@ -834,7 +835,7 @@ test("F-005 (D4): --check reports the /projects outputs stale when a source chan
     for (const [what, fn, want] of [
       ["copy", () => change("content.json", (t) => t.replace(`"${P.copy.showcase.built_heading}"`, '"How I built it"')), "public/projects/research-agent.html"],
       ["a label", () => change("content.json", (t) => t.replace(`"${P.labels.run.finished}"`, '"Ended"')), page],
-      ["the SVG", () => change("projects/research-agent/architecture.svg", (t) => t.replace(">Plan<", ">The plan<")), "public/projects/research-agent.html"],
+      ...DIAGRAMS.map((d) => [d.file, () => change(d.file, (t) => t.replace("</title>", " changed</title>")), "public/projects/research-agent.html"]),
       ["alt text", () => change(MANIFEST, (t) => t.replace("Synthetic chart 1.", "A changed alt text.")), page],
     ]) {
       fn();
@@ -847,7 +848,7 @@ test("F-005 (D4): --check reports the /projects outputs stale when a source chan
 });
 
 // ---- The SVG guard (D1) ----
-import { checkSvg, gzipSize, GZIP_CAP, gzipCapErrors } from "../build.mjs";
+import { checkSvg, gzipSize, GZIP_CAP, gzipCapErrors, DIAGRAMS } from "../build.mjs";
 
 test("F-005 (D1): the architecture SVG passes the SVG guard, and each banned element, attribute or reference fails it", () => {
   const svg = readFileSync(join(ROOT, "projects/research-agent/architecture.svg"), "utf8");
@@ -889,6 +890,13 @@ test("F-005 (D1): a failing SVG guard fails the build", () => {
     assert.ok(r.errors.some((e) => /architecture\.svg: <script> is not allowed/.test(e)), r.errors.join("\n"));
     rmSync(f);
     assert.ok(publish(s, []).errors.some((e) => /architecture\.svg is missing/.test(e)));
+    cpSync(join(ROOT, "projects/research-agent/architecture.svg"), f);
+    ok(publish(s, []));
+    for (const d of DIAGRAMS) {
+      rmSync(join(s.root, d.file));
+      assert.ok(publish(s, []).errors.some((e) => e.includes(`${d.file} is missing`)), d.file);
+      cpSync(join(ROOT, d.file), join(s.root, d.file));
+    }
   } finally { s.done(); }
 });
 
@@ -1057,7 +1065,7 @@ test("F-005: the showcase copy makes only claims the research-agent specs suppor
     [/In the eval, plans are approved/i, "only the LangGraph eval approves automatically; harness eval runs (F-001d) are approved by a person"],
   ]) assert.doesNotMatch(text, claim, why);
   assert.doesNotMatch(text, /has seen the plan/, "the harness's permission prompt shows the code, not the plan");
-  assert.match(text, /No analysis code runs without a person's approval/);
+  assert.match(text, /No analysis code runs until a person approves it\./);
   assert.match(text, /pauses for the plan to be approved/, "F-001b's approval interrupt");
   assert.match(text, /asks permission before every analysis call/, "F-001d's prompt per run_analysis call");
   assert.match(text, /In the LangGraph eval, plans are approved automatically\./, "F-001c");
@@ -1085,4 +1093,84 @@ test("F-005 (D1, D10): a run recorded with --record and built gets its exact CSP
     assert.deepEqual(checkHeaders(out(s, "_headers")), []);
     ok(build({ root: s.root, check: true, now: NOW }));
   } finally { s.done(); }
+});
+
+// ---- The architecture diagrams and the "With more time" section ----
+const SVG_FILES = ["projects/research-agent/components.svg", "projects/research-agent/architecture.svg", "projects/research-agent/sandbox.svg"];
+const svgText = (svg, tag) => decodeEntities(svg.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))[1].trim());
+
+test("F-005: the showcase has three diagrams — the components, the graph's flow and the sandbox's layers — each passing the SVG guard", () => {
+  assert.deepEqual(DIAGRAMS.map((d) => d.file).sort(), [...SVG_FILES].sort());
+  for (const f of SVG_FILES) assert.deepEqual(checkSvg(readFileSync(join(ROOT, f), "utf8"), f), [], f);
+  const where = Object.fromEntries(DIAGRAMS.map((d) => [d.file, d.after]));
+  assert.equal(where["projects/research-agent/components.svg"], "intro", "the component view opens the architecture section");
+  for (const d of DIAGRAMS) if (d.after !== "intro") assert.ok(Number.isInteger(d.after) && d.after >= 0 && d.after < P.copy.showcase.architecture.length, d.file);
+});
+
+test("F-005: the SVG guard requires a text alternative — a non-empty <desc> after the <title>, named by aria-labelledby and aria-describedby", () => {
+  const svg = readFileSync(join(ROOT, "projects/research-agent/sandbox.svg"), "utf8");
+  assert.deepEqual(checkSvg(svg), []);
+  for (const [what, x] of Object.entries({
+    "no <desc>": svg.replace(/<desc[^>]*>[\s\S]*?<\/desc>/, ""),
+    "an empty <desc>": svg.replace(/<desc([^>]*)>[\s\S]*?<\/desc>/, "<desc$1> </desc>"),
+    "no aria-labelledby": svg.replace(/ aria-labelledby="[^"]*"/, ""),
+    "aria-labelledby not the title's id": svg.replace(/ aria-labelledby="[^"]*"/, ' aria-labelledby="nothing"'),
+    "no aria-describedby": svg.replace(/ aria-describedby="[^"]*"/, ""),
+    "aria-describedby not the desc's id": svg.replace(/ aria-describedby="[^"]*"/, ' aria-describedby="nothing"'),
+  })) assert.ok(checkSvg(x).some((e) => /desc|aria-/.test(e)), what);
+});
+
+test("F-005: each diagram is inlined in its place on the showcase, ids are unique on the page, and the Markdown twin carries each diagram's text alternative", () => {
+  const s = site();
+  try {
+    ok(publish(s, []));
+    const html = body(out(s, SHOWCASE));
+    const arch = html.slice(html.indexOf('<h2 id="arch-h">'), html.indexOf("</section>", html.indexOf('<h2 id="arch-h">')));
+    const sh = P.copy.showcase;
+    for (const d of DIAGRAMS) {
+      const svg = readFileSync(join(ROOT, d.file), "utf8").trim();
+      const at = arch.indexOf(svg);
+      assert.ok(at > 0, `${d.file} is inlined in the architecture section`);
+      if (d.after === "intro") {
+        assert.ok(at < arch.indexOf("<h3>"), `${d.file} comes before the first subsection`);
+        assert.ok(arch.indexOf(sh.architecture_intro[0]) < at, `${d.file} follows the intro`);
+      } else {
+        const h = arch.indexOf(`<h3>${sh.architecture[d.after].heading}</h3>`);
+        const next = sh.architecture[d.after + 1] ? arch.indexOf(`<h3>${sh.architecture[d.after + 1].heading}</h3>`) : arch.length;
+        assert.ok(h >= 0 && h < at && at < next, `${d.file} sits in subsection ${d.after}`);
+      }
+    }
+    const ids = [...out(s, SHOWCASE).matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(ids.filter((x, i) => ids.indexOf(x) !== i), [], "no duplicate id");
+    const md = out(s, "projects/research-agent.md");
+    for (const d of DIAGRAMS) {
+      const svg = readFileSync(join(ROOT, d.file), "utf8");
+      assert.ok(md.includes(`Diagram: ${svgText(svg, "title")}`), `${d.file} title in the Markdown`);
+      assert.ok(md.includes(svgText(svg, "desc")), `${d.file} desc in the Markdown`);
+    }
+    for (const t of sh.architecture_intro) assert.ok(md.includes(t));
+    for (const a of sh.architecture) { assert.ok(md.includes(`### ${a.heading}`)); for (const t of a.text) assert.ok(md.includes(t), t); }
+    assert.ok(md.includes(`## ${sh.next_heading}\n\n${sh.next_intro}`));
+    for (const n of sh.next) assert.ok(md.includes(`### ${n.heading}\n\n${n.text}`), n.heading);
+    assert.ok(md.indexOf(`## ${sh.built_heading}`) < md.indexOf(`## ${sh.next_heading}`));
+  } finally { s.done(); }
+});
+
+test("F-005: a duplicate id across the inlined diagrams fails the build", () => {
+  const s = site();
+  try {
+    const f = join(s.root, "projects/research-agent/sandbox.svg");
+    const graph = readFileSync(join(ROOT, "projects/research-agent/architecture.svg"), "utf8");
+    const id = graph.match(/<marker id="([^"]+)"/)[1];
+    writeFileSync(f, readFileSync(f, "utf8").replace(/<marker id="[^"]+"/, `<marker id="${id}"`));
+    const r = publish(s, []);
+    assert.ok(r.errors.some((e) => e.includes(`duplicate id "${id}"`)), r.errors.join("\n"));
+  } finally { s.done(); }
+});
+
+test("F-005: the 'With more time' section claims no results and quotes no scores", () => {
+  const sh = P.copy.showcase;
+  const text = [sh.next_intro, ...sh.next.flatMap((n) => [n.heading, n.text])].join("\n");
+  assert.doesNotMatch(text, /\d+\s*%|\d+\s*\/\s*\d+|scored? \d/, "no scorecard numbers");
+  assert.ok(sh.next.length >= 5);
 });

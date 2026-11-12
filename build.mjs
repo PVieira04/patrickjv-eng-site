@@ -983,11 +983,19 @@ const pageCsp = (ic, formAction = "'none'") => [
 
 // ---------------------------------------------------------------------------------------------
 // F-005: the /projects pages. The copy is content.json pages.projects (D5); the published runs and
-// scorecard are what the manifest governs (lib/projects.mjs); architecture.svg is inlined after
-// the SVG guard. Every page gets the writing pages' inline-code guards, the 30 KB gzip cap, the
+// scorecard are what the manifest governs (lib/projects.mjs); the diagrams (DIAGRAMS) are inlined
+// after the SVG guard. Every page gets the writing pages' inline-code guards, the 30 KB gzip cap, the
 // output scan, the employer denylist and .denylist.local, on its source and its visible text.
 // ---------------------------------------------------------------------------------------------
 export const ARCHITECTURE_SVG = `${PROJECT}/architecture.svg`;
+// The showcase's hand-written diagrams and where each is inlined in the architecture section:
+// "intro" after copy.showcase.architecture_intro, or an index n at the end of the subsection
+// copy.showcase.architecture[n].
+export const DIAGRAMS = [
+  { file: `${PROJECT}/components.svg`, after: "intro" },
+  { file: ARCHITECTURE_SVG, after: 0 },
+  { file: `${PROJECT}/sandbox.svg`, after: 3 },
+];
 export const GZIP_CAP = 30_720;
 export const gzipSize = (html) => gzipSync(Buffer.from(html, "utf8"), { level: 9 }).length;
 export function gzipCapErrors(name, html) {
@@ -995,24 +1003,29 @@ export function gzipCapErrors(name, html) {
   return z > GZIP_CAP ? [`${name} is ${z.toLocaleString("en-GB")} bytes gzipped, over the ${GZIP_CAP.toLocaleString("en-GB")}-byte cap (F-005: shorten the report, or don't publish it)`] : [];
 }
 
-// The SVG guard: role="img" on the root, whose first element child is a non-empty <title>; only
+// The SVG guard: role="img" on the root, whose first element child is a non-empty <title> and
+// second a non-empty <desc> (the text alternative), named by the root's aria-labelledby and
+// aria-describedby; only
 // the elements below (so no script, style, foreignObject, animation, image, a, filter or pattern);
 // no on… or style attribute; every href a same-document fragment; url() only as url(#…).
 const SVG_ALLOWED = new Set(["svg", "title", "desc", "defs", "marker", "g", "rect", "path", "text", "tspan", "line", "polyline", "polygon", "circle", "ellipse", "use"]);
-export function checkSvg(svg) {
+export function checkSvg(svg, name = ARCHITECTURE_SVG) {
   const errors = [];
   const roots = parseHtml(svg).children.filter((n) => n.tag);
-  if (roots.length !== 1 || roots[0].tag !== "svg") return [`${ARCHITECTURE_SVG}: must be a single <svg> element`];
+  if (roots.length !== 1 || roots[0].tag !== "svg") return [`${name}: must be a single <svg> element`];
   const root = roots[0];
-  if (root.attrs.role !== "img") errors.push(`${ARCHITECTURE_SVG}: the <svg> needs role="img"`);
-  const first = root.children.find((n) => n.tag);
-  if (first?.tag !== "title" || !first.raw.trim()) errors.push(`${ARCHITECTURE_SVG}: the first element in the <svg> must be a non-empty <title>`);
+  if (root.attrs.role !== "img") errors.push(`${name}: the <svg> needs role="img"`);
+  const [first, second] = root.children.filter((n) => n.tag);
+  if (first?.tag !== "title" || !first.raw.trim()) errors.push(`${name}: the first element in the <svg> must be a non-empty <title>`);
+  if (second?.tag !== "desc" || !textOf(second)) errors.push(`${name}: the second element in the <svg> must be a non-empty <desc>, its text alternative`);
+  if (first?.tag === "title" && (!first.attrs.id || root.attrs["aria-labelledby"] !== first.attrs.id)) errors.push(`${name}: the <svg> needs aria-labelledby naming its <title>'s id`);
+  if (second?.tag === "desc" && (!second.attrs.id || root.attrs["aria-describedby"] !== second.attrs.id)) errors.push(`${name}: the <svg> needs aria-describedby naming its <desc>'s id`);
   for (const el of [root, ...elements(root, { visible: false })]) {
-    if (!SVG_ALLOWED.has(el.tag)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> is not allowed`);
+    if (!SVG_ALLOWED.has(el.tag)) errors.push(`${name}: <${el.tag}> is not allowed`);
     for (const [a, v] of Object.entries(el.attrs)) {
-      if (a === "style" || /^on/.test(a)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> has a ${a} attribute; style it with a class in the page's <style>`);
-      if ((a === "href" || a === "xlink:href") && !v.startsWith("#")) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> ${a} must be a same-document fragment (#…)`);
-      if (/url\(/i.test(v) && v.replace(/url\(\s*#[^)\s]+\s*\)/gi, "").match(/url\(/i)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> ${a} may use url() only as url(#…)`);
+      if (a === "style" || /^on/.test(a)) errors.push(`${name}: <${el.tag}> has a ${a} attribute; style it with a class in the page's <style>`);
+      if ((a === "href" || a === "xlink:href") && !v.startsWith("#")) errors.push(`${name}: <${el.tag}> ${a} must be a same-document fragment (#…)`);
+      if (/url\(/i.test(v) && v.replace(/url\(\s*#[^)\s]+\s*\)/gi, "").match(/url\(/i)) errors.push(`${name}: <${el.tag}> ${a} may use url() only as url(#…)`);
     }
   }
   return errors;
@@ -1029,7 +1042,11 @@ const PROJECTS_SHAPE = {
   copy: {
     synthetic: "s",
     index: { heading: "s", intro: "s", entry: keys("title", "summary", "stack") },
-    showcase: { heading: "s", lead: "s", code: "s", code_link: "s", what_heading: "s", what: ["s"], architecture_heading: "s", architecture: [keys("heading", "text")], runs_heading: "s", built_heading: "s", built: ["s"] },
+    showcase: {
+      heading: "s", lead: "s", code: "s", code_link: "s", what_heading: "s", what: ["s"],
+      architecture_heading: "s", architecture_intro: ["s"], architecture: [{ heading: "s", text: ["s"] }],
+      runs_heading: "s", built_heading: "s", built: ["s"], next_heading: "s", next_intro: "s", next: [keys("heading", "text")],
+    },
   },
   templates: Object.fromEntries(Object.keys(TEMPLATE_VARS).map((k) => [k, "s"])),
   labels: {
@@ -1083,6 +1100,8 @@ export function projectPageErrors(out, p, ctx) {
     if (elements(doc, { visible: false }).filter((el) => el.tag === "h1").length !== 1) errors.push(`${name} must have exactly one <h1>`);
     errors.push(...gzipCapErrors(name, html));
     errors.push(...textErrors(name, html, ctx), ...textErrors(`${name} (visible text)`, visible[f], ctx));
+    const ids = elements(doc, { visible: false }).map((el) => el.attrs.id).filter(Boolean);
+    for (const id of new Set(ids.filter((x, i) => ids.indexOf(x) !== i))) errors.push(`${name} has a duplicate id "${id}" (give each diagram its own ids)`);
   }
   for (const [f, report] of Object.entries(out.reports)) errors.push(...reportHtmlErrors(report).map((x) => `${f.slice("public/".length)}: report.md renders ${x.replace(/ is not allowed in a rendered report$/, "")}, outside the allow-list (F-005 D7)`));
   for (const [f, v] of Object.entries(out.files)) {
@@ -1124,14 +1143,20 @@ export function projectsOutput(root, c, tree, ctx) {
   const p = c.pages?.projects;
   const copyErrors = checkProjectsCopy(p);
   errors.push(...copyErrors);
-  let svg = null;
-  try { svg = readFileSync(join(root, ARCHITECTURE_SVG), "utf8"); } catch { errors.push(`${ARCHITECTURE_SVG} is missing (the showcase inlines it)`); }
-  if (svg !== null) errors.push(...checkSvg(svg));
+  const diagrams = [];
+  for (const d of DIAGRAMS) {
+    let svg;
+    try { svg = readFileSync(join(root, d.file), "utf8"); } catch { errors.push(`${d.file} is missing (the showcase inlines it)`); continue; }
+    const svgErrors = checkSvg(svg, d.file);
+    errors.push(...svgErrors);
+    if (!copyErrors.length && d.after !== "intro" && !p.copy.showcase.architecture[d.after]) errors.push(`${d.file}: there is no copy.showcase.architecture.${d.after} to place it after`);
+    else if (!svgErrors.length) diagrams.push({ ...d, svg: svg.trim() });
+  }
   if (copyErrors.length) return { errors, out: null };
   const data = errors.length ? { runs: [], scorecard: null } : publishedData(tree);
   if (p.launched && (!data.runs.length || !data.scorecard)) errors.push("content.json pages.projects.launched is true, but launch needs at least one published run and the scorecard (F-005 D9)");
   const footer = `<footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="${PRIVACY_PATH}">Privacy</a></footer>`;
-  const out = renderProjects({ p, ...data, svg: svg?.trim() ?? "", kit: { site: SITE, style: WRITING_STYLE, safeJson, footer } });
+  const out = renderProjects({ p, ...data, diagrams, kit: { site: SITE, style: WRITING_STYLE, safeJson, footer } });
   errors.push(...projectPageErrors(out, p, ctx));
   return { errors, out };
 }
