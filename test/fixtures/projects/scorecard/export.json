@@ -1,0 +1,17 @@
+{
+  "export_version": "1.0.0",
+  "exported_at": "2026-11-11T15:04:05Z",
+  "files": [
+    {
+      "bytes": 2905,
+      "path": "scorecard.json",
+      "sha256": "01f26cf07c8067b791c8828ac5687c44b12df9c121d045d7a52991c12ca7c384"
+    }
+  ],
+  "id": "eval-20261111T150000Z",
+  "kind": "scorecard",
+  "tool": {
+    "name": "research-agent",
+    "version": "0.1.0"
+  }
+}
