@@ -2,7 +2,8 @@
 // shape research-agent's `research publish` writes them (export.json with sorted keys, 2-space
 // indent, trailing newline). Every fixture is hand-made synthetic data, never a real export.
 import { mkdirSync, writeFileSync, readFileSync, cpSync, readdirSync, lstatSync, rmSync, readlinkSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, relative, isAbsolute } from "node:path";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { crc32, deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
@@ -106,3 +107,15 @@ export const scorecardFiles = () => readTree(join(FIXTURES, "scorecard"));
 export const report = () => JSON.parse(readFileSync(join(FIXTURES, "run/report.json"), "utf8"));
 export const scorecard = () => JSON.parse(readFileSync(join(FIXTURES, "scorecard/scorecard.json"), "utf8"));
 export const copyFixture = (name, to) => cpSync(join(FIXTURES, name), to, { recursive: true });
+
+// A scratch copy of the site starts with no published run or scorecard, whatever the repository
+// has recorded: remove the recorded runs, scorecard and manifest, and the run pages the build
+// generated from them, so a fixture test builds only from its own fixtures. The real recorded
+// content is checked by `node build.mjs --check` against the checkout (npm test runs it first).
+// It deletes, so it refuses any root that is not strictly inside tmpdir(), or is the checkout.
+const CHECKOUT = fileURLToPath(new URL("..", import.meta.url));
+export function clearRecorded(root) {
+  const r = resolve(root), rel = relative(resolve(tmpdir()), r);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel) || r === resolve(CHECKOUT)) throw new Error(`clearRecorded: ${JSON.stringify(root)} is not a scratch copy inside ${tmpdir()}`);
+  for (const f of ["projects/research-agent/runs", "projects/research-agent/scorecard", "projects/research-agent/published.json", "public/projects/research-agent"]) rmSync(join(root, f), { recursive: true, force: true });
+}
