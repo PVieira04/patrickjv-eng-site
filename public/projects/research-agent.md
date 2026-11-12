@@ -6,7 +6,7 @@ Code available on request: [book a call](https://patrickjv.com/book).
 
 ## What it does
 
-A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. Nothing runs until the plan is approved.
+A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. No analysis code runs before a person has seen the plan: the LangGraph agent pauses for approval, and the Claude Code harness asks for permission for every analysis call. In the eval, plans are approved automatically.
 
 The agent then analyses the data in a sandbox, a critic model reviews the work against a checklist of known traps, and the agent writes a report with its figures. The worked example is futures one-minute bars.
 
@@ -20,7 +20,7 @@ A LangGraph state graph: plan, an approval interrupt, an analyse loop, the criti
 
 ### The research MCP server
 
-Three tools, used by the graph and by Claude Code on its own, with access levels per caller and a visibility flag on every dataset.
+Three tools, used by the graph and by Claude Code on its own, each with an access level checked against the caller's, and a visibility flag on every dataset.
 
 ### The sandbox
 
@@ -28,7 +28,7 @@ No network, no secrets, read-only data and hard limits, enforced with bubblewrap
 
 ### The eval
 
-Ten questions on a seeded synthetic dataset with planted effects and traps, each repeated k times, scored on answer accuracy, trap recall and critic precision.
+A fixed set of questions on a seeded synthetic dataset with planted effects and traps, each repeated k times, scored on answer accuracy, trap recall and critic precision.
 
 ### The Claude Code harness
 
@@ -42,7 +42,7 @@ No published runs yet.
 
 Spec first: every part had a written spec with testable acceptance criteria before any code, and the sandbox's threat model was written before the sandbox.
 
-Several rounds of adversarial review by a second model on the specs and the code, with every finding fixed and recorded, and tests written before the implementation.
+Several rounds of adversarial review by a second model on the specs and the code, with findings fixed and recorded, and tests written before the implementation.
 
 ---
 

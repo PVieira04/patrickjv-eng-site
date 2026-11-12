@@ -1018,3 +1018,15 @@ test("F-005 (D1): the SVG guard allows only a fixed list of SVG elements", () =>
     assert.deepEqual(checkSvg(svg.replace("</g>", `${el}\n</g>`)), [], el);
   }
 });
+
+test("F-005: the showcase copy makes only claims the research-agent specs support", () => {
+  const text = strings(P).map(([, v]) => v).join("\n");
+  for (const [claim, why] of [
+    [/\bTen questions\b/i, "the count belongs to the scorecard, not fixed copy"],
+    [/every finding/i, "findings were fixed and recorded; 'every' is not claimed"],
+    [/access levels per caller/i, "F-001a: an access level on every tool, checked against the caller's"],
+    [/Nothing runs until the plan is approved/i, "the eval approves plans automatically, and the Claude Code harness gates each analysis call"],
+  ]) assert.doesNotMatch(text, claim, why);
+  assert.match(text, /pauses for approval/, "F-001b's approval interrupt");
+  assert.match(text, /permission for every analysis call/, "F-001d's prompt per run_analysis call");
+});

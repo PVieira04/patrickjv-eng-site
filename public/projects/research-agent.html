@@ -104,7 +104,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <p>Code available on request: <a href="/book">book a call</a>.</p>
 <section aria-labelledby="what-h">
 <h2 id="what-h">What it does</h2>
-<p>A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. Nothing runs until the plan is approved.</p>
+<p>A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. No analysis code runs before a person has seen the plan: the LangGraph agent pauses for approval, and the Claude Code harness asks for permission for every analysis call. In the eval, plans are approved automatically.</p>
 <p>The agent then analyses the data in a sandbox, a critic model reviews the work against a checklist of known traps, and the agent writes a report with its figures. The worked example is futures one-minute bars.</p>
 <p>Every result on this page is on a seeded synthetic dataset with planted effects and traps, not on market data.</p>
 </section>
@@ -132,11 +132,11 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <h3>The graph</h3>
 <p>A LangGraph state graph: plan, an approval interrupt, an analyse loop, the critic, hard caps on tool calls and tokens, and checkpointing so a run can stop and resume.</p>
 <h3>The research MCP server</h3>
-<p>Three tools, used by the graph and by Claude Code on its own, with access levels per caller and a visibility flag on every dataset.</p>
+<p>Three tools, used by the graph and by Claude Code on its own, each with an access level checked against the caller's, and a visibility flag on every dataset.</p>
 <h3>The sandbox</h3>
 <p>No network, no secrets, read-only data and hard limits, enforced with bubblewrap, a cgroup memory limit and a seccomp filter.</p>
 <h3>The eval</h3>
-<p>Ten questions on a seeded synthetic dataset with planted effects and traps, each repeated k times, scored on answer accuracy, trap recall and critic precision.</p>
+<p>A fixed set of questions on a seeded synthetic dataset with planted effects and traps, each repeated k times, scored on answer accuracy, trap recall and critic precision.</p>
 <h3>The Claude Code harness</h3>
 <p>The same loop without API keys: a /research skill, analyst and critic subagents, and a permission rule on code execution.</p>
 </section>
@@ -147,7 +147,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <section aria-labelledby="built-h">
 <h2 id="built-h">How it was built</h2>
 <p>Spec first: every part had a written spec with testable acceptance criteria before any code, and the sandbox's threat model was written before the sandbox.</p>
-<p>Several rounds of adversarial review by a second model on the specs and the code, with every finding fixed and recorded, and tests written before the implementation.</p>
+<p>Several rounds of adversarial review by a second model on the specs and the code, with findings fixed and recorded, and tests written before the implementation.</p>
 </section>
 </main>
 <footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="/privacy">Privacy</a></footer>
