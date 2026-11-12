@@ -12,6 +12,62 @@ test("F-005 (US-4): .gitignore lists .denylist.local, so the local terms are nev
   assert.ok(readFileSync(join(ROOT, ".gitignore"), "utf8").split(/\r?\n/).includes(".denylist.local"));
 });
 
+// ---- PR 4: docs and spec text ----
+const doc = (f) => readFileSync(join(ROOT, f), "utf8");
+const SPEC = "docs/specs/F-005-research-agent-showcase.md";
+
+test("F-005 (US-4): the docs cover /projects — the runbooks in docs/06, the build in docs/02, machine-readability in docs/03, headers and audits in docs/05, and the README layout", () => {
+  const ops = doc("docs/06-operations.md");
+  for (const h of ["## Projects: runbooks (F-005)", "### Publish a run", "### Publish the scorecard", "### Re-export a published run", "### Unpublish a run", "### Curation", "### Pre-launch checks (dark deploy)", "### Launch", "### Post-launch checks"])
+    assert.ok(ops.split("\n").includes(h), `docs/06 heading ${h}`);
+  const runbooks = ops.slice(ops.indexOf("## Projects: runbooks (F-005)"));
+  for (const t of ["--record", "--expect", "--replace", "--record-scorecard", "published.json", "public from the push", "git history", "trap_caught", "rejected_plan", "clean_pass", "X-Robots-Tag", "launched", "side_projects", "public/index.html", "Lighthouse", ".denylist.local"])
+    assert.ok(runbooks.includes(t), `docs/06 runbooks mention ${t}`);
+  assert.match(ops, /`\/projects\/`.*deployed = repo/, "docs/06 monitoring lists the /projects smoke checks");
+  for (const [f, terms] of [
+    ["docs/02-content-and-build.md", ["**Projects** (`/projects/`, F-005)", "pages.projects", "published.json", "--record", "public/projects/", "lib/project-pages.mjs"]],
+    ["docs/03-seo-aeo-machine-readability.md", ["/projects/", "SoftwareSourceCode", "noindex", "research-agent.md"]],
+    ["docs/05-quality-and-audits.md", ["/projects/*", "X-Robots-Tag", "30,720", "100 rules"]],
+    ["README.md", ["projects/research-agent/", "lib/project-pages.mjs", "lib/projects.mjs", "F-005"]],
+  ]) for (const t of terms) assert.ok(doc(f).includes(t), `${f} mentions ${t}`);
+});
+
+test("F-005: the spec names every named field content.json → pages.projects uses, the notes rule, both allow-lists and the page tests' file", () => {
+  const spec = doc(SPEC);
+  const p = JSON.parse(doc("content.json")).pages.projects;
+  const names = [
+    ...Object.entries(p.head).flatMap(([page, v]) => Object.keys(v).map((k) => `head.${page}.${k}`)),
+    ...Object.keys(p.templates).map((k) => `templates.${k}`),
+    ...Object.keys(p.empty).map((k) => `empty.${k}`),
+    ...Object.keys(p.labels).map((k) => `labels.${k}`),
+    ...["section", "card", "scorecard", "run", "plan", "links"].flatMap((g) => Object.keys(p.labels[g]).filter((k) => k !== "columns").map((k) => `labels.${g}.${k}`)),
+    ...Object.keys(p.labels.scorecard.columns).map((k) => `labels.scorecard.columns.${k}`),
+  ];
+  const named = (n) => spec.includes(`\`${n}\``);
+  for (const n of names) assert.ok(named(n), `the spec names ${n}`);
+  assert.doesNotMatch(spec, /`labels\.author`/, "there is no labels.author");
+  for (const t of ["test/projects-pages.test.mjs", "`_`", "allow-list of elements and attributes", "SVG element allow-list", "A rejected run may not name figures", "`plan` may be null only"])
+    assert.ok(spec.includes(t), `the spec says ${t}`);
+  const launch = spec.slice(spec.indexOf("## Launch"), spec.indexOf("## SEO and meta"));
+  assert.match(launch, /removes `pages\.projects\._status`/, "the launch steps remove the draft note");
+  assert.match(launch, /`launched: true` fails while `pages\.projects\._status` is present/, "the build check names the _status rule");
+  const acs = spec.slice(spec.indexOf("## Acceptance Criteria"), spec.indexOf("## Edge cases"));
+  assert.match(acs, /A string under `pages\.projects` of neither kind, and not a `_` note, fails/, "the D5 AC exempts notes");
+  assert.match(acs, /\*\*\(D5\)\*\* Notes:/, "an AC for the notes rule");
+  assert.match(acs, /\*\*\(D9\)\*\* `launched: true` fails while `pages\.projects\._status` is present/, "an AC for the _status launch rule");
+  assert.match(spec.slice(spec.indexOf("### `/projects/research-agent`"), spec.indexOf("### `/projects/research-agent/runs")), /\*\*Footer\*\*, the writing pages' hard-coded footer \(not `copy\.\*`\)/, "Page content says the footer isn't copy, as Decision 2 cites");
+  assert.match(spec.slice(spec.indexOf("## Smoke monitor"), spec.indexOf("## Acceptance Criteria")), /lexicographic/, "the smoke's first figure is by lexicographic path order");
+});
+
+test("F-005 (US-4): the unpublish runbook says unpublishing the last run after launch fails the build, and the two ways out", () => {
+  const ops = doc("docs/06-operations.md");
+  const un = ops.slice(ops.indexOf("### Unpublish a run"), ops.indexOf("### Curation"));
+  assert.match(un, /last published run/);
+  assert.match(un, /fails/);
+  assert.match(un, /publish a replacement/i);
+  assert.match(un, /launched` to `false`/);
+});
+
 // ---- Output scan: F-001e's SCAN_RULES, verbatim, and the local denylist ----
 import { SCAN_RULES, scanHits, parseDenylist, denylistHit } from "../lib/projects.mjs";
 

@@ -71,6 +71,7 @@ The run fails on any FAIL. Every check requires its exact success status, and me
 - `/` returns 200 with HSTS, `nosniff`, and exactly the CSP that `public/_headers` sets for `/`
 - `Accept: text/markdown` on `/` returns 200 `text/markdown` whose body equals `public/index.md`
 - `security.txt`: 200 `text/plain` and `Expires` more than 30 days ahead
+- **Projects (F-005)**, built from the checked-out commit's `projects/research-agent/published.json` and `pages.projects.launched`, so the count follows publishing: `/projects/`, `/projects/index.md`, `/projects/research-agent`, `/projects/research-agent.md`, and for each published run `runs/<id>/`, `report.md`, `report.json` and every figure: 200, exact media type and deployed = repo (figures compared as bytes); `/projects/research-agent` carries exactly one CSP, equal to its `public/_headers` rule; a run directory that can't exist (`runs/20000101T000000Z-000000/`) returns 404 with at most one CSP; while not launched, `X-Robots-Tag: noindex` on the showcase, its Markdown and the first published figure, and after launch no `X-Robots-Tag` on the same responses
 - A missing font path (`/fonts/does-not-exist.woff2`) returns 404 with at most one CSP header and without the fonts' 30-day cache
 - `http://patrickjv.com/` redirects to HTTPS — FAIL with `--strict-https` (used by CI since Always Use HTTPS was enabled on 7 Oct); WARN without it
 - `--aliases`: `www.patrickjv.com`, `pvieira.co.uk`, `www.pvieira.co.uk` GET → 301 to `https://patrickjv.com/a/b?x=1`; POST → 308 (a 301 is a FAIL); **no `NEL`/`Report-To`** on `patrickjv.com` or `pvieira.co.uk` (FAIL on either). The NEL checks reuse responses already fetched, adding no requests
@@ -194,6 +195,69 @@ F-004 D6. While `microsoft` is in `booking.json`'s `signin.providers`, the build
 ### Turn booking off
 
 Set `"BOOKING_ENABLED": "false"` in `mcp/wrangler.jsonc` and deploy (or, faster, change the variable in the dashboard: Workers → `patrickjv-mcp` → Settings → Variables, then put it back in the repo so the next deploy doesn't undo it). New bookings and agent cancellations are refused with 503 `booking_disabled` and `/book` says booking isn't open; links already emailed keep working (confirm, decline, cancel), as the spec requires. Smoke passes while it's off. To stop everything, including confirms of existing holds, roll the Worker back ([Rollback](#rollback)) or remove the `/api/booking*` route, and say so in the decision log. Meetings already booked stay in Google Calendar; cancel them there if needed.
+
+<a id="projects-runbooks"></a>
+## Projects: runbooks (F-005)
+
+The research-agent showcase (`/projects/`, `/projects/research-agent` and one page per run) is built from exports of the private research-agent repository. The rules are in [the F-005 spec](specs/F-005-research-agent-showcase.md); these are the steps. **Synthetic data only:** the build and `--record` refuse any run or scorecard that isn't on the seeded synthetic dataset, and there is no switch to turn that off.
+
+**The trade-off (D2).** This repository is public. An export is **public from the push** of the branch that `--record` prepared, before any review or merge, and unpublishing later takes it off the site but **git history keeps it**. So your read of the export is the last check before it is public; the PR is a record, not a gate. `--record` runs every automated check before it writes anything, but those checks are a tripwire, not the control. A key that was pushed by mistake is rotated, not scrubbed.
+
+**Local denylist.** If `.denylist.local` exists (gitignored: one term per line, `#` comments and blank lines skipped), `--record` and every local build also refuse any of its terms in the exported text, the rendered pages and `published.json`. Use it for names you want caught that must never be written into this repository. CI can't see it.
+
+### Publish a run
+
+1. In the private repository: `research publish <run_id>`. It writes the export to a folder outside this repository and prints an owner checklist and the **export digest**.
+2. **Read every file in the export:** the report text, every figure and the JSON.
+3. Here, on a new branch from `main`: `node build.mjs --record <export-dir> --expect <export digest>`. It checks the digest, the export contract, the fields, the synthetic-only gate, the output scan, the employer denylist (and `.denylist.local`) and the pages it would render, and writes nothing if any fails. If all pass, it copies the listed files into `projects/research-agent/runs/<run_id>/` and adds the run to `published.json` with today's date and an empty alt text per figure. It refuses a run id that is already published.
+4. In `projects/research-agent/published.json`, write each figure's alt text and, optionally, its `role` (`trap_caught`, `rejected_plan` or `clean_pass`). The build refuses an empty alt text.
+5. `npm run build`, then `npm test`, then commit. Push and open a PR to `main`. The push publishes the export in this repository; the merge deploys it.
+6. After the deploy, `npm run smoke` checks every file of the run against the repository (deployed = repo).
+
+At most 8 runs can be published (the `_headers` rule budget, D10).
+
+### Publish the scorecard
+
+`node build.mjs --record-scorecard <export-dir> --expect <export digest>`, after reading `scorecard.json`. It runs the same checks and **replaces** the published scorecard: only the newest is shown, so only one is kept. Then build, test, commit and push as for a run.
+
+### Re-export a published run
+
+For the same run id after F-001e changes its export format: read the new export, then `node build.mjs --record <export-dir> --expect <export digest> --replace`. It replaces the run's files, resets the checked date and digest, keeps the alt text of figures whose hash is unchanged and empties it for changed or new ones, so re-read those figures and write their alt text again. A corrected analysis is a new run with a new run id, not a re-export.
+
+### Unpublish a run
+
+Delete `projects/research-agent/runs/<run_id>/` and the run's entry in `published.json`, then `npm run build`. The build owns `public/projects/`: it deletes every output for the run (its page, its copies, its figures and the emptied directories) and its entries in the showcase and, once launched, in the sitemap, `llms.txt` and `index.md`. Commit and push. The run stays in git history.
+
+**After launch, the last published run can't be unpublished on its own:** `launched: true` needs at least one published run, so removing the last one fails the build. Either publish a replacement first and then unpublish, or unlaunch in the same PR: set `pages.projects.launched` to `false` and remove the "Research agent" side project from `content.json` and its card from `public/index.html` (the build requires those three to go together).
+
+### Curation
+
+Aim for three to five runs that show the whole loop: one where the critic catches a planted trap (`trap_caught`), one rejected plan (`rejected_plan`) and one clean pass (`clean_pass`). Run cards are ordered by role in that order, then newest first.
+
+### Pre-launch checks (dark deploy)
+
+While `pages.projects.launched` is `false`, the pages are deployed but dark: `noindex` on every page, `X-Robots-Tag: noindex` on every `/projects/` response, and absent from the sitemap, `llms.txt`, `index.md` and the homepage. Before the launch PR, with at least one published run and the scorecard deployed:
+
+1. **Copy approved.** You have approved the `pages.projects` copy in `content.json`. The draft note `pages.projects._status` comes out in the launch PR (the build refuses `launched: true` while it is there).
+2. **Smoke** against production: `npm run smoke -- https://patrickjv.com` passes, including deployed = repo for every run file and figure, and `X-Robots-Tag: noindex` on the showcase, its Markdown and the first figure.
+3. **URLs in production** (not only under `wrangler dev`): `/projects/research-agent` returns the showcase with 200 (not a redirect), `/projects/research-agent/runs/<id>/` returns its run page, and `/projects/research-agent/runs/<id>` (no slash) redirects to the slash form. If the clean showcase URL fails, the showcase moves to `/projects/research-agent/index.html` with canonical `/projects/research-agent/` before launch.
+4. **Lighthouse and axe** on the index, the showcase and one run page, mobile and desktop: Performance, Accessibility and Best Practices 100; every SEO audit passes except `robots-txt` and, before launch, `is-crawlable`; LCP (mobile) at most 1.5 s; CLS at most 0.02; axe 0 violations in dark and light. Record the results in [05](05-quality-and-audits.md#projects-f-005).
+5. **Open question 2 in the spec** (launch with only Claude Code harness runs?) is answered.
+
+### Launch
+
+One PR, opened only after the pre-launch checks pass. It:
+
+1. sets `pages.projects.launched` to `true` in `content.json`, and removes `pages.projects._status`;
+2. adds a `side_projects` entry "Research agent" to `content.json` with `url: "/projects/research-agent"`;
+3. adds the matching card to the side projects section of `public/index.html`, linking to `/projects/research-agent`.
+
+The build checks that these three go together: `launched` is `true` if and only if a side project has url `/projects/research-agent` and its card in `index.html` links to it. It also needs at least one published run and the scorecard. `npm run build` then drops the `noindex` and the `/projects/*` `X-Robots-Tag` rule and lists the pages in the sitemap, `llms.txt` and `index.md`.
+
+### Post-launch checks
+
+1. The smoke run after the launch deploy passes, with **no** `X-Robots-Tag` on the showcase, its Markdown and the first figure (the smoke switches to this check by itself, because it reads `launched` from the deployed commit).
+2. Lighthouse SEO on the three page types: every audit passes except `robots-txt`. Record it in [05](05-quality-and-audits.md#projects-f-005).
 
 <a id="dashboard-config-export"></a>
 ## Dashboard configuration export (D2)

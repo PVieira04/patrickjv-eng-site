@@ -32,6 +32,8 @@ The specific obstacle for this site: **"Patrick Vieira" is a famous footballer.*
 
 No `worksFor` — the site is employer-agnostic. Every `@id` reference resolves inside the graph.
 
+**Projects (F-005).** `/projects/` carries a `CollectionPage` with an `ItemList`; the showcase a `WebPage` whose `mainEntity` is a `SoftwareSourceCode` (`@id` `https://patrickjv.com/projects/research-agent#software`, keywords including LangGraph, LangChain and MCP, `author` → `#person`, no `codeRepository` because the code is private); each run page a `Report` whose `about` is `#software` and whose `datePublished` is the date the owner checked it. `SoftwareSourceCode` rather than `SoftwareApplication`, because Google has no rich result for it, so a missing `offers` can't make an invalid one. LangChain and LangGraph are in the showcase's title, description, lead and keywords, not in the URL. Model-written text from the reports is escaped everywhere it lands, including JSON-LD (via `safeJson`).
+
 ## Answer-shaped content
 
 A visible **Quick answers** section (section 07) with five Q&As written to be quoted directly, in the third person, including the footballer disambiguation. The same Q&As appear in the `FAQPage` markup, `index.md`, `llms.txt`, the WebMCP `list_faq` tool and the MCP `list_faq` tool.
@@ -43,6 +45,7 @@ A visible **Quick answers** section (section 07) with five Q&As written to be qu
 | `llms.txt` | `/llms.txt` — summary, disambiguation, work, side projects, background, Quick answers, links, privacy note, and a "Machine-readable" section listing `index.md`, the sitemap and the MCP server |
 | Markdown twin | `/index.md`, linked by `<link rel="alternate" type="text/markdown">` and from `llms.txt` |
 | Markdown negotiation | `GET /` with `Accept: text/markdown` → `text/markdown; charset=utf-8` (Cloudflare URL Rewrite rule, no code). Browsers still get HTML. `/` and `/index.md` send `Vary: Accept` so caches keep the two apart. The rule matches only an `Accept` that **starts with** `text/markdown` (7 Oct, review R6), so `text/html, text/markdown;q=0.1` and `text/html, text/markdown;q=0` get HTML. |
+| Projects (F-005) | `/projects/index.md` and `/projects/research-agent.md`, the Markdown copies of the index and the showcase (the showcase's has the scorecard as a table and links each run's `report.md`); each run's `report.md` and `report.json`, byte for byte as the owner checked them. Each HTML page links its Markdown copy with `<link rel="alternate" type="text/markdown">`. **Until launch** the pages are `noindex` (a `<meta>`, and `X-Robots-Tag: noindex` on every `/projects/` response) and absent from the sitemap, `llms.txt`, `index.md` and the homepage; at launch a "Projects" section in `llms.txt` and `index.md` lists the showcase's Markdown and one line per run, and the sitemap lists every page with a run's checked date as its `lastmod` |
 | WebMCP | Five tools on the page (see [04](04-mcp-and-webmcp.md#webmcp)) |
 | Remote MCP | `/mcp`, listed on the MCP Registry |
 
