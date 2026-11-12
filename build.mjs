@@ -27,7 +27,7 @@ import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
 import { gzipSync } from "node:zlib";
 import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, parseJson, publishedData, textErrors, ENUMS, MANIFEST, PROJECT } from "./lib/projects.mjs";
-import { renderProjects, TEMPLATE_VARS } from "./lib/project-pages.mjs";
+import { renderProjects, reportHtmlErrors, mdInline, TEMPLATE_VARS } from "./lib/project-pages.mjs";
 
 export const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -1084,6 +1084,7 @@ export function projectPageErrors(out, p, ctx) {
     errors.push(...gzipCapErrors(name, html));
     errors.push(...textErrors(name, html, ctx), ...textErrors(`${name} (visible text)`, visible[f], ctx));
   }
+  for (const [f, report] of Object.entries(out.reports)) errors.push(...reportHtmlErrors(report).map((x) => `${f.slice("public/".length)}: report.md renders ${x.replace(/ is not allowed in a rendered report$/, "")}, outside the allow-list (F-005 D7)`));
   for (const [f, v] of Object.entries(out.files)) {
     if (f.endsWith(".html") || f.endsWith(".png")) continue;
     errors.push(...textErrors(f.slice("public/".length), Buffer.isBuffer(v) ? v.toString("utf8") : v, ctx));

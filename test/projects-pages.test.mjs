@@ -8,23 +8,36 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";
-import { renderReportMd } from "../lib/project-pages.mjs";
+import { renderReportMd, reportHtmlErrors } from "../lib/project-pages.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- D7a: report.md is rendered by its own Marked instance, with nothing live ----
 const NOTHING_LIVE = (html) => {
   assert.doesNotMatch(html, /<a[\s>]/i, "no link element");
-  assert.doesNotMatch(html, /<(script|iframe|svg|img|input|form|button|textarea|select|object|embed)[\s>/]/i, "no raw HTML, image or form control");
+  assert.doesNotMatch(html, /<(script|iframe|svg|img|input|form|button|textarea|select|object|embed|meta|link|base|style|k,v|code>x)[\s>/]/i, "no raw HTML, image or form control");
+  assert.deepEqual(reportHtmlErrors(html), [], "only allow-listed elements and attributes");
   assert.doesNotMatch(html, /<[a-z][^>]*\son[a-z]+=/i, "no event handler attribute");
   assert.doesNotMatch(html, /<[a-z][^>]*\s(href|src)=/i, "no href or src");
 };
 
 test("F-005 (D7): raw HTML in report.md is escaped, never passed through", () => {
-  for (const raw of ["<script>alert(1)</script>", '<img src=x onerror="alert(1)">', '<iframe src="https://example.com"></iframe>', "<svg onload=alert(1)>", "text <b>inline</b> and <script>x</script> inline"]) {
+  for (const raw of [
+    // marked's inRawBlock state (set by inline <code>, <pre>, <kbd> or <script>) passes text through raw.
+    'See <code>x <a href=//evil.example/"y>click</code>', '<kbd>k <meta http-equiv=refresh content=0;url=//evil.example/"x></kbd>', "<code>Map<K,V></code>",
+    "<pre>p <img src=x onerror=alert(1)></pre>", "<script>s <a href=//e.example>x</a></script> after","<script>alert(1)</script>", '<img src=x onerror="alert(1)">', '<iframe src="https://example.com"></iframe>', "<svg onload=alert(1)>", "text <b>inline</b> and <script>x</script> inline"]) {
     const html = renderReportMd(raw + "\n");
     NOTHING_LIVE(html);
     assert.match(html, /&lt;/, raw);
+  }
+});
+
+test("F-005 (D7): the rendered report passes an allow-list of elements and attributes; a planted forbidden one fails it", () => {
+  const good = renderReportMd("# H\n\n*a* **b** ~~c~~ `d`\n\n> q\n\n---\n\n1. x\n2. y\n\n| a | b |\n|:-|-:|\n| 1 | 2 |\n\n```py\nx\n```\n\nline  \nbreak\n");
+  assert.deepEqual(reportHtmlErrors(good), []);
+  for (const bad of ['<a href="https://e.example">x</a>', "<img src=x>", '<meta http-equiv="refresh" content="0">', "<script>x</script>", "<style>p{}</style>", "<iframe></iframe>", "<form></form>", "<k,v>", "<h1>x</h1>",
+    '<p onclick="x">a</p>', '<p style="color:red">a</p>', '<span href="x">a</span>', '<div src="x">a</div>', '<p class="x">a</p>']) {
+    assert.ok(reportHtmlErrors(good + bad).length > 0, bad);
   }
 });
 
@@ -926,5 +939,16 @@ test("F-005 (D4): build-state.json's content hash covers the /projects outputs, 
     const before = hash();
     ok(publish(s, [run(1, { figures: { [FIG]: png({ width: 40, height: 30, idat: deflateSync(Buffer.alloc(30 * (1 + 40 * 3), 1)) }) } })]));
     assert.notEqual(hash(), before, "new figure bytes move the content hash (and so dateModified)");
+  } finally { s.done(); }
+});
+
+test("F-005 (D7): the build and --record refuse a run page whose rendered report holds an element outside the allow-list (the backstop for a marked bypass)", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1)]));
+    const o = rendered(s).out, f = `public/projects/research-agent/runs/${runId(1)}/index.html`;
+    assert.deepEqual(projectPageErrors(o, P, { employerMention, denylist: [] }), []);
+    o.reports[f] += '<p>x <a href="//evil.example/">y</a></p>';
+    assert.ok(projectPageErrors(o, P, { employerMention, denylist: [] }).some((e) => e.includes(`runs/${runId(1)}/index.html: report.md renders <a>`)));
   } finally { s.done(); }
 });
