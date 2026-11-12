@@ -1017,6 +1017,7 @@ export function checkSvg(svg, name = ARCHITECTURE_SVG) {
   if (root.attrs.role !== "img") errors.push(`${name}: the <svg> needs role="img"`);
   const [first, second] = root.children.filter((n) => n.tag);
   if (first?.tag !== "title" || !first.raw.trim()) errors.push(`${name}: the first element in the <svg> must be a non-empty <title>`);
+  if (first?.tag === "title" && first.raw.includes("<")) errors.push(`${name}: the <title> may not contain "<" (browsers parse markup there as HTML); escape it as &lt;`);
   if (second?.tag !== "desc" || !textOf(second)) errors.push(`${name}: the second element in the <svg> must be a non-empty <desc>, its text alternative`);
   if (first?.tag === "title" && (!first.attrs.id || root.attrs["aria-labelledby"] !== first.attrs.id)) errors.push(`${name}: the <svg> needs aria-labelledby naming its <title>'s id`);
   if (second?.tag === "desc" && (!second.attrs.id || root.attrs["aria-describedby"] !== second.attrs.id)) errors.push(`${name}: the <svg> needs aria-describedby naming its <desc>'s id`);

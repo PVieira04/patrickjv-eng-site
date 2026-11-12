@@ -9,22 +9,22 @@
 <rect class="box" x="64" y="220" width="132" height="44" rx="4"/><text x="130" y="240" text-anchor="middle">agent</text><text class="small" x="130" y="256" text-anchor="middle">analyst, caps</text>
 <rect class="box" x="64" y="290" width="132" height="44" rx="4"/><text x="130" y="310" text-anchor="middle">critique</text><text class="small" x="130" y="326" text-anchor="middle">critic, Verdict</text>
 <rect class="box" x="64" y="360" width="132" height="44" rx="4"/><text x="130" y="380" text-anchor="middle">report</text><text class="small" x="130" y="396" text-anchor="middle">.json and .md</text>
-<rect class="box out" x="226" y="10" width="130" height="44" rx="4"/><text x="291" y="30" text-anchor="middle">Checkpointer</text><text class="small" x="291" y="46" text-anchor="middle">after each step</text>
-<rect class="box" x="226" y="80" width="130" height="44" rx="4"/><text x="291" y="100" text-anchor="middle">A person</text><text class="small" x="291" y="116" text-anchor="middle">Command(resume)</text>
-<rect class="box" x="226" y="220" width="130" height="44" rx="4"/><text x="291" y="240" text-anchor="middle">tools</text><text class="small" x="291" y="256" text-anchor="middle">ToolNode, MCP</text>
-<rect class="box out" x="226" y="290" width="130" height="44" rx="4"/><text x="291" y="310" text-anchor="middle">Any stop</text><text class="small" x="291" y="326" text-anchor="middle">reject, cap, error</text>
+<rect class="note" x="218" y="10" width="140" height="44" rx="4"/><text x="288" y="30" text-anchor="middle">Checkpointer</text><text class="small" x="288" y="46" text-anchor="middle">after each step</text>
+<rect class="box" x="218" y="80" width="140" height="44" rx="4"/><text x="288" y="100" text-anchor="middle">A person</text><text class="small" x="288" y="116" text-anchor="middle">Command(resume)</text>
+<rect class="box" x="218" y="220" width="140" height="44" rx="4"/><text x="288" y="240" text-anchor="middle">tools</text><text class="small" x="288" y="256" text-anchor="middle">ToolNode, MCP</text>
+<rect class="note" x="218" y="290" width="140" height="44" rx="4"/><text x="288" y="310" text-anchor="middle">Any stop</text><text class="small" x="288" y="326" text-anchor="middle">reject, cap, error</text>
 <path class="edge" d="M130 54V78" marker-end="url(#graph-arrow)"/>
 <path class="edge" d="M130 124V148" marker-end="url(#graph-arrow)"/>
 <path class="edge" d="M130 194V218" marker-end="url(#graph-arrow)"/>
 <path class="edge" d="M130 264V288" marker-end="url(#graph-arrow)"/>
 <path class="edge" d="M130 334V358" marker-end="url(#graph-arrow)"/>
-<path class="edge" d="M226 102H198" marker-end="url(#graph-arrow)"/>
-<path class="edge" d="M196 236H224" marker-end="url(#graph-arrow)"/>
-<path class="edge" d="M226 250H198" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M218 102H198" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M196 236H216" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M218 250H198" marker-end="url(#graph-arrow)"/>
 <path class="edge" d="M64 172C40 172 40 102 62 102" marker-end="url(#graph-arrow)"/>
 <text class="small" x="52" y="141">invalid</text>
 <path class="edge" d="M64 312C40 312 40 242 62 242" marker-end="url(#graph-arrow)"/>
 <text class="small" x="52" y="281">revise</text>
-<path class="edge" d="M291 334V382H198" marker-end="url(#graph-arrow)"/>
+<path class="edge" d="M288 334V382H198" marker-end="url(#graph-arrow)"/>
 </g>
 </svg>

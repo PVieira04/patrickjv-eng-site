@@ -271,7 +271,7 @@
         },
         "showcase": {
           "title": "Research agent: LangGraph and LangChain on MCP — Patrick Vieira",
-          "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. Includes eval results and recorded runs on synthetic data."
+          "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data."
         }
       },
       "copy": {
@@ -328,7 +328,7 @@
             {
               "heading": "The sandbox",
               "text": [
-                "Generated code is treated as hostile. Each run_analysis call starts a fresh sandbox in layers. A systemd user scope puts it in a cgroup that caps memory, tasks and CPU. prlimit caps file size and open files and turns off core dumps. bubblewrap gives it an empty environment, no network and no capabilities, and mounts only what it needs, read-only: the Python runtime, the code, a small helper and the one dataset. Inside all that, a seccomp filter denies io_uring, BPF, the keyring calls and socket families other than Unix and IP.",
+                "Generated code is treated as hostile. Each run_analysis call starts a fresh sandbox in layers. A systemd user scope puts it in a cgroup that caps memory, tasks and CPU. prlimit caps file size and open files and turns off core dumps. bubblewrap gives it a cleared environment with a fixed allow-list of variables, no network and no capabilities, and mounts only what it needs, read-only: the system's /usr libraries, the Python runtime and its packages, the code, a small helper and the one dataset. Inside all that, a seccomp filter denies io_uring, BPF, the keyring calls and socket families other than Unix and IP.",
                 "The code can write only to sized in-memory file systems. When it ends, the sandbox's own PID 1 kills every other process, and the host copies out a JSON result and up to four PNG figures, each checked. A self-test runs before the first call. If the sandbox can't be set up, the call is refused, because there is no unsandboxed fallback. I red-teamed it with 22 probe scripts, about 40 escape and exhaustion attempts."
               ]
             },
@@ -342,13 +342,13 @@
             {
               "heading": "The eval",
               "text": [
-                "The eval runs each question from a fixed set several times through the graph, with plans approved automatically. The data is a seeded synthetic dataset whose generator plants effects and traps, and a reference implementation computes the expected answers. Besides answer accuracy, the scorer measures trap recall, the share of passes that fell into a trap where the critic raised that trap's tag. It also measures critic precision, the share of the critic's issues tagged with one of the question's traps that were raised on a pass that really fell into it. The scorecard records the seed and the config."
+                "The eval asks each question from a fixed set several times. The data is a seeded synthetic dataset whose generator plants effects and traps, and a reference implementation computes the expected answers. Besides answer accuracy, the scorer measures trap recall, the share of passes that fell into a trap where the critic raised that trap's tag. It also measures critic precision, the share of the critic's issues tagged with one of the question's traps that were raised on a pass that really fell into it. The scorecard records the seed and the config."
               ]
             },
             {
               "heading": "Publishing",
               "text": [
-                "Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips figures down to their image data. This site then records a person's check of each export, with a hash of every file, before the build will use it."
+                "Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips metadata chunks from figures. This site then records a person's check of each export, with a hash of every file, before the build will use it."
               ]
             }
           ],
@@ -356,18 +356,18 @@
           "built_heading": "How it was built",
           "built": [
             "Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.",
-            "A second model reviewed the specs and the code adversarially over several rounds. I fixed and recorded what it found, and wrote the tests before the code."
+            "A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code."
           ],
           "next_heading": "With more time",
           "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. Most of the next steps add checks, so the system catches more of its own mistakes.",
           "next": [
             {
               "heading": "Run the red-team probes on every push",
-              "text": "The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. It would also confirm the seccomp filter on the CI runner, where it hasn't been tested."
+              "text": "The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. So far the probe catalogue has only been run on my WSL2 machine, not yet on the CI runner."
             },
             {
-              "heading": "Verify on a clean machine",
-              "text": "I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to what it checked. The simpler plan moves verification to hosted CI runners, with a job on every push and a scheduled run, on a fresh machine that holds none of my keys or sign-ins."
+              "heading": "Finish the simpler verification plan",
+              "text": "I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, on a fresh machine that holds none of my keys or sign-ins, and makes the Claude Code behaviour probes a command I run and watch."
             },
             {
               "heading": "Run the LangGraph eval with real models",

@@ -1060,6 +1060,8 @@ test("F-005: the showcase copy makes only claims the research-agent specs suppor
   for (const [claim, why] of [
     [/\bTen questions\b/i, "the count belongs to the scorecard, not fixed copy"],
     [/every finding/i, "findings were fixed and recorded; 'every' is not claimed"],
+    [/fixed and recorded what it found/i, "implies every finding was fixed; findings were fixed or recorded"],
+    [/Includes eval results/i, "no scorecard is published yet; describe only what is on the page"],
     [/access levels per caller/i, "F-001a: an access level on every tool, checked against the caller's"],
     [/Nothing runs until the plan is approved/i, "the LangGraph eval approves plans automatically, and the Claude Code harness gates each analysis call"],
     [/In the eval, plans are approved/i, "only the LangGraph eval approves automatically; harness eval runs (F-001d) are approved by a person"],
@@ -1173,4 +1175,10 @@ test("F-005: the 'With more time' section claims no results and quotes no scores
   const text = [sh.next_intro, ...sh.next.flatMap((n) => [n.heading, n.text])].join("\n");
   assert.doesNotMatch(text, /\d+\s*%|\d+\s*\/\s*\d+|scored? \d/, "no scorecard numbers");
   assert.ok(sh.next.length >= 5);
+});
+
+test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {
+  const svg = readFileSync(join(ROOT, "projects/research-agent/sandbox.svg"), "utf8");
+  const x = svg.replace("</title>", '<meta http-equiv="refresh" content="0;url=https://example.com"></title>');
+  assert.ok(checkSvg(x).some((e) => /<title> may not contain/.test(e)), checkSvg(x).join("\n"));
 });

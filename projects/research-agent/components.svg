@@ -1,10 +1,10 @@
 <svg class="arch" role="img" aria-labelledby="comp-title" aria-describedby="comp-desc" viewBox="0 0 360 462" xmlns="http://www.w3.org/2000/svg">
 <title id="comp-title">The components: two harnesses drive one MCP server, which runs code in a sandbox over read-only dataset folders; the fetcher and the publish step run separately.</title>
-<desc id="comp-desc">At the top, two clients: the LangGraph graph, built from LangChain models and tools, and the Claude Code harness, with its /research skill and subagents. Both connect over MCP on stdio to one research MCP server, which offers list_datasets, describe_dataset and run_analysis. The server runs each analysis in a sandbox with no network, and keeps a record of every run. The sandbox reads dataset folders, each a dataset.toml and Parquet or CSV bars, mounted read-only. Two parts run separately, outside the agent loop: the fetcher, which writes market data to a dataset folder on disk, and the publish step, which checks a finished run and exports it for this site, where a person checks it again.</desc>
+<desc id="comp-desc">At the top, two clients: the LangGraph graph, built from LangChain models and tools, and the Claude Code harness, with its /research skill and subagents. Both connect over MCP on stdio to one research MCP server, which offers list_datasets, describe_dataset and run_analysis. The server runs each analysis in a sandbox with no network, and keeps a record of every run. The sandbox reads dataset folders, each a dataset.toml and Parquet or CSV bars, mounted read-only. Two parts run separately, outside the agent loop: the fetcher, which writes market data to a dataset folder on disk, and the publish step, which reads a finished run from the run records, checks it and exports it for this site, where a person checks it again.</desc>
 <defs><marker id="comp-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="head" d="M0 0L8 4L0 8z"/></marker></defs>
 <g>
-<rect class="box" x="10" y="10" width="160" height="52" rx="4"/><text x="90" y="32" text-anchor="middle">LangGraph graph</text><text class="small" x="90" y="50" text-anchor="middle">LangChain models, tools</text>
-<rect class="box" x="190" y="10" width="160" height="52" rx="4"/><text x="270" y="32" text-anchor="middle">Claude Code harness</text><text class="small" x="270" y="50" text-anchor="middle">/research, subagents</text>
+<rect class="box" x="10" y="10" width="160" height="52" rx="4"/><text x="90" y="32" text-anchor="middle">LangGraph graph</text><text class="small" x="90" y="50" text-anchor="middle">LangChain models</text>
+<rect class="box" x="190" y="10" width="160" height="52" rx="4"/><text x="270" y="32" text-anchor="middle">Claude Code</text><text class="small" x="270" y="50" text-anchor="middle">harness, /research</text>
 <path class="edge" d="M90 62V98" marker-end="url(#comp-arrow)"/>
 <path class="edge" d="M270 62V98" marker-end="url(#comp-arrow)"/>
 <text class="small" x="180" y="84" text-anchor="middle">MCP, stdio</text>
@@ -12,13 +12,14 @@
 <path class="edge" d="M90 152V188" marker-end="url(#comp-arrow)"/>
 <path class="edge" d="M270 152V188" marker-end="url(#comp-arrow)"/>
 <rect class="box" x="10" y="190" width="160" height="52" rx="4"/><text x="90" y="212" text-anchor="middle">Sandbox</text><text class="small" x="90" y="230" text-anchor="middle">no network</text>
-<rect class="box" x="190" y="190" width="160" height="52" rx="4"/><text x="270" y="212" text-anchor="middle">Run records</text><text class="small" x="270" y="230" text-anchor="middle">reports, calls, figures</text>
+<rect class="box" x="190" y="190" width="160" height="52" rx="4"/><text x="270" y="212" text-anchor="middle">Run records</text><text class="small" x="270" y="230" text-anchor="middle">reports and calls</text>
 <path class="edge" d="M90 242V278" marker-end="url(#comp-arrow)"/>
 <text class="small" x="98" y="264">read-only</text>
-<rect class="box" x="10" y="280" width="160" height="52" rx="4"/><text x="90" y="302" text-anchor="middle">Dataset folders</text><text class="small" x="90" y="320" text-anchor="middle">dataset.toml + bars</text>
+<rect class="box" x="10" y="280" width="160" height="52" rx="4"/><text x="90" y="302" text-anchor="middle">Dataset folders</text><text class="small" x="90" y="320" text-anchor="middle">descriptor + bars</text>
 <rect class="box out" x="190" y="280" width="160" height="52" rx="4"/><text x="270" y="302" text-anchor="middle">Publish</text><text class="small" x="270" y="320" text-anchor="middle">check, then export</text>
-<path class="edge" d="M270 280V244" marker-end="url(#comp-arrow)"/>
-<rect class="box out" x="10" y="370" width="160" height="52" rx="4"/><text x="90" y="392" text-anchor="middle">Fetcher</text><text class="small" x="90" y="410" text-anchor="middle">market data to disk</text>
+<path class="edge" d="M270 242V278" marker-end="url(#comp-arrow)"/>
+<text class="small" x="278" y="264">reads</text>
+<rect class="box out" x="10" y="370" width="160" height="52" rx="4"/><text x="90" y="392" text-anchor="middle">Fetcher</text><text class="small" x="90" y="410" text-anchor="middle">writes to disk</text>
 <path class="edge" d="M90 370V334" marker-end="url(#comp-arrow)"/>
 <rect class="box" x="190" y="370" width="160" height="52" rx="4"/><text x="270" y="392" text-anchor="middle">This site</text><text class="small" x="270" y="410" text-anchor="middle">a person checks it</text>
 <path class="edge" d="M270 332V368" marker-end="url(#comp-arrow)"/>

@@ -20,7 +20,7 @@ Because the boundary is MCP, any MCP client could drive the same server, and any
 
 Diagram: The components: two harnesses drive one MCP server, which runs code in a sandbox over read-only dataset folders; the fetcher and the publish step run separately.
 
-At the top, two clients: the LangGraph graph, built from LangChain models and tools, and the Claude Code harness, with its /research skill and subagents. Both connect over MCP on stdio to one research MCP server, which offers list_datasets, describe_dataset and run_analysis. The server runs each analysis in a sandbox with no network, and keeps a record of every run. The sandbox reads dataset folders, each a dataset.toml and Parquet or CSV bars, mounted read-only. Two parts run separately, outside the agent loop: the fetcher, which writes market data to a dataset folder on disk, and the publish step, which checks a finished run and exports it for this site, where a person checks it again.
+At the top, two clients: the LangGraph graph, built from LangChain models and tools, and the Claude Code harness, with its /research skill and subagents. Both connect over MCP on stdio to one research MCP server, which offers list_datasets, describe_dataset and run_analysis. The server runs each analysis in a sandbox with no network, and keeps a record of every run. The sandbox reads dataset folders, each a dataset.toml and Parquet or CSV bars, mounted read-only. Two parts run separately, outside the agent loop: the fetcher, which writes market data to a dataset folder on disk, and the publish step, which reads a finished run from the run records, checks it and exports it for this site, where a person checks it again.
 
 ### Where LangGraph comes in
 
@@ -52,13 +52,13 @@ The server chooses the run, never the caller. Each analysis call gets its own nu
 
 ### The sandbox
 
-Generated code is treated as hostile. Each run_analysis call starts a fresh sandbox in layers. A systemd user scope puts it in a cgroup that caps memory, tasks and CPU. prlimit caps file size and open files and turns off core dumps. bubblewrap gives it an empty environment, no network and no capabilities, and mounts only what it needs, read-only: the Python runtime, the code, a small helper and the one dataset. Inside all that, a seccomp filter denies io_uring, BPF, the keyring calls and socket families other than Unix and IP.
+Generated code is treated as hostile. Each run_analysis call starts a fresh sandbox in layers. A systemd user scope puts it in a cgroup that caps memory, tasks and CPU. prlimit caps file size and open files and turns off core dumps. bubblewrap gives it a cleared environment with a fixed allow-list of variables, no network and no capabilities, and mounts only what it needs, read-only: the system's /usr libraries, the Python runtime and its packages, the code, a small helper and the one dataset. Inside all that, a seccomp filter denies io_uring, BPF, the keyring calls and socket families other than Unix and IP.
 
 The code can write only to sized in-memory file systems. When it ends, the sandbox's own PID 1 kills every other process, and the host copies out a JSON result and up to four PNG figures, each checked. A self-test runs before the first call. If the sandbox can't be set up, the call is refused, because there is no unsandboxed fallback. I red-teamed it with 22 probe scripts, about 40 escape and exhaustion attempts.
 
 Diagram: The sandbox's layers, from the outside in: a systemd scope, prlimit, bubblewrap and a seccomp filter around the generated code.
 
-The outermost layer is a systemd user scope, a cgroup that caps memory, tasks and CPU. Inside it, prlimit caps file size and open files and turns off core dumps. Inside that, bubblewrap gives an empty environment, no network, no capabilities and only read-only mounts, apart from /out, /tmp and /dev/shm, which are sized in-memory file systems. Inside that, a seccomp filter denies system calls such as io_uring, bpf and the keyring calls. At the centre, the generated code runs under a fixed launcher, which kills every other process when the code ends. The host then copies out only a JSON result and up to four checked PNG figures.
+The outermost layer is a systemd user scope, a cgroup that caps memory, tasks and CPU. Inside it, prlimit caps file size and open files and turns off core dumps. Inside that, bubblewrap gives a cleared environment with a fixed allow-list of variables, no network, no capabilities and only read-only mounts (the system libraries, the Python runtime, the code and the dataset), apart from /out, /tmp and /dev/shm, which are sized in-memory file systems. Inside that, a seccomp filter denies system calls such as io_uring, bpf and the keyring calls. At the centre, the generated code runs under a fixed launcher, which kills every other process when the code ends. The host then copies out only a JSON result and up to four checked PNG figures.
 
 ### The Claude Code harness
 
@@ -68,11 +68,11 @@ Hooks check every research call and keep the run's record. A hook can deny a cal
 
 ### The eval
 
-The eval runs each question from a fixed set several times through the graph, with plans approved automatically. The data is a seeded synthetic dataset whose generator plants effects and traps, and a reference implementation computes the expected answers. Besides answer accuracy, the scorer measures trap recall, the share of passes that fell into a trap where the critic raised that trap's tag. It also measures critic precision, the share of the critic's issues tagged with one of the question's traps that were raised on a pass that really fell into it. The scorecard records the seed and the config.
+The eval asks each question from a fixed set several times. The data is a seeded synthetic dataset whose generator plants effects and traps, and a reference implementation computes the expected answers. Besides answer accuracy, the scorer measures trap recall, the share of passes that fell into a trap where the critic raised that trap's tag. It also measures critic precision, the share of the critic's issues tagged with one of the question's traps that were raised on a pass that really fell into it. The scorecard records the seed and the config.
 
 ### Publishing
 
-Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips figures down to their image data. This site then records a person's check of each export, with a hash of every file, before the build will use it.
+Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips metadata chunks from figures. This site then records a person's check of each export, with a hash of every file, before the build will use it.
 
 ## Recorded runs
 
@@ -82,7 +82,7 @@ No published runs yet.
 
 Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.
 
-A second model reviewed the specs and the code adversarially over several rounds. I fixed and recorded what it found, and wrote the tests before the code.
+A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code.
 
 ## With more time
 
@@ -90,11 +90,11 @@ In several places I stopped where doing more would have cost more than it was wo
 
 ### Run the red-team probes on every push
 
-The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. It would also confirm the seccomp filter on the CI runner, where it hasn't been tested.
+The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. So far the probe catalogue has only been run on my WSL2 machine, not yet on the CI runner.
 
-### Verify on a clean machine
+### Finish the simpler verification plan
 
-I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to what it checked. The simpler plan moves verification to hosted CI runners, with a job on every push and a scheduled run, on a fresh machine that holds none of my keys or sign-ins.
+I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, on a fresh machine that holds none of my keys or sign-ins, and makes the Claude Code behaviour probes a command I run and watch.
 
 ### Run the LangGraph eval with real models
 
