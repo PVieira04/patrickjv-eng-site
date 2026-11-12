@@ -411,3 +411,9 @@ test("F-004 (D7): the build fails on bad sign-in settings in booking.json, for e
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }
 });
+
+// ---- F-005 PR 1: ownership of public/projects/, Buffers and _headers rules ----
+
+test("F-005 (D3): .gitattributes holds exactly the two -text lines, so git never rewrites checked bytes", () => {
+  assert.equal(readFileSync(join(ROOT, ".gitattributes"), "utf8"), "projects/** -text\npublic/projects/** -text\n");
+});
