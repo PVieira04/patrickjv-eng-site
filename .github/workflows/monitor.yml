@@ -89,7 +89,7 @@ jobs:
               docs/*|README.md|designs/*) ;;
               *) served="$served $f" ;;
             esac
-          done < <(gh api "repos/$GITHUB_REPOSITORY/compare/$DEPLOYED...$head" --jq '.files[].filename')
+          done < <(gh api "repos/$GITHUB_REPOSITORY/compare/$DEPLOYED...$head" --jq '.files[] | .filename, (.previous_filename // empty)')
           if [ -z "$served" ]; then echo "main ($head) differs from the deployed commit only in files the site build ignores"; exit 0; fi
           build=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs?check_name=Workers%20Builds%3A%20patrickjv-eng-site" \
             --jq '([.check_runs[] | select(.app.slug == "cloudflare-workers-and-pages" and .name == "Workers Builds: patrickjv-eng-site")][0] // empty) | "\(.status) \(.conclusion)"')

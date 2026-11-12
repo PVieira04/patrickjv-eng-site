@@ -65,7 +65,7 @@ docs/specs/               Feature specs F-001 to F-005 (booking, sign-in, calend
 designs/                  Archived design round (PROVENANCE.md), favicon candidates, icon + share-card generators (npm run images; hashes in images.json)
 writing/                  Write-ups (Markdown + front matter) → /writing/<slug> and /writing/<slug>.md, listed at /writing/
 infra/                    Read-only export of the Cloudflare dashboard config (cloudflare-export.mjs → cloudflare/*.json; docs/06)
-.github/workflows/        test.yml (every push/PR), monitor.yml (every 6 h + on Workers Builds results); dependabot.yml (weekly)
+.github/workflows/        test.yml (every push/PR), monitor.yml (every 6 h + on Workers Builds results), deploy-watch.yml (main pushes); dependabot.yml (weekly)
 docs/                     Full documentation (start below)
 ```
 
