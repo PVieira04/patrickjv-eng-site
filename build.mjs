@@ -322,15 +322,27 @@ const cspHash = (s) => "'sha256-" + sha256(Buffer.from(s, "utf8")).toString("bas
 // detach lines, so: no detach lines; no Content-Security-Policy on "/*"; and every CSP rule is an
 // exact path (no "*" or ":placeholder"), set once — then no path, not even a missing one that
 // falls through to 404.html, can receive a CSP from two rules or from a wildcard.
+const MAX_HEADER_RULES = 100;
 export function checkHeaders(headers) {
   const errors = [];
   const blocks = headers.split(/\n(?=\S)/).filter((blk) => !/^\s*#/.test(blk));
   const cspRules = blocks.filter((blk) => /^\s+Content-Security-Policy:/m.test(blk)).map((blk) => blk.split("\n")[0].trim());
   if (/^\s*!/m.test(headers)) errors.push("_headers must not use \"! Header\" detach lines (not honoured in production)");
   if (cspRules.includes("/*")) errors.push("_headers must not set Content-Security-Policy on /* (it would combine with per-path policies)");
-  const wild = cspRules.filter((r) => r !== "/*" && /[*:]/.test(r));
-  if (wild.length) errors.push(`_headers sets Content-Security-Policy on a wildcard rule (${wild.join(", ")}); use exact paths so a missing file gets only the 404 page's policy`);
   if (new Set(cspRules).size !== cspRules.length) errors.push("_headers sets Content-Security-Policy twice for one path pattern");
+  // F-005 (D10): Cloudflare caps Workers static assets at 100 header rules. Wildcards match missing
+  // paths, so only two exist: "/*" (security headers, checked above) and "/projects/*", which may
+  // carry only X-Robots-Tag (the dark-deploy noindex).
+  const rules = blocks.filter((blk) => blk.trim());
+  if (rules.length > MAX_HEADER_RULES) errors.push(`_headers has ${rules.length} rules; Workers static assets allow at most ${MAX_HEADER_RULES}`);
+  for (const blk of rules) {
+    const [path, ...lines] = blk.split("\n");
+    const r = path.trim();
+    if (r === "/*" || !/[*:]/.test(r)) continue;
+    const names = lines.filter((l) => l.trim()).map((l) => l.trim().split(":")[0]);
+    if (r !== "/projects/*") errors.push(`_headers has a wildcard rule (${r}); only /* and /projects/* are allowed — use exact paths so a missing file gets only the 404 page's headers`);
+    else if (names.some((n) => n !== "X-Robots-Tag")) errors.push(`_headers: /projects/* may carry only X-Robots-Tag (found ${names.join(", ")})`);
+  }
   return errors;
 }
 

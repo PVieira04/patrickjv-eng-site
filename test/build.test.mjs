@@ -417,3 +417,24 @@ test("F-004 (D7): the build fails on bad sign-in settings in booking.json, for e
 test("F-005 (D3): .gitattributes holds exactly the two -text lines, so git never rewrites checked bytes", () => {
   assert.equal(readFileSync(join(ROOT, ".gitattributes"), "utf8"), "projects/** -text\npublic/projects/** -text\n");
 });
+
+test("F-005 (D10): checkHeaders fails above 100 rules and passes at 100", () => {
+  const rule = (i) => `/r${i}\n  Content-Security-Policy: default-src 'none'\n`;
+  const rules = (n) => "# comment lines are not rules\n" + Array.from({ length: n }, (_, i) => rule(i)).join("\n");
+  assert.deepEqual(checkHeaders(rules(100)), []);
+  assert.match(checkHeaders(rules(101)).join(), /101 rules.*100/);
+});
+
+test("F-005 (D10): wildcard rules: /* takes security headers but never a CSP; /projects/* takes only X-Robots-Tag; any other wildcard fails", () => {
+  const sec = "/*\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n";
+  assert.deepEqual(checkHeaders(sec), []);
+  assert.match(checkHeaders(sec + "  Content-Security-Policy: default-src 'none'\n").join(), /on \/\*/);
+  const noindex = "\n/projects/*\n  X-Robots-Tag: noindex\n";
+  assert.deepEqual(checkHeaders(sec + noindex), []);
+  for (const h of ["Content-Security-Policy: default-src 'none'", "Cache-Control: public, max-age=86400", "Content-Type: text/plain"]) {
+    assert.match(checkHeaders(sec + noindex + `  ${h}\n`).join(), /\/projects\/\* may carry only X-Robots-Tag/, h);
+  }
+  for (const r of ["/fonts/*", "/projects/research-agent/*", "/blog/:slug", "/writing/*"]) {
+    assert.match(checkHeaders(sec + `\n${r}\n  X-Robots-Tag: noindex\n`).join(), /wildcard rule/, r);
+  }
+});
