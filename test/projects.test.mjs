@@ -653,11 +653,14 @@ test("F-005 (US-4): node build.mjs --record <dir> --expect <digest> records, and
   try {
     const expect = runExport(s.dir);
     const cli = (args) => { try { return { code: 0, out: execFileSync(process.execPath, [join(ROOT, "build.mjs"), ...args], { cwd: s.root, encoding: "utf8", stdio: "pipe" }) }; } catch (e) { return { code: e.status, out: e.stderr }; } };
+    const before = snapshot(join(s.root, "projects"));
     const bad = cli(["--record", s.dir, "--expect", "0".repeat(64)]);
     assert.equal(bad.code, 1);
     assert.match(bad.out, /digest/);
+    assert.deepEqual(snapshot(join(s.root, "projects")), before, "nothing written under projects/");
     assert.ok(!existsSync(join(s.root, MANIFEST)) && !existsSync(join(s.root, "projects/research-agent/runs")));
     assert.equal(cli(["--record", s.dir]).code, 1, "--expect is required");
+    assert.deepEqual(snapshot(join(s.root, "projects")), before, "nothing written under projects/");
     const ok = cli(["--record", s.dir, "--expect", expect]);
     assert.equal(ok.code, 0, ok.out);
     assert.match(ok.out, new RegExp(RUN_ID));
@@ -824,7 +827,7 @@ test("F-005 (US-4): .denylist.local fails the local build on a term in exported 
   let s = publishedSite();
   try {
     writeFileSync(join(s.root, ".denylist.local"), "zorblax\n");
-    assert.deepEqual(build({ root: s.root, now: NOW }).errors, [], "no term present");
+    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "no term present (--check, with .denylist.local present)");
     republish(s, "report.md", "# Research report\n\nAs we did at Zorblax.\n");
     buildFails(s, /report\.md matches a term in \.denylist\.local/);
   } finally { s.done(); }
@@ -835,6 +838,7 @@ test("F-005 (US-4): .denylist.local fails the local build on a term in exported 
     buildFails(s, /published\.json matches a term in \.denylist\.local/);
     editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A Zorblaxian chart."; });
     assert.deepEqual(build({ root: s.root, now: NOW }).errors, [], "inside a longer word");
+    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "inside a longer word (--check, with .denylist.local present)");
     writeFileSync(join(s.root, ".denylist.local"), "trap_caught\n");
     editManifest(s, (m) => { m.runs[RUN_ID].role = "trap_caught"; });
     buildFails(s, /published\.json matches a term in \.denylist\.local/);
