@@ -995,10 +995,10 @@ export function gzipCapErrors(name, html) {
   return z > GZIP_CAP ? [`${name} is ${z.toLocaleString("en-GB")} bytes gzipped, over the ${GZIP_CAP.toLocaleString("en-GB")}-byte cap (F-005: shorten the report, or don't publish it)`] : [];
 }
 
-// The SVG guard: role="img" on the root, whose first element child is a non-empty <title>; no
-// script, style, foreignObject, animation or image element; no on… or style attribute; every href
-// a same-document fragment; url() only as url(#…).
-const SVG_BANNED = new Set(["script", "style", "foreignobject", "animate", "set", "animatetransform", "animatemotion", "image"]);
+// The SVG guard: role="img" on the root, whose first element child is a non-empty <title>; only
+// the elements below (so no script, style, foreignObject, animation, image, a, filter or pattern);
+// no on… or style attribute; every href a same-document fragment; url() only as url(#…).
+const SVG_ALLOWED = new Set(["svg", "title", "desc", "defs", "marker", "g", "rect", "path", "text", "tspan", "line", "polyline", "polygon", "circle", "ellipse", "use"]);
 export function checkSvg(svg) {
   const errors = [];
   const roots = parseHtml(svg).children.filter((n) => n.tag);
@@ -1008,7 +1008,7 @@ export function checkSvg(svg) {
   const first = root.children.find((n) => n.tag);
   if (first?.tag !== "title" || !first.raw.trim()) errors.push(`${ARCHITECTURE_SVG}: the first element in the <svg> must be a non-empty <title>`);
   for (const el of [root, ...elements(root, { visible: false })]) {
-    if (SVG_BANNED.has(el.tag)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> is not allowed`);
+    if (!SVG_ALLOWED.has(el.tag)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> is not allowed`);
     for (const [a, v] of Object.entries(el.attrs)) {
       if (a === "style" || /^on/.test(a)) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> has a ${a} attribute; style it with a class in the page's <style>`);
       if ((a === "href" || a === "xlink:href") && !v.startsWith("#")) errors.push(`${ARCHITECTURE_SVG}: <${el.tag}> ${a} must be a same-document fragment (#…)`);
@@ -1560,6 +1560,7 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const listsShowcase = c.side_projects.some((x) => x.url === "/projects/research-agent");
   const isLaunched = c.pages?.projects?.launched;
   if (isLaunched === true && !listsShowcase) errors.push("content.json pages.projects.launched is true, but no side project has url /projects/research-agent; the launch PR adds that entry and its card's link in index.html");
+  if (isLaunched === true && Object.hasOwn(c.pages.projects, "_status")) errors.push("content.json pages.projects.launched is true, but pages.projects._status is still there; the launch PR removes the draft note once the owner has approved the copy");
   if (isLaunched === false && listsShowcase) errors.push("content.json pages.projects.launched is false, but a side project has url /projects/research-agent; set launched to true in the launch PR, or remove the entry and its link");
   const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
   for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["book.md", files["public/book.md"]], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (employerMention(t)) errors.push(`${f} names an employer: ${employerMention(t)}`);

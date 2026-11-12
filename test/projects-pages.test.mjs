@@ -635,7 +635,8 @@ const CARD = `<li>
           </li>
         </ul>`;
 const sideCard = (h) => h.replace(/(<section id="side-projects"[\s\S]*?)<\/ul>/, (m, a) => a + CARD);
-const launch = (on = true, side = true) => (c) => { c.pages.projects.launched = on; if (side) c.side_projects.push(SIDE); };
+// The launch PR: launched, the side-projects entry and its card, and the draft note removed.
+const launch = (on = true, side = true) => (c) => { c.pages.projects.launched = on; if (on) delete c.pages.projects._status; if (side) c.side_projects.push(SIDE); };
 const launched = (s, runs, opts = {}) => publish(s, runs, { card: scorecard(), copy: launch(), html: sideCard, ...opts });
 
 test("F-005 (US-3): each page links its Markdown copy; report.md, report.json and the figures are byte-identical to the published files", () => {
@@ -965,4 +966,55 @@ test("F-005 (US-3, D7): a lone \\r (or \\r\\n) in a question or a model id can't
     }
     assert.ok(out(s, "projects/research-agent.md").includes("analyst Q? ## x, critic"), "the model id on one line");
   } finally { s.done(); }
+});
+
+// ---- Review minors ----
+import { reportErrors, ENUMS } from "../lib/projects.mjs";
+import { orderRuns } from "../lib/project-pages.mjs";
+
+test("F-005 (US-2): plan may be null only for a failed or capped run; a rejected run may not name figures", () => {
+  for (const status of ["completed", "rejected"]) {
+    const d = edit(report(), (x) => { x.plan = null; if (status === "rejected") { rejected(x); x.plan = null; x.figures = []; } });
+    assert.ok(reportErrors(d).some((e) => /plan must be present unless the run failed or was capped/.test(e)), status);
+  }
+  for (const f of [failedNoPlan(), (x) => { capped()(x); x.plan = null; }]) assert.deepEqual(reportErrors(edit(report(), f)), []);
+  assert.ok(reportErrors(edit(report(), rejected)).some((e) => /figures must be empty for a rejected run/.test(e)));
+  assert.deepEqual(reportErrors(edit(report(), (x) => { rejected(x); x.figures = []; })), []);
+});
+
+test("F-005 (US-2): the scorecard's harnesses follow the fixed order of the enumeration, not content.json's key order", () => {
+  const s = site();
+  try {
+    const reversed = (c) => { c.pages.projects.labels.harness = Object.fromEntries(Object.entries(c.pages.projects.labels.harness).reverse()); };
+    ok(publish(s, [], { card: scorecard(), copy: reversed }));
+    assert.equal(ENUMS.harness[0], "langgraph");
+    assert.equal(scoreHead(out(s, SHOWCASE))[P.labels.scorecard.harness], `${P.labels.harness.langgraph} (2), ${P.labels.harness["claude-code"]} (1)`);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): run cards compare finished_at as instants, fractional seconds included, not as strings", () => {
+  const r = (id, finished_at) => ({ id, entry: {}, doc: { finished_at } });
+  // As strings "…00.5Z" < "…00Z", but 00.5 is the later instant.
+  assert.deepEqual(orderRuns([r("a", "2026-11-11T10:00:00Z"), r("b", "2026-11-11T10:00:00.5Z"), r("c", "2026-11-11T10:00:00.000001Z"), r("d", "2026-11-11T09:59:59.999999Z")]).map((x) => x.id), ["b", "c", "a", "d"]);
+  assert.deepEqual(orderRuns([r("b", "2026-11-11T10:00:00.5Z"), r("a", "2026-11-11T10:00:00.500000Z")]).map((x) => x.id), ["a", "b"], "the same instant: by run id");
+});
+
+test("F-005 (D9): launched true fails while pages.projects still carries its _status draft note", () => {
+  const s = site();
+  try {
+    assert.ok(Object.hasOwn(P, "_status"));
+    const r = launched(s, [run(1)], { copy: (c) => { launch()(c); c.pages.projects._status = P._status; } });
+    assert.ok(r.errors.some((e) => /launched is true, but pages\.projects\._status is still there/.test(e)), r.errors.join("\n"));
+    ok(launched(s, [run(1)]));
+  } finally { s.done(); }
+});
+
+test("F-005 (D1): the SVG guard allows only a fixed list of SVG elements", () => {
+  const svg = readFileSync(join(ROOT, "projects/research-agent/architecture.svg"), "utf8");
+  for (const el of ["<filter id=\"f\"/>", "<a href=\"#arrow\"><text>x</text></a>", "<pattern id=\"p\"/>", "<mask id=\"m\"/>", "<clipPath id=\"c\"/>", "<switch/>", "<view/>", "<div>x</div>", "<feImage href=\"#x\"/>"]) {
+    assert.ok(checkSvg(svg.replace("</g>", `${el}\n</g>`)).some((e) => /is not allowed/.test(e)), el);
+  }
+  for (const el of ["<circle cx=\"1\" cy=\"1\" r=\"1\"/>", "<line x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"/>", "<polyline points=\"0,0 1,1\"/>", "<text>a<tspan>b</tspan></text>", "<use href=\"#arrow\"/>"]) {
+    assert.deepEqual(checkSvg(svg.replace("</g>", `${el}\n</g>`)), [], el);
+  }
 });
