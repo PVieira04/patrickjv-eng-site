@@ -644,3 +644,175 @@ test("F-005 (US-4): --record runs the build's checks on the whole would-be tree:
     refuses(s, { dir: s.dir, expect: runExport(s.dir, { id, files: { "report.json": reportWith((d) => { d.run_id = id; }) } }) }, /alt for calls\/1\/out\/vol_by_minute\.png is empty/);
   } finally { s.done(); }
 });
+
+// ---- The build: the manifest governs runs/ and scorecard/, and every contract check runs ----
+import { build } from "../build.mjs";
+
+const NOW = Date.parse("2026-11-12T12:00:00Z");
+// A scratch copy of the site's inputs with the fixture run and scorecard recorded and alt text
+// written, as the owner would leave it before `npm run build`.
+function publishedSite() {
+  const s = sandbox();
+  for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public"]) cpSync(join(ROOT, f), join(s.root, f), { recursive: true });
+  assert.deepEqual(record({ root: s.root, dir: s.dir, expect: runExport(s.dir), today: TODAY }).errors, []);
+  writeAlt(s.root);
+  const sdir = join(s.base, "sc");
+  assert.deepEqual(record({ root: s.root, dir: sdir, expect: writeExport(sdir, { kind: "scorecard", id: EVAL_ID, files: scorecardFiles() }), kind: "scorecard", today: TODAY }).errors, []);
+  s.run = join(s.root, "projects/research-agent/runs", RUN_ID);
+  return s;
+}
+const editManifest = (s, f) => { const m = manifestOf(s.root); f(m); writeFileSync(join(s.root, MANIFEST), JSON.stringify(m, null, 2) + "\n"); };
+// Replace a published file and update its hash in the manifest, as a re-record would.
+const republish = (s, f, bytes) => {
+  writeFileSync(join(s.run, f), bytes);
+  editManifest(s, (m) => { m.runs[RUN_ID].files[f] = sha(Buffer.from(bytes)); });
+};
+// A build (and --check) must fail naming `pattern`, and the build must write nothing.
+function buildFails(s, pattern) {
+  const before = snapshot(s.root);
+  for (const check of [true, false]) {
+    const r = build({ root: s.root, check, now: NOW });
+    assert.ok(r.errors.some((e) => pattern.test(e)), `check=${check}: expected ${pattern}, got:\n${r.errors.join("\n")}`);
+  }
+  assert.deepEqual(snapshot(s.root), before, "the build wrote nothing");
+}
+
+test("F-005 (US-4, D3): a recorded run and scorecard, with alt text written, pass the build and --check", () => {
+  const s = publishedSite();
+  try {
+    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, []);
+    assert.deepEqual(build({ root: s.root, now: NOW }).errors, []);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D3): the build fails, writing nothing, on each manifest case under runs/ and scorecard/", () => {
+  const cases = [
+    ["a file not in the manifest", (s) => writeFileSync(join(s.run, "notes.md"), "x"), /notes\.md is not in the manifest/],
+    ["a file directly under runs/", (s) => writeFileSync(join(s.root, "projects/research-agent/runs/stray.md"), "x"), /runs\/stray\.md is not in the manifest/],
+    ["a run directory not in the manifest", (s) => cpSync(s.run, join(s.root, "projects/research-agent/runs/20261112T090000Z-0f0f0f"), { recursive: true }), /20261112T090000Z-0f0f0f\/report\.json is not in the manifest/],
+    ["a scorecard file not in the manifest", (s) => writeFileSync(join(s.root, "projects/research-agent/scorecard/old.json"), "{}"), /scorecard\/old\.json is not in the manifest/],
+    ["a scorecard with no manifest entry", (s) => editManifest(s, (m) => { delete m.scorecard; }), /scorecard\/scorecard\.json is not in the manifest/],
+    ["a listed file missing", (s) => rmSync(join(s.run, "report.md")), /report\.md is listed in the manifest but missing/],
+    ["a hash differs", (s) => writeFileSync(join(s.run, "report.md"), "# Research report\n\nEdited after the read.\n"), /report\.md does not match its sha256/],
+    ["a scorecard hash differs", (s) => writeFileSync(join(s.root, "projects/research-agent/scorecard/scorecard.json"), dump(edit(scorecard(), (d) => { d.k = 3; }))), /scorecard\.json does not match its sha256/],
+    ["a missing alt entry", (s) => editManifest(s, (m) => { m.runs[RUN_ID].alt = {}; }), /alt has no entry for calls\/1\/out\/vol_by_minute\.png/],
+    ["an empty alt text", (s) => editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = " "; }), /alt for calls\/1\/out\/vol_by_minute\.png is empty/],
+    ["an alt entry for a path that isn't a listed figure", (s) => editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/9/out/other.png"] = "Other"; }), /alt names calls\/9\/out\/other\.png/],
+    ["report.json names a figure that isn't present", (s) => republish(s, "report.json", reportWith((d) => { d.figures.push("calls/2/out/gone.png"); })), /calls\/2\/out\/gone\.png is named in report\.json but not present/],
+    ["a present figure report.json doesn't name", (s) => { mkdirSync(join(s.run, "calls/2/out"), { recursive: true }); republish(s, "calls/2/out/extra.png", png()); editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/2/out/extra.png"] = "Extra"; }); }, /calls\/2\/out\/extra\.png is not a figure report\.json names/],
+    ["a role not in Enumerations", (s) => editManifest(s, (m) => { m.runs[RUN_ID].role = "best_run"; }), /role must be one of/],
+    ["an unknown top-level key", (s) => editManifest(s, (m) => { m.approved = true; }), /unknown key "approved"/],
+    ["an unknown run key", (s) => editManifest(s, (m) => { m.runs[RUN_ID].reviewer = "me"; }), /unknown key "reviewer"/],
+    ["an unknown scorecard key", (s) => editManifest(s, (m) => { m.scorecard.note = "x"; }), /unknown key "note"/],
+    ["run_id differing from its directory name", (s) => { const id = "20261112T090000Z-0f0f0f"; rmSync(s.run, { recursive: true, force: true }); cpSync(join(s.base, "export"), join(s.root, "projects/research-agent/runs", id), { recursive: true }); rmSync(join(s.root, "projects/research-agent/runs", id, "export.json")); editManifest(s, (m) => { m.runs[id] = m.runs[RUN_ID]; delete m.runs[RUN_ID]; }); }, /run_id is not 20261112T090000Z-0f0f0f/],
+    ["a symlink under runs/", (s) => { if (process.platform !== "win32") { rmSync(join(s.run, "report.md")); symlinkSync(join(s.base, "export/report.md"), join(s.run, "report.md")); } else throw new Error("skip"); }, /report\.md is a symlink/],
+  ];
+  for (const [what, make, pattern] of cases) {
+    if (what === "a symlink under runs/" && process.platform === "win32") continue;
+    const s = publishedSite();
+    try { make(s); buildFails(s, pattern); } catch (e) { e.message = `${what}: ${e.message}`; throw e; } finally { s.done(); }
+  }
+});
+
+test("F-005 (D3): an export.json anywhere under projects/ or public/ fails the build", () => {
+  for (const where of ["projects/research-agent/runs/" + RUN_ID + "/export.json", "projects/export.json", "public/projects/export.json"]) {
+    const s = publishedSite();
+    try {
+      mkdirSync(join(s.root, where, ".."), { recursive: true });
+      writeFileSync(join(s.root, where), "{}");
+      buildFails(s, /export\.json is never committed/);
+    } finally { s.done(); }
+  }
+});
+
+test("F-005 (D3): an unknown value in each enumerated field fails the build (report, scorecard and manifest)", () => {
+  const cases = {
+    status: (d) => { d.status = "paused"; },
+    "review.outcome": (d) => { d.review.outcome = "skipped"; },
+    "review.open_issues[0].tag": (d) => { d.review.open_issues[0].tag = "survivorship"; },
+    stop_reason: (d) => { d.status = "failed"; d.stop_reason = "out_of_time"; },
+    "models.harness": (d) => { d.models.harness = "autogen"; },
+    "summary.author": (d) => { d.summary.author = "editor"; },
+  };
+  for (const [field, f] of Object.entries(cases)) {
+    const s = publishedSite();
+    try { republish(s, "report.json", reportWith(f)); buildFails(s, new RegExp(field.replace(/[.[\]]/g, "\\$&"))); } finally { s.done(); }
+  }
+  const scCases = {
+    "runs[0].status": (d) => { d.runs[0].status = "paused"; },
+    "runs[0].models.harness": (d) => { d.runs[0].models.harness = "autogen"; },
+    "fingerprint.config.harness": (d) => { d.fingerprint.config.harness = "autogen"; },
+    "questions[0].other_issues": (d) => { d.questions[0].other_issues = { survivorship: 1 }; },
+  };
+  for (const [field, f] of Object.entries(scCases)) {
+    const s = publishedSite();
+    try {
+      const b = dump(edit(scorecard(), f));
+      writeFileSync(join(s.root, "projects/research-agent/scorecard/scorecard.json"), b);
+      editManifest(s, (m) => { m.scorecard.files["scorecard.json"] = sha(Buffer.from(b)); });
+      buildFails(s, new RegExp(field.replace(/[.[\]]/g, "\\$&")));
+    } finally { s.done(); }
+  }
+  const s = publishedSite();
+  try { editManifest(s, (m) => { m.runs[RUN_ID].role = "favourite"; }); buildFails(s, /role/); } finally { s.done(); }
+});
+
+test("F-005 (US-4, D6): the build fails on a committed run or scorecard that fails the synthetic-only gate", () => {
+  let s = publishedSite();
+  try { republish(s, "report.json", reportWith((d) => { d.dataset.source = "synthetic:research_agent.data.synth seed=1 "; })); buildFails(s, /D6/); } finally { s.done(); }
+  s = publishedSite();
+  try {
+    const b = dump(edit(scorecard(), (d) => { d.runs[0].dataset.visibility = "private"; }));
+    writeFileSync(join(s.root, "projects/research-agent/scorecard/scorecard.json"), b);
+    editManifest(s, (m) => { m.scorecard.files["scorecard.json"] = sha(Buffer.from(b)); });
+    buildFails(s, /D6/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4): the build fails on a committed file that hits the output scan, the employer denylist, or a JSON key only", () => {
+  const cases = [
+    ["report.md", "# Research report\n\nSee C:\\Users\\someone\\x.\n", /report\.md matches output scan rule windows_user_path/],
+    ["report.md", "# Research report\n\nThe company asked for it.\n", /report\.md names an employer/],
+    ["report.json", dump(report()).replace('"answer"', '"\\u002fhome/someone": 1,\n  "answer"'), /report\.json matches output scan rule home_path/],
+  ];
+  for (const [f, body, pattern] of cases) {
+    const s = publishedSite();
+    try { republish(s, f, body); buildFails(s, pattern); } finally { s.done(); }
+  }
+  const s = publishedSite();
+  try { editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "Chart from data/cache/x"; }); buildFails(s, /published\.json matches output scan rule data_cache/); } finally { s.done(); }
+});
+
+test("F-005 (US-4): .denylist.local fails the local build on a term in exported text, an alt text or a role; absent or comments-only, the build runs as in CI", () => {
+  let s = publishedSite();
+  try {
+    writeFileSync(join(s.root, ".denylist.local"), "zorblax\n");
+    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "no term present");
+    republish(s, "report.md", "# Research report\n\nAs we did at Zorblax.\n");
+    buildFails(s, /report\.md matches a term in \.denylist\.local/);
+  } finally { s.done(); }
+  s = publishedSite();
+  try {
+    writeFileSync(join(s.root, ".denylist.local"), "zorblax\n");
+    editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A Zorblax chart."; });
+    buildFails(s, /published\.json matches a term in \.denylist\.local/);
+    editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A Zorblaxian chart."; });
+    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "inside a longer word");
+    writeFileSync(join(s.root, ".denylist.local"), "trap_caught\n");
+    editManifest(s, (m) => { m.runs[RUN_ID].role = "trap_caught"; });
+    buildFails(s, /published\.json matches a term in \.denylist\.local/);
+  } finally { s.done(); }
+  s = publishedSite();
+  try {
+    republish(s, "report.md", "# Research report\n\nAs we did at Zorblax.\n");
+    const absent = build({ root: s.root, now: NOW });
+    assert.deepEqual(absent.errors, [], "absent: as in CI");
+    const after = snapshot(s.root);
+    writeFileSync(join(s.root, ".denylist.local"), "# zorblax\n\n  \n");
+    const comments = build({ root: s.root, now: NOW });
+    assert.deepEqual(comments.errors, []);
+    assert.deepEqual(comments.stale, [], "nothing differs from the build without the file");
+    const withFile = snapshot(s.root); delete withFile[".denylist.local"];
+    assert.deepEqual(withFile, after, "a comments-only file behaves exactly as an absent one");
+  } finally { s.done(); }
+});

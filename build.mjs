@@ -25,7 +25,7 @@ import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
 import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROVIDER_NAMES } from "./mcp/booking-config.js";
 import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
-import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, MANIFEST, PROJECT, MAX_RUNS } from "./lib/projects.mjs";
+import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, MANIFEST, PROJECT } from "./lib/projects.mjs";
 
 export const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -1368,17 +1368,11 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   if (did !== DID_SHA256) errors.push(`public/.well-known/did.json changed (sha256 ${did}); it backs did:web sign-in`);
   errors.push(...checkSecurityTxt(read("public/.well-known/security.txt"), now));
   errors.push(...checkMicrosoftSecret(bookingCfg, now));
-  // F-005 (D10): four _headers rules per published run keep the file under its 100-rule cap only
-  // up to 8 runs. The manifest's own format and checks come with --record.
-  const manifest = readOr(MANIFEST);
-  if (manifest !== null) {
-    let runs;
-    try { runs = JSON.parse(manifest).runs; } catch (e) { runs = e; }
-    if (runs instanceof Error) errors.push(`${MANIFEST} is not valid JSON (${runs.message})`);
-    else if (!runs || typeof runs !== "object" || Array.isArray(runs)) errors.push(`${MANIFEST}: "runs" must be an object keyed by run id`);
-    const n = runs instanceof Error || !runs || typeof runs !== "object" ? 0 : Object.keys(runs).length;
-    if (n > MAX_RUNS) errors.push(`${MANIFEST} lists ${n} runs; at most ${MAX_RUNS} can be published (the _headers rule budget, F-005 D10)`);
-  }
+  // F-005: the manifest governs projects/research-agent/runs/ and scorecard/; every published file
+  // is checked as --record checked it (the export contract, fields and enumerations, the D6 gate,
+  // the PNG check, the output scan, the employer denylist and, when present, .denylist.local), and
+  // at most 8 runs fit the _headers rule budget (D10).
+  try { errors.push(...checkProjects(readProjectsTree(root), { employerMention, denylist: loadDenylist(root) })); } catch (e) { errors.push(`projects: ${e.message}`); }
 
   // F-005 (D4): every entry under public/projects/ that this build would not write is a stray:
   // --check names it, a build deletes it (and every directory that leaves empty) in the same staged
