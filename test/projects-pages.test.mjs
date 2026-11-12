@@ -372,6 +372,8 @@ test("F-005 (D5, D9): with no runs and no scorecard and launched false (main bef
     rmSync(join(s.root, MANIFEST), { force: true });
     ok(build({ root: s.root, today: TODAY, now: NOW }));
     ok(build({ root: s.root, check: true, now: NOW }));
+    // The launch PR must update this test (and the build.test.mjs D4 tests using unpublishedScratch,
+    // which build with no run and so assume launched is false): see 06-operations, Launch.
     assert.equal(P.launched, false, "the committed copy is not launched");
     ok(build({ root: ROOT, check: true, now: NOW }));
   } finally { s.done(); }

@@ -415,6 +415,10 @@ function sandbox() {
   clearRecorded(root);
   return { base, root, dir, done: () => rmSync(base, { recursive: true, force: true }) };
 }
+test("clearRecorded deletes only in a scratch copy: the checkout, \"\" and \".\" throw", () => {
+  for (const root of [ROOT, "", "."]) assert.throws(() => clearRecorded(root), /not a scratch copy/, JSON.stringify(root));
+  assert.ok(existsSync(join(ROOT, "projects/research-agent/architecture.svg")), "nothing in the checkout was touched");
+});
 // Remove everything --record wrote (projects/ also holds sources, such as architecture.svg).
 const unpublishAll = (root) => { for (const f of ["projects/research-agent/runs", "projects/research-agent/scorecard", "projects/research-agent/published.json"]) rmSync(join(root, f), { recursive: true, force: true }); };
 // Every file under a directory, path -> bytes (as hex), so "wrote nothing" compares the whole tree.
