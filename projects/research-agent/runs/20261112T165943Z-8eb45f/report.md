@@ -1,0 +1,168 @@
+# Research report 20261112T165943Z-8eb45f
+
+Status: completed. Harness: claude-code. Dataset: synth-1m.
+
+## Question
+
+On synth\-1m\, is the Monday RTH session return \(09\:30 to 16\:00 New York\) different from the other weekdays\'\? Report the difference in mean RTH log return\, Monday minus Tuesday to Friday\, as the statistic \`monday\_minus\_other\_rth\_return\`\, and test whether it differs from zero at the 5\% level\.
+
+## Plan
+
+```toml
+hypothesis = "The mean RTH (09:30 to 16:00 America/New_York) log return of SYN on Mondays differs from the mean RTH log return on Tuesdays to Fridays."
+dataset = "synth-1m"
+start = 2023-01-03
+end = 2025-12-31
+method = "Load synth-1m (symbol SYN). Convert ts from UTC to America/New_York (DST-aware via tz conversion, not a fixed offset). For each New York calendar date that is a weekday, keep bars with NY bar-start time in [09:30, 16:00), i.e. 09:30 to 15:59 inclusive. Require a complete session (all 390 bars present) and a single contract across the session's bars; drop and count any session that fails either check (contract switches occur at 09:30 NY on roll Thursdays, so a session that starts on the new contract is kept as long as all its bars share one contract). RTH log return = ln(close of the 15:59 bar / open of the 09:30 bar). Label each session Monday or Tuesday-Friday by its NY date. Statistic monday_minus_other_rth_return = mean(Monday returns) - mean(Tuesday-Friday returns). Report counts per group, per-weekday means and the number of dropped sessions."
+statistic = "monday_minus_other_rth_return"
+significance = "OLS of daily RTH log return on a constant and a Monday dummy; the Monday coefficient equals the statistic. Two-sided test of coefficient = 0 at the 5% level using Newey-West HAC standard errors with 5 lags (one trading week; daily returns do not overlap). Report Welch's two-sample t-test as a robustness check."
+```
+
+## Method
+
+\- Sample\: synth\-1m \(SYN\, continuous front\-month\)\, New York weekdays from 2023\-01\-03 to 2025\-12\-31\.
+\- Session\: timestamps converted from UTC to America\/New\_York with DST handled\. RTH is the bars starting 09\:30 to 15\:59 NY\, and the return is \`ln\(close\[15\:59\] \/ open\[09\:30\]\)\`\.
+\- Session checks\: each session needed all 390 bars and a single contract\. The contract rolls fall at 09\:30 NY on Thursdays\, so a roll\-day session runs entirely on the new contract and is kept\. No sessions were dropped \(782 kept\: 156 Monday\, 626 Tuesday\-Friday\)\.
+\- Primary test\, set before the analysis\: OLS of the daily RTH return on a constant and a Monday dummy\, using Newey\-West HAC standard errors with 5 lags\, two\-sided at the 5\% level\. Welch\'s two\-sample t\-test is the robustness check\. Only this test decides the conclusion\.
+\- Exploratory tests\, added after review and chosen after seeing the data\: per\-weekday summaries\, Monday vs Wednesday\-Friday\, Tuesday vs the other days\, and Tuesday means by year\. Holm\-adjusted p\-values cover all 4 tests \(the primary plus 3 exploratory\)\.
+\- Review\: three analysis passes\, each checked by an independent critic\. Pass 1 attributed the effect to the wrong day\. Pass 2 let an unplanned test override the planned one\. Pass 3 was approved\.
+
+## Code
+
+Final script: call 3, pass 3.
+
+```python
+
+import numpy as np, pandas as pd, statsmodels.api as sm
+from scipy import stats
+import research_io
+
+df = research_io.load("synth-1m")
+df = df[df.symbol=="SYN"].copy()
+df["ny"] = df.ts.dt.tz_convert("America/New_York")
+df["date"] = df.ny.dt.normalize().dt.tz_localize(None)
+df["tod"] = df.ny.dt.hour*60 + df.ny.dt.minute
+df = df[(df.date>="2023-01-03")&(df.date<="2025-12-31")&(df.date.dt.dayofweek<5)]
+df = df[(df.tod>=570)&(df.tod<960)].sort_values("ts")
+
+g = df.groupby("date")
+cnt = g.size(); ncon = g.contract.nunique()
+n_all = len(cnt)
+bad_incomplete = int((cnt!=390).sum())
+bad_contract = int(((cnt==390)&(ncon!=1)).sum())
+ok = cnt[(cnt==390)&(ncon==1)].index
+dropped = n_all - len(ok)
+d = df[df.date.isin(ok)]
+g = d.groupby("date")
+ret = np.log(g.close.last()/g.open.first())
+s = pd.DataFrame({"r":ret})
+s["dow"] = s.index.dayofweek
+s["year"] = s.index.year
+s["mon"] = (s.dow==0).astype(float)
+
+def hac(sub, col):
+    X = sm.add_constant(sub[col].astype(float)); m = sm.OLS(sub.r, X).fit(cov_type="HAC", cov_kwds={"maxlags":5})
+    ci = m.conf_int().loc[col]
+    return dict(coef=float(m.params[col]), se=float(m.bse[col]), p=float(m.pvalues[col]), ci_low=float(ci[0]), ci_high=float(ci[1]), n=int(len(sub)))
+
+prim = hac(s, "mon")
+a = s.r[s.dow==0]; b = s.r[s.dow>=1]
+w = stats.ttest_ind(a, b, equal_var=False)
+welch_primary = dict(t=float(w.statistic), p=float(w.pvalue))
+stat = float(a.mean()-b.mean())
+
+names = ["Mon","Tue","Wed","Thu","Fri"]
+perday = {}
+for i,nm in enumerate(names):
+    x = s.r[s.dow==i]
+    perday[nm] = dict(n=int(len(x)), mean=float(x.mean()), median=float(x.median()),
+        trimmed_mean_10=float(stats.trim_mean(x,0.1)), std=float(x.std(ddof=1)), share_positive=float((x>0).mean()))
+
+# exploratory
+s2 = s[s.dow.isin([0,2,3,4])]
+e1 = hac(s2, "mon")
+x1 = s2.r[s2.dow==0]; x2 = s2.r[s2.dow>=2]
+wt = stats.ttest_ind(x1, x2, equal_var=False)
+e2 = dict(t=float(wt.statistic), p=float(wt.pvalue), diff=float(x1.mean()-x2.mean()))
+s["tue"] = (s.dow==1).astype(float)
+e3 = hac(s, "tue")
+tue_year = {int(y): dict(n=int(len(x)), mean=float(x.mean())) for y,x in s.r[s.dow==1].groupby(s.year[s.dow==1])}
+
+fam = {"primary_mon_vs_tue_fri_HAC": prim["p"], "expl_mon_vs_wed_fri_HAC": e1["p"],
+       "expl_mon_vs_wed_fri_Welch": e2["p"], "expl_tue_vs_other_HAC": e3["p"]}
+order = sorted(fam, key=fam.get); m = len(order); holm = {}; run = 0
+for i,k in enumerate(order):
+    run = max(run, min(1.0, (m-i)*fam[k])); holm[k] = run
+
+concl = "supported" if prim["p"] < 0.05 else "not_supported"
+direction = "below" if prim["coef"]<0 else "above"
+interp = (f"Monday mean RTH log return is {abs(stat)*1e4:.2f} bp {direction} the Tue-Fri mean; "
+          f"HAC NW(5) p={prim['p']:.3g}, 95% CI [{prim['ci_low']*1e4:.2f}, {prim['ci_high']*1e4:.2f}] bp; "
+          f"conclusion from the pre-specified test only.")
+result = dict(
+  primary=dict(test="OLS Monday dummy, Newey-West HAC 5 lags, two-sided 5%", **prim, statistic_check=stat),
+  robustness_welch_primary=welch_primary,
+  counts=dict(monday=int(len(a)), tue_fri=int(len(b)), sessions_considered=int(n_all),
+              dropped_total=int(dropped), dropped_incomplete=bad_incomplete, dropped_multi_contract=bad_contract),
+  per_weekday_means={k:v["mean"] for k,v in perday.items()},
+  exploratory=dict(label="EXPLORATORY - not used for the conclusion", n_exploratory_tests=3,
+     per_weekday=perday, mon_vs_wed_fri_HAC=e1, mon_vs_wed_fri_Welch=e2, tue_vs_other_HAC=e3,
+     tuesday_mean_by_year=tue_year),
+  holm_adjusted_p=dict(family_size=m, raw_p=fam, holm_p=holm,
+     note="Family = primary test + 3 exploratory tests; Welch on primary is a robustness check, not counted."),
+  interpretation=interp)
+research_io.save_result(result, answer=dict(statistic="monday_minus_other_rth_return", value=stat, n=int(len(s)),
+   conclusion=concl, ci=dict(level=0.95, low=prim["ci_low"], high=prim["ci_high"])))
+print(result)
+```
+
+## Results
+
+Yes\, by the plan\'s test\: on synth\-1m the mean Monday RTH log return is 7\.59 bp below the Tuesday\-Friday mean \(monday\_minus\_other\_rth\_return \= \-0\.000759\; Newey\-West p \= 7\.8e\-5\, 95\% CI \-11\.35 to \-3\.82 bp\)\. But the gap comes from Tuesday being unusually high\, not Monday being low\: Monday\'s mean is about zero\, like Wednesday to Friday\.
+
+- monday_minus_other_rth_return = -0.0007588032970124941 (n = 782)
+- 95% interval: [-0.0011353254245348079, -0.00038228116949018203]
+- conclusion: supported
+
+\*\*Primary \(pre\-specified\)\*\*
+
+\| Quantity \| Value \|
+\|\-\-\-\|\-\-\-\|
+\| \`monday\_minus\_other\_rth\_return\` \| \-0\.000759 \(\-7\.59 bp\) \|
+\| Newey\-West\(5\) p \| 7\.8e\-5 \(Holm p 2\.3e\-4\) \|
+\| 95\% CI \| \-11\.35 to \-3\.82 bp \|
+\| Welch p \| 2\.0e\-4 \|
+\| n \| 156 Monday \/ 626 Tue\-Fri \|
+
+At the 5\% level\, the difference between Monday and the Tuesday\-Friday mean is not zero\. The hypothesis is \*\*supported\*\*\.
+
+\*\*Exploratory \(chosen after seeing the data\)\*\*
+
+\| Weekday \| Mean RTH log return \|
+\|\-\-\-\|\-\-\-\|
+\| Mon \| 0\.000022 \|
+\| Tue \| 0\.003149 \|
+\| Wed \| 0\.000038 \|
+\| Thu \| 0\.000022 \|
+\| Fri \| \-0\.000095 \|
+
+\- Monday vs Wednesday\-Friday\: \+0\.34 bp\, HAC p \= 0\.86 \(Holm p \= 1\.0\)\. There is no difference\.
+\- Tuesday vs the other days\: about \+31\.5 bp\, HAC p \= 5\.6e\-53\. The effect is broad rather than driven by outliers\: 93\% of Tuesdays are positive\, against about 51\% of other days\. Tuesday\'s median and trimmed mean are close to its mean\, and its mean is positive in each of 2023\, 2024 and 2025\.
+
+The negative Monday statistic is real under the question\'s definition\. It exists because the Tuesday\-Friday comparison group is lifted by a strong Tuesday effect\; Monday itself is unremarkable\.
+
+## Critic findings
+
+Review: passed after 3 critic call(s).
+- Pass 1: revise
+  - sample_size: The Monday\-minus\-Tue\-Fri result \(\-0\.000759\, HAC t\=\-3\.95\, n\=782\) comes entirely from Tuesday\, not from Monday\. Per\-weekday means in result\.json\: Mon 2\.23e\-5\, Tue 3\.149e\-3\, Wed 3\.81e\-5\, Thu 2\.22e\-5\, Fri \-9\.54e\-5\. Monday is in line with Wed\, Thu and Fri\. Tuesday\'s mean is about 100 times the others and raises the Tue\-Fri pooled mean to about 7\.8e\-4\. The plan\'s statistic is computed correctly\, but the \'supported\' conclusion \(Monday RTH returns differ\) misattributes the effect\. Nothing checks whether a handful of extreme Tuesday sessions drive the Tuesday mean\. Revise to report Tuesday\'s median\, trimmed mean and largest returns\, and the Monday statistic with Tuesday excluded \(or Monday against Wed\-Fri\)\. State that Monday does not differ from Wed\-Fri\, and that the significance reflects a Tuesday anomaly or outliers rather than a Monday effect\.
+- Pass 2: revise
+  - multiple_comparisons: The plan has one decision rule\: a two\-sided Newey\-West \(5 lags\) test of the Monday coefficient at 5\%\. Its p is 7\.8e\-5 \(Welch p 2\.0e\-4\)\, so the pre\-specified result is \'supported\'\. main\.py also ran at least six tests the plan did not include\: Monday vs Wed\-Fri \(HAC and Welch\)\, Tuesday vs rest \(HAC and Welch\)\, Tuesday without its top 10 days vs the others\, a Tuesday sign test and a Mann\-Whitney test\. Line 91 then uses one of them\, Monday vs Wed\-Fri\, to override the plan and set conclusion\=\'inconclusive\'\. These extra tests have no Bonferroni or Holm correction\, and the report does not say how many were tried\. The \'Tuesday effect\' framing was chosen after looking at the data\. Either report the plan\'s verdict \(\'supported\'\: the Monday mean is about 7\.6 bp below the Tue\-Fri mean\, 95\% CI \-11\.4 to \-3\.8 bp\)\, with the Tuesday breakdown labelled as exploratory and the number of extra tests stated\, or put the Monday vs Wed\-Fri test into a revised plan before using it to decide the result\.
+- Pass 3: pass
+
+## Caveats
+
+- synth\-1m is synthetic data\, so the Tuesday pattern is almost certainly something the generator puts in and says nothing about real markets\.
+- The Tuesday finding and the Monday vs Wednesday\-Friday comparison are exploratory\. They were chosen after looking at the data and are reported with Holm adjustment over 4 tests\; they did not decide the conclusion\.
+- The question\'s comparison \(Monday vs the pooled Tuesday\-Friday mean\) answers whether Monday differs from the average of the rest of the week\, not whether Monday itself is abnormal\. Here the two questions have opposite answers\.
+- Only the RTH session \(09\:30 to 16\:00 NY\) is studied\. Overnight and weekend returns are excluded\.
