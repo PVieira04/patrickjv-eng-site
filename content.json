@@ -267,18 +267,18 @@
       "head": {
         "index": {
           "title": "Projects — Patrick Vieira",
-          "description": "Projects by Patrick Vieira, with how each was built and what it measured."
+          "description": "Projects by Patrick Vieira, with how he built and tested each one."
         },
         "showcase": {
           "title": "Research agent: LangGraph and LangChain on MCP — Patrick Vieira",
-          "description": "A research agent built with LangGraph and LangChain: it plans, waits for approval, runs Python in a sandboxed MCP server, has a critic check for known traps, and reports. Eval results and recorded runs on synthetic data."
+          "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. Includes eval results and recorded runs on synthetic data."
         }
       },
       "copy": {
         "synthetic": "Every result on this page is on a seeded synthetic dataset with planted effects and traps, not on market data.",
         "index": {
           "heading": "Projects",
-          "intro": "Things I have built outside work, written up with how they were built and what they measured.",
+          "intro": "Things I have built outside work, with how I built them and how I tested them.",
           "entry": {
             "title": "Research agent",
             "summary": "An agent that answers a plain-English question about time-series data with a plan, sandboxed analysis, a critic and a report.",
@@ -287,42 +287,108 @@
         },
         "showcase": {
           "heading": "Research agent",
-          "lead": "A research agent built with LangGraph and LangChain. It answers a researcher's plain-English question about time-series data: it writes a plan, waits for a person to approve it, runs Python in a sandboxed MCP server, has a second model check the work for known traps, and writes a report.",
-          "code": "Code available on request: book a call.",
-          "code_link": "book a call",
+          "lead": "A research agent built with LangGraph, LangChain and MCP. You ask it a question about time-series data in plain English, and it plans, runs and checks the analysis before it reports.",
+          "code": "The code is available on request. Book a call.",
+          "code_link": "Book a call",
           "what_heading": "What it does",
           "what": [
-            "A question goes in; a plan comes out first: the hypothesis, the dataset and window, the method, the statistic and the test. No analysis code runs without a person's approval: the LangGraph agent pauses for the plan to be approved, and the Claude Code harness asks permission before every analysis call. In the LangGraph eval, plans are approved automatically.",
-            "The agent then analyses the data in a sandbox, a critic model reviews the work against a checklist of known traps, and the agent writes a report with its figures. The worked example is futures one-minute bars."
+            "Before any analysis, the agent writes a plan with a hypothesis, dataset and window, method, statistic and test. No analysis code runs until a person approves it. The LangGraph agent pauses for the plan to be approved, and the Claude Code harness asks permission before every analysis call. In the LangGraph eval, plans are approved automatically.",
+            "It then analyses the data in a sandbox. A critic model checks the work against a list of known traps before the agent writes its report and figures. The example data is one-minute futures bars."
           ],
           "architecture_heading": "Architecture",
+          "architecture_intro": [
+            "Two harnesses drive the same loop, and both talk to one MCP server. The LangGraph graph calls models through an API. The Claude Code harness runs inside Claude Code and needs no API keys. Only the server can reach the data or run code. It runs analysis code in a sandbox that reads dataset folders from disk, and keeps a record of every run.",
+            "Because the boundary is MCP, any MCP client could drive the same server, and any dataset folder can be plugged in. A folder holding a dataset.toml descriptor and Parquet or CSV bars, under a directory named in the config, shows up in list_datasets. Sandboxed code never reaches the network. Market data is fetched separately, by a command that writes a dataset folder to disk, and the sandbox only ever reads it."
+          ],
           "architecture": [
             {
-              "heading": "The graph",
-              "text": "A LangGraph state graph: plan, an approval interrupt, an analyse loop, the critic, hard caps on tool calls and tokens, and checkpointing so a run can stop and resume."
+              "heading": "Where LangGraph comes in",
+              "text": [
+                "The agent is a LangGraph StateGraph with seven nodes, from plan to report. Its state is a typed dictionary holding the messages, the plan, the analysis calls, the critic's verdicts and running counts of tool calls and tokens. When a node meets an ending, such as a rejected plan, a cap or an error, it records that in the state. The conditional edges then send the run straight to report, so every run ends with a report that says how it stopped.",
+                "Approval is a LangGraph interrupt. The approve node calls interrupt() with the plan, and the run pauses until the caller resumes it with Command(resume=…). The answer is approve, edit with a changed plan, or reject with a reason. apply_decision checks it and sends an invalid answer back to approve, with the reason shown.",
+                "The checkpointer is LangGraph's AsyncSqliteSaver. The run id is the thread id, and durability is set to sync, so each completed step is saved before the next one starts. A run paused at approval, or stopped by a rate limit or a timeout, resumes from its last completed step and keeps the models it started with.",
+                "In the analyse loop the agent and tools nodes take turns until the analyst stops calling tools. Then the critic reviews the pass. If its verdict is revise, a new pass starts with the critic's issues, up to a set number of critic calls. Hard caps on tool calls per pass, tool calls per run and tokens per run end the run as capped, and the report names the cap and its value."
+              ]
+            },
+            {
+              "heading": "Where LangChain comes in",
+              "text": [
+                "The models are named in the config as provider:model strings and built with LangChain's init_chat_model. Neither the analyst nor the critic is tied to one vendor, and the tests pass in fake models through the same factory.",
+                "The MCP tools reach the graph through langchain-mcp-adapters. A run starts the MCP server over stdio and keeps one session open for the whole run, and load_mcp_tools turns the server's tools into LangChain tools. The analyst gets them through bind_tools, one call at a time, and LangGraph's ToolNode runs them. A wrapper around each call logs it, and refuses run_analysis on any dataset other than the approved plan's.",
+                "The plan and the critic's verdict are structured output, from with_structured_output against Pydantic models. Every issue the critic raises is tagged from a fixed checklist of traps, such as look-ahead, contract rolls, timezones and sessions, or multiple comparisons. Output that fails validation gets one more try. If that fails too, the run ends as failed rather than guessing."
+              ]
             },
             {
               "heading": "The research MCP server",
-              "text": "Three tools, used by the graph and by Claude Code on its own, each with an access level checked against the caller's, and a visibility flag on every dataset."
+              "text": [
+                "It is one FastMCP server with three tools. list_datasets and describe_dataset need access level read, and run_analysis needs execute. Every call carries a caller context, checked before any work, and a dataset marked private is visible only to a caller that owns the local datasets. Results are structured. A refusal comes back inside the result with a reason code, such as access denied or sandbox unavailable, so a client can act on it.",
+                "The server chooses the run, never the caller. Each analysis call gets its own numbered directory, and only one sandbox runs at a time per user on the machine."
+              ]
             },
             {
               "heading": "The sandbox",
-              "text": "No network, no secrets, read-only data and hard limits, enforced with bubblewrap, a cgroup memory limit and a seccomp filter."
-            },
-            {
-              "heading": "The eval",
-              "text": "A fixed set of questions on a seeded synthetic dataset with planted effects and traps, each repeated k times, scored on answer accuracy, trap recall and critic precision."
+              "text": [
+                "Generated code is treated as hostile. Each run_analysis call starts a fresh sandbox in layers. A systemd user scope puts it in a cgroup that caps memory, tasks and CPU. prlimit caps file size and open files and turns off core dumps. bubblewrap gives it an empty environment, no network and no capabilities, and mounts only what it needs, read-only: the Python runtime, the code, a small helper and the one dataset. Inside all that, a seccomp filter denies io_uring, BPF, the keyring calls and socket families other than Unix and IP.",
+                "The code can write only to sized in-memory file systems. When it ends, the sandbox's own PID 1 kills every other process, and the host copies out a JSON result and up to four PNG figures, each checked. A self-test runs before the first call. If the sandbox can't be set up, the call is refused, because there is no unsandboxed fallback. I red-teamed it with 22 probe scripts, about 40 escape and exhaustion attempts."
+              ]
             },
             {
               "heading": "The Claude Code harness",
-              "text": "The same loop without API keys: a /research skill, analyst and critic subagents, and a permission rule on code execution."
+              "text": [
+                "The same loop runs in Claude Code with no API keys. A /research skill drives it. Only the research-analyst subagent calls run_analysis, and a research-critic subagent reviews each pass with the same checklist and verdict model as the graph. run_analysis is on the project's ask list, so a person approves every analysis call, while listing and describing datasets go through without a prompt.",
+                "Hooks check every research call and keep the run's record. A hook can deny a call but never allows one, and a hook that fails, fails closed. The harness writes its report in the same format as the graph."
+              ]
+            },
+            {
+              "heading": "The eval",
+              "text": [
+                "The eval runs each question from a fixed set several times through the graph, with plans approved automatically. The data is a seeded synthetic dataset whose generator plants effects and traps, and a reference implementation computes the expected answers. Besides answer accuracy, the scorer measures trap recall, the share of passes that fell into a trap where the critic raised that trap's tag. It also measures critic precision, the share of the critic's issues tagged with one of the question's traps that were raised on a pass that really fell into it. The scorecard records the seed and the config."
+              ]
+            },
+            {
+              "heading": "Publishing",
+              "text": [
+                "Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips figures down to their image data. This site then records a person's check of each export, with a hash of every file, before the build will use it."
+              ]
             }
           ],
           "runs_heading": "Recorded runs",
           "built_heading": "How it was built",
           "built": [
-            "Spec first: every part had a written spec with testable acceptance criteria before any code, and the sandbox's threat model was written before the sandbox.",
-            "Several rounds of adversarial review by a second model on the specs and the code, with findings fixed and recorded, and tests written before the implementation."
+            "Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.",
+            "A second model reviewed the specs and the code adversarially over several rounds. I fixed and recorded what it found, and wrote the tests before the code."
+          ],
+          "next_heading": "With more time",
+          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. Most of the next steps add checks, so the system catches more of its own mistakes.",
+          "next": [
+            {
+              "heading": "Run the red-team probes on every push",
+              "text": "The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. It would also confirm the seccomp filter on the CI runner, where it hasn't been tested."
+            },
+            {
+              "heading": "Verify on a clean machine",
+              "text": "I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to what it checked. The simpler plan moves verification to hosted CI runners, with a job on every push and a scheduled run, on a fresh machine that holds none of my keys or sign-ins."
+            },
+            {
+              "heading": "Run the LangGraph eval with real models",
+              "text": "During development the project uses no paid model API. The graph is tested with fake models, and the Claude Code harness runs on a subscription. Running the eval through the graph with real models is a deliberate later step, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
+            },
+            {
+              "heading": "Add a canary on real market data",
+              "text": "Real futures data stays on my machine. The vendor's licence doesn't allow showing anything derived from it without a redistribution plan, which is why everything here is synthetic. A weekly canary is specified that fetches one fixed week, checks the bar count and the contract roll, and deletes the data. It stays off until the vendor confirms in writing that processing on a hosted CI runner is allowed."
+            },
+            {
+              "heading": "Give the Claude Code harness a token budget and resume",
+              "text": "The graph caps tokens and resumes from its checkpoint. The Claude Code harness does neither yet. A subscription gives it no per-call token counts it can rely on, and an interrupted run is closed rather than resumed. Closing both gaps would bring the harness level with the graph."
+            },
+            {
+              "heading": "Let formatting back into reports",
+              "text": "Model-written text goes into a report as plain text, with every punctuation character escaped. That came after several rounds of trying to contain Markdown inside it by tracking its block structure, and plain text was the safer choice. Formatting could come back through a renderer with an explicit allow-list, checked against more than one Markdown parser, the way this site renders the reports it shows."
+            },
+            {
+              "heading": "Widen CI",
+              "text": "The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure."
+            }
           ]
         }
       },
