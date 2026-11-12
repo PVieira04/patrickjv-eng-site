@@ -74,3 +74,43 @@ test("F-005 (US-4): a denylist term matches case-insensitively, never inside a l
   assert.equal(denylistHit("a comment line", parseDenylist("# a comment line")), false, "comment text is not a term");
   assert.equal(denylistHit("anything", []), false);
 });
+
+// ---- PNG check (D3) ----
+import { pngCheck } from "../lib/projects.mjs";
+import { png, chunk, ihdr, SIGNATURE } from "./projects-helpers.mjs";
+
+test("F-005 (D3): a valid PNG passes the PNG check and reports its IHDR size; 4096 x 4096 passes", () => {
+  assert.deepEqual(pngCheck(png()), { width: 4, height: 3 });
+  assert.deepEqual(pngCheck(png({ width: 4096, height: 4096, idat: Buffer.from([1]) })), { width: 4096, height: 4096 });
+  const allowed = ["PLTE", "tRNS", "gAMA", "cHRM", "sRGB", "pHYs", "bKGD"].map((t) => chunk(t, Buffer.alloc(3)));
+  assert.equal(pngCheck(png({ extra: allowed })).error, undefined, "every allow-listed chunk type passes");
+});
+
+test("F-005 (D3): the PNG check refuses each malformed or disallowed case", () => {
+  const good = png();
+  const iend = chunk("IEND"), idat = chunk("IDAT", Buffer.from([1, 2, 3]));
+  const withBadCrc = Buffer.from(good); withBadCrc[good.length - 1] ^= 0xff;
+  const pastEnd = Buffer.from(good); pastEnd.writeUInt32BE(1e6, 8 + 25);
+  const bad = {
+    "a private chunk (prVt)": png({ extra: [chunk("prVt", Buffer.from("x"))] }),
+    "a tEXt chunk": png({ extra: [chunk("tEXt", Buffer.from("Comment\0hello"))] }),
+    "a bad signature": Buffer.concat([Buffer.from("GIF89a\r\n"), good.subarray(8)]),
+    "a bad CRC": withBadCrc,
+    "a chunk length past the end": pastEnd,
+    "a truncated file": good.subarray(0, good.length - 5),
+    "IHDR not first": Buffer.concat([SIGNATURE, idat, ihdr(4, 3), iend]),
+    "two IHDRs": Buffer.concat([SIGNATURE, ihdr(4, 3), ihdr(4, 3), idat, iend]),
+    "an IHDR of length 12": Buffer.concat([SIGNATURE, chunk("IHDR", ihdr(4, 3).subarray(8, 20)), idat, iend]),
+    "a zero width": png({ width: 0 }),
+    "a zero height": png({ height: 0 }),
+    "a width of 4097": png({ width: 4097, idat: Buffer.from([1]) }),
+    "a height of 4097": png({ height: 4097, idat: Buffer.from([1]) }),
+    "no IDAT": Buffer.concat([SIGNATURE, ihdr(4, 3), iend]),
+    "PLTE after IDAT": Buffer.concat([SIGNATURE, ihdr(4, 3), idat, chunk("PLTE", Buffer.alloc(3)), iend]),
+    "data after IEND": Buffer.concat([good, Buffer.from([0])]),
+    "a chunk after IEND": Buffer.concat([good, idat]),
+    "no IEND": Buffer.concat([SIGNATURE, ihdr(4, 3), idat]),
+    "an empty file": Buffer.alloc(0),
+  };
+  for (const [what, b] of Object.entries(bad)) assert.equal(typeof pngCheck(b).error, "string", what);
+});
