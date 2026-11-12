@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { build } from "../build.mjs";
 import { headersFor } from "./book-fake-server.mjs";
-import { report, dump, sha, png } from "./projects-helpers.mjs";
+import { report, dump, sha, png, clearRecorded } from "./projects-helpers.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const browser = await chromium.launch().catch(() => null);
@@ -28,6 +28,7 @@ let server, origin;
 if (browser) {
   mkdirSync(root);
   for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public", "projects"]) cpSync(join(ROOT, f), join(root, f), { recursive: true });
+  clearRecorded(root);
   const cols = Array.from({ length: 12 }, (_, i) => `column_${i + 1}`);
   const md = [
     "# Report", "", "A wide table:", "",

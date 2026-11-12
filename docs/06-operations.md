@@ -250,7 +250,8 @@ One PR, opened only after the pre-launch checks pass. It:
 
 1. sets `pages.projects.launched` to `true` in `content.json`, and removes `pages.projects._status`;
 2. adds a `side_projects` entry "Research agent" to `content.json` with `url: "/projects/research-agent"`;
-3. adds the matching card to the side projects section of `public/index.html`, linking to `/projects/research-agent`.
+3. adds the matching card to the side projects section of `public/index.html`, linking to `/projects/research-agent`;
+4. updates the tests that assume `launched` is `false`: the "with no runs and no scorecard and launched false" test in `test/projects-pages.test.mjs`, and the D4 tests in `test/build.test.mjs` that use `unpublishedScratch` (they build with no published run, which `launched: true` refuses).
 
 The build checks that these three go together: `launched` is `true` if and only if a side project has url `/projects/research-agent` and its card in `index.html` links to it. It also needs at least one published run and the scorecard. `npm run build` then drops the `noindex` and the `/projects/*` `X-Robots-Tag` rule and lists the pages in the sitemap, `llms.txt` and `index.md`.
 

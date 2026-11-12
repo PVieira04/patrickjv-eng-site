@@ -138,7 +138,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, existsSync, read
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { build } from "../build.mjs";
-import { report, scorecard, dump, sha, png, RUN_ID, runFiles, writeExport } from "./projects-helpers.mjs";
+import { report, scorecard, dump, sha, png, RUN_ID, runFiles, writeExport, clearRecorded } from "./projects-helpers.mjs";
 import { record } from "../build.mjs";
 import { deflateSync } from "node:zlib";
 import { createHash } from "node:crypto";
@@ -173,6 +173,7 @@ function site() {
   const root = join(base, "site");
   mkdirSync(root);
   for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public", "projects"]) cpSync(join(ROOT, f), join(root, f), { recursive: true });
+  clearRecorded(root);
   return { base, root, done: () => rmSync(base, { recursive: true, force: true }) };
 }
 const write = (root, f, b) => { mkdirSync(dirname(join(root, f)), { recursive: true }); writeFileSync(join(root, f), b); };
@@ -371,8 +372,9 @@ test("F-005 (D5, D9): with no runs and no scorecard and launched false (main bef
     rmSync(join(s.root, MANIFEST), { force: true });
     ok(build({ root: s.root, today: TODAY, now: NOW }));
     ok(build({ root: s.root, check: true, now: NOW }));
+    // The launch PR must update this test (and the build.test.mjs D4 tests using unpublishedScratch,
+    // which build with no run and so assume launched is false): see 06-operations, Launch.
     assert.equal(P.launched, false, "the committed copy is not launched");
-    assert.ok(!existsSync(join(ROOT, MANIFEST)), "main has no published runs yet");
     ok(build({ root: ROOT, check: true, now: NOW }));
   } finally { s.done(); }
 });
