@@ -88,10 +88,10 @@ Nothing reaches this page straight from a run. A publish command checks a finish
 | `open_vol_uplift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
 | `open_vol_uplift_pct_change` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
 | `open_vol_uplift_15m` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
-| `afternoon_vol_ratio` | 0 / 5 | no planted trap | no trap reached the critic | the critic flagged none of this question's traps |
-| `tuesday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged none of this question's traps |
+| `afternoon_vol_ratio` | 0 / 5 | no planted trap | no planted trap | no planted trap |
+| `tuesday_drift` | 5 / 5 | no planted trap | no planted trap | no planted trap |
 | `thursday_drift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
-| `monday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged none of this question's traps |
+| `monday_drift` | 5 / 5 | no planted trap | no planted trap | no planted trap |
 | `total_return` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
 | `return_2024` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
 | `largest_session_move` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |

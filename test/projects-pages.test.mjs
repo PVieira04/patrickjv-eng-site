@@ -415,7 +415,7 @@ test("F-005 (US-2): the scorecard is one table, a row per question (id in code s
     assert.equal(body(h).match(/<table\b/g).length, 1, "one table");
     assert.deepEqual(scoreTable(h), [
       [c.columns.question, c.columns.correct, c.columns.trap_handled, c.columns.trap_recall, c.columns.critic_precision],
-      ["open-vol", "2 / 2", c.no_trap, c.no_trap_reached, c.no_trap_flagged],
+      ["open-vol", "2 / 2", c.no_trap, c.no_trap, c.no_trap], // no planted trap: the same words in all three trap cells
       ["roll-gap", "1 / 2", "1 / 2", "1 / 2", "1 / 1"],
     ]);
     assert.ok(scoreSection(h).includes('<th scope="row" role="rowheader"><code>open-vol</code></th>'), "the question id in code style");
@@ -428,8 +428,19 @@ test("F-005 (US-2): the scorecard is one table, a row per question (id in code s
     assert.doesNotMatch(visible(h2), /\bn\/a\b/, "no bare n/a");
     const md = out(s, "projects/research-agent.md");
     assert.ok(md.includes(`| ${c.columns.question} | ${c.columns.correct} | ${c.columns.trap_handled} | ${c.columns.trap_recall} | ${c.columns.critic_precision} |`), "the Markdown table's header");
-    assert.ok(md.includes(`| \`roll-gap\` | 1 / 2 | 1 / 2 | 1 / 2 | ${c.no_trap_flagged} |`) && md.includes(`| \`open-vol\` | 2 / 2 | ${c.no_trap} | ${c.no_trap_reached} | ${c.no_trap_flagged} |`), "the Markdown rows");
+    assert.ok(md.includes(`| \`roll-gap\` | 1 / 2 | 1 / 2 | 1 / 2 | ${c.no_trap_flagged} |`) && md.includes(`| \`open-vol\` | 2 / 2 | ${c.no_trap} | ${c.no_trap} | ${c.no_trap} |`), "the Markdown rows");
     assert.ok(md.includes(`- ${c.aggregate}: 0.14 ${c.se_na}`), "the Markdown score");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): a question with no planted trap says so in all three trap cells; the longer reasons are only for a trap question at 0 / 0", () => {
+  const s = site();
+  try {
+    const c = P.labels.scorecard;
+    ok(publish(s, [], { card: edit(scorecard(), cleanTraps) }));
+    const rows = scoreTable(out(s, SHOWCASE));
+    assert.deepEqual(rows[1].slice(2), [c.no_trap, c.no_trap, c.no_trap], "open-vol: no planted trap");
+    assert.deepEqual(rows[2].slice(2), ["2 / 2", c.no_trap_reached, c.no_trap_flagged], "roll-gap: a trap question at 0 / 0");
   } finally { s.done(); }
 });
 

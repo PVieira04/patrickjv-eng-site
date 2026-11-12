@@ -174,8 +174,8 @@ The site adds only these rules of its own:
 | Per question: question | the question `id`, in code style (the export carries no title, and the page invents none) | — |
 | Per question: correct | `correct / n_repeats` | — |
 | Per question: trap handled | `trap_handled / n_repeats` | `labels.scorecard.no_trap` ("no planted trap") when `trap_handled` is null |
-| Per question: trap recall | `trap_recall.x / trap_recall.n` | `labels.scorecard.no_trap_reached` ("no trap reached the critic") when n = 0 |
-| Per question: critic precision | `critic_precision.x / critic_precision.n` | `labels.scorecard.no_trap_flagged` ("the critic flagged none of this question's traps") when n = 0 |
+| Per question: trap recall | `trap_recall.x / trap_recall.n` | `labels.scorecard.no_trap_reached` ("no trap reached the critic") when n = 0 on a question with traps; `labels.scorecard.no_trap` when n = 0 and `trap_handled` is null |
+| Per question: critic precision | `critic_precision.x / critic_precision.n` | `labels.scorecard.no_trap_flagged` ("the critic flagged none of this question's traps") when n = 0 on a question with traps; `labels.scorecard.no_trap` when n = 0 and `trap_handled` is null |
 | Score | `templates.scorecard_score`, "{score} (standard error {se})", from `aggregate.score` and `aggregate.se` | the score followed by `labels.scorecard.se_na` when `se` is null |
 | Note, under the table | `templates.scorecard_trap_note` with `{count}` the number of `runs[]` entries (the Runs row's count): in these eval runs no pass fell into a planted trap, so no trap reached the critic, and it raised no trap issue; that is why trap recall and critic precision are not defined; the recorded runs on the page are separate runs. It says nothing about whether the critic missed a wrong answer, and nothing about which role avoided the traps | shown only when there is no null repeat, at least one question has a non-null `trap_handled`, every non-null `trap_handled` equals its `n_repeats`, and every question has `trap_recall.n`, `critic_precision.n`, `unreviewed_trap_passes` and `unscored_passes` all 0 |
 
