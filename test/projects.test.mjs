@@ -401,7 +401,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, renameSync, symlinkSync,
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { record } from "../build.mjs";
-import { writeExport, runFiles, scorecardFiles, dump, sha, pngOfSize, RUN_ID, readTree } from "./projects-helpers.mjs";
+import { writeExport, runFiles, scorecardFiles, dump, sha, pngOfSize, RUN_ID, readTree, clearRecorded } from "./projects-helpers.mjs";
 
 const MANIFEST = "projects/research-agent/published.json";
 const TODAY = "2026-11-12";
@@ -412,6 +412,7 @@ function sandbox() {
   const root = join(base, "site"), dir = join(base, "export");
   mkdirSync(root);
   for (const f of ["content.json", "projects"]) cpSync(join(ROOT, f), join(root, f), { recursive: true });
+  clearRecorded(root);
   return { base, root, dir, done: () => rmSync(base, { recursive: true, force: true }) };
 }
 // Remove everything --record wrote (projects/ also holds sources, such as architecture.svg).
@@ -748,6 +749,7 @@ const NOW = Date.parse("2026-11-12T12:00:00Z");
 function publishedSite() {
   const s = sandbox();
   for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public", "projects"]) cpSync(join(ROOT, f), join(s.root, f), { recursive: true });
+  clearRecorded(s.root);
   assert.deepEqual(record({ root: s.root, dir: s.dir, expect: runExport(s.dir), today: TODAY }).errors, []);
   writeAlt(s.root);
   const sdir = join(s.base, "sc");

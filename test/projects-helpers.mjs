@@ -106,3 +106,11 @@ export const scorecardFiles = () => readTree(join(FIXTURES, "scorecard"));
 export const report = () => JSON.parse(readFileSync(join(FIXTURES, "run/report.json"), "utf8"));
 export const scorecard = () => JSON.parse(readFileSync(join(FIXTURES, "scorecard/scorecard.json"), "utf8"));
 export const copyFixture = (name, to) => cpSync(join(FIXTURES, name), to, { recursive: true });
+
+// A scratch copy of the site starts with no published run or scorecard, whatever the repository
+// has recorded: remove the recorded runs, scorecard and manifest, and the run pages the build
+// generated from them, so a fixture test builds only from its own fixtures. The real recorded
+// content is checked by `node build.mjs --check` against the checkout (npm test runs it first).
+export function clearRecorded(root) {
+  for (const f of ["projects/research-agent/runs", "projects/research-agent/scorecard", "projects/research-agent/published.json", "public/projects/research-agent"]) rmSync(join(root, f), { recursive: true, force: true });
+}
