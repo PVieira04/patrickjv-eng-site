@@ -386,6 +386,10 @@
               "text": "Model-written text goes into a report as plain text, with every punctuation character escaped. That came after several rounds of trying to contain Markdown inside it by tracking its block structure, and plain text was the safer choice. Formatting could come back through a renderer with an explicit allow-list, checked against more than one Markdown parser, the way this site renders the reports it shows."
             },
             {
+              "heading": "Add overfitting checks from López de Prado",
+              "text": "The agent already fixes its test in a plan before any analysis runs, and the critic already asks for a Bonferroni or Holm correction when several tests were tried. The next step takes the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and the eval and the analyst's guidance would use purged and embargoed cross-validation, so overlapping labels can't leak across folds."
+            },
+            {
               "heading": "Widen CI",
               "text": "The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure."
             }
