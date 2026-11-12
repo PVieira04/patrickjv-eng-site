@@ -448,8 +448,9 @@ test("F-005 (D10): more than 8 runs in the manifest fails the build; 8 passes", 
       mkdirSync(join(dir, "projects/research-agent"), { recursive: true });
       writeFileSync(join(dir, "projects/research-agent/published.json"), JSON.stringify({ manifest_version: "1.0.0", runs }));
     };
+    // The entries are empty, so the manifest format checks (PR 2) fail them; only the cap matters here.
     manifest(8);
-    assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, []);
+    assert.ok(!build({ root: dir, check: true, now: NOW }).errors.some((e) => /at most 8/.test(e)));
     manifest(9);
     for (const check of [true, false]) assert.ok(build({ root: dir, check, now: NOW }).errors.some((e) => /9 runs.*at most 8/.test(e)), `check=${check}`);
   } finally { rmSync(dir, { recursive: true, force: true }); }

@@ -1,0 +1,27 @@
+{
+  "export_version": "1.0.0",
+  "exported_at": "2026-11-11T15:04:05Z",
+  "files": [
+    {
+      "bytes": 71,
+      "path": "calls/1/out/vol_by_minute.png",
+      "sha256": "e7fa26235ccee3f2c64e62bf424478f6177929a8a29b3c5c3cb4e033b519a496"
+    },
+    {
+      "bytes": 2139,
+      "path": "report.json",
+      "sha256": "abc8a8f1edee766a2ffd0547c2de388c79c173d038c3bcba374cf38526d91db6"
+    },
+    {
+      "bytes": 249,
+      "path": "report.md",
+      "sha256": "806402c7d3c5e86b075cf8bf9a70d26ff27b45642e6253eddf26652347baa604"
+    }
+  ],
+  "id": "20261111T143000Z-a1b2c3",
+  "kind": "run",
+  "tool": {
+    "name": "research-agent",
+    "version": "0.1.0"
+  }
+}

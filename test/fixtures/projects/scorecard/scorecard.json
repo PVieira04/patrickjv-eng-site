@@ -1,0 +1,128 @@
+{
+  "aggregate": {
+    "score": 0.75,
+    "se": 0.125
+  },
+  "created_at": "2026-11-11T15:00:00Z",
+  "dropped": [
+    "fingerprint.config.git.commit",
+    "fingerprint.config.git.dirty",
+    "fingerprint.config.prompts",
+    "fingerprint.config.questions_sha256",
+    "fingerprint.sha256",
+    "questions[].run_ids"
+  ],
+  "eval_id": "eval-20261111T150000Z",
+  "fingerprint": {
+    "config": {
+      "caps": {
+        "pass_tool_calls": 10,
+        "run_tokens": null,
+        "run_tool_calls": 40
+      },
+      "harness": "langgraph",
+      "models": {
+        "analyst": "example:analyst-model",
+        "critic": "example:critic-model"
+      },
+      "package_version": "0.1.0",
+      "seed": 42
+    }
+  },
+  "k": 2,
+  "questions": [
+    {
+      "correct": 2,
+      "critic_precision": {
+        "n": 1,
+        "x": 1
+      },
+      "id": "open-vol",
+      "n_repeats": 2,
+      "other_issues": {
+        "sample_size": 1
+      },
+      "statistic_mismatches": [],
+      "trap_handled": null,
+      "trap_recall": {
+        "n": 0,
+        "x": 0
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 0
+    },
+    {
+      "correct": 1,
+      "critic_precision": {
+        "n": 2,
+        "x": 1
+      },
+      "id": "roll-gap",
+      "n_repeats": 2,
+      "other_issues": {},
+      "statistic_mismatches": [
+        {
+          "run_id": "20261111T141000Z-1a1b1c",
+          "statistic": "gap_return"
+        }
+      ],
+      "trap_handled": 1,
+      "trap_recall": {
+        "n": 2,
+        "x": 1
+      },
+      "unreviewed_trap_passes": 0,
+      "unscored_passes": 1
+    }
+  ],
+  "runs": [
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-futures-1m",
+        "source": "synthetic:research_agent.data.synth seed=42",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "langgraph"
+      },
+      "question_id": "open-vol",
+      "run_id": "20261111T140000Z-0a0b0c",
+      "status": "completed"
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-futures-1m",
+        "source": "synthetic:research_agent.data.synth seed=42",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "claude-code"
+      },
+      "question_id": "open-vol",
+      "run_id": "20261111T140500Z-0d0e0f",
+      "status": "completed"
+    },
+    {
+      "question_id": "roll-gap",
+      "run_id": null,
+      "status": null
+    },
+    {
+      "dataset": {
+        "licence": "Synthetic data, no restrictions",
+        "name": "synth-futures-1m",
+        "source": "synthetic:research_agent.data.synth seed=42",
+        "visibility": "public"
+      },
+      "models": {
+        "harness": "langgraph"
+      },
+      "question_id": "roll-gap",
+      "run_id": "20261111T141000Z-1a1b1c",
+      "status": "capped"
+    }
+  ],
+  "scorecard_version": "1.0.0"
+}

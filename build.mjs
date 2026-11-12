@@ -2,6 +2,11 @@
 //   node build.mjs          validate everything, then write the public/ files that changed
 //   node build.mjs --check  write nothing; exit 1 if anything is out of date or a check fails
 //
+//   node build.mjs --record <export-dir> --expect <digest> [--replace]
+//   node build.mjs --record-scorecard <export-dir> --expect <digest>
+//                          check a `research publish` export as every build would, then copy it
+//                          into projects/research-agent/ and add it to published.json (F-005)
+//
 // Generated: the head metadata (title, description, Open Graph, Twitter), the JSON-LD @graph and
 // the WebMCP data inside public/index.html, public/index.md, public/llms.txt, public/sitemap.xml,
 // public/robots.txt, public/_headers and build-state.json. The visible HTML is hand-written (it is
@@ -10,8 +15,8 @@
 //
 // Nothing is written unless every check passes. Writing itself is staged (temporary files, then
 // renames) with a best-effort rollback; it is not transactional — see writeStaged().
-import { readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync, lstatSync, readlinkSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { realpathSync, readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, mkdirSync, rmdirSync, symlinkSync, existsSync, lstatSync, readlinkSync } from "node:fs";
+import { join, dirname, relative, isAbsolute, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { marked } from "marked";
@@ -20,6 +25,7 @@ import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
 import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROVIDER_NAMES } from "./mcp/booking-config.js";
 import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
+import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, parseJson, MANIFEST, PROJECT } from "./lib/projects.mjs";
 
 export const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -1244,8 +1250,6 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const MANIFEST = "projects/research-agent/published.json";
-const MAX_RUNS = 8;
 const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/book.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
 // Write `files` (name -> text or Buffer) under `root`: every file to "<name>.tmp" first, then
@@ -1364,17 +1368,11 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   if (did !== DID_SHA256) errors.push(`public/.well-known/did.json changed (sha256 ${did}); it backs did:web sign-in`);
   errors.push(...checkSecurityTxt(read("public/.well-known/security.txt"), now));
   errors.push(...checkMicrosoftSecret(bookingCfg, now));
-  // F-005 (D10): four _headers rules per published run keep the file under its 100-rule cap only
-  // up to 8 runs. The manifest's own format and checks come with --record.
-  const manifest = readOr(MANIFEST);
-  if (manifest !== null) {
-    let runs;
-    try { runs = JSON.parse(manifest).runs; } catch (e) { runs = e; }
-    if (runs instanceof Error) errors.push(`${MANIFEST} is not valid JSON (${runs.message})`);
-    else if (!runs || typeof runs !== "object" || Array.isArray(runs)) errors.push(`${MANIFEST}: "runs" must be an object keyed by run id`);
-    const n = runs instanceof Error || !runs || typeof runs !== "object" ? 0 : Object.keys(runs).length;
-    if (n > MAX_RUNS) errors.push(`${MANIFEST} lists ${n} runs; at most ${MAX_RUNS} can be published (the _headers rule budget, F-005 D10)`);
-  }
+  // F-005: the manifest governs projects/research-agent/runs/ and scorecard/; every published file
+  // is checked as --record checked it (the export contract, fields and enumerations, the D6 gate,
+  // the PNG check, the output scan, the employer denylist and, when present, .denylist.local), and
+  // at most 8 runs fit the _headers rule budget (D10).
+  try { errors.push(...checkProjects(readProjectsTree(root), { employerMention, denylist: loadDenylist(root) })); } catch (e) { errors.push(`projects: ${e.message}`); }
 
   // F-005 (D4): every entry under public/projects/ that this build would not write is a stray:
   // --check names it, a build deletes it (and every directory that leaves empty) in the same staged
@@ -1399,6 +1397,97 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const removal = { files: Object.fromEntries(strayFiles.map((f) => [f, readFileSync(p(f))])), links: tree.links, dirs: strayDirs };
   writeStaged(root, Object.fromEntries(stale.map((f) => [f, files[f]])), Object.fromEntries(stale.map((f) => [f, readBytes(f)])), io, removal);
   return { errors, stale, removed: strays, date };
+}
+
+// F-005 --record / --record-scorecard: check the export folder `dir` against export.json and the
+// owner's --expect digest, then run every check the build would on the would-be result (the
+// published tree with this export in it), and only then copy exactly the listed files — the Buffers
+// that were hashed — into projects/research-agent/, and add the export to published.json, staged
+// with rollback. A run's figures get empty alt text for the owner to write (the build refuses it
+// empty). --replace re-exports a published run: its alt text is kept only for figures whose hash is
+// unchanged, and its role is kept. A scorecard always replaces the published one.
+export function record({ root = process.cwd(), dir, expect, kind = "run", replace = false, today = new Date().toISOString().slice(0, 10), io, read } = {}) {
+  if (typeof expect !== "string" || !/^[0-9a-f]{64}$/.test(expect)) return { errors: ["--expect <export digest> is required: the sha256 of export.json that research publish printed last"] };
+  // The export must come from outside this repository: a folder inside it could be committed as is.
+  if (typeof dir !== "string" || !dir) return { errors: ["the export folder is required"] };
+  try {
+    const rel = relative(realpathSync(root), realpathSync(dir));
+    const outside = rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel);
+    if (!outside) return { errors: [`the export folder ${dir} is inside the repository; research publish writes it outside, so keep it there`] };
+  } catch { /* a missing folder is reported by readExport */ }
+  const ex = readExport(dir, kind, read);
+  const errors = [];
+  if (ex.digest && ex.digest !== expect) errors.push("the export digest (sha256 of export.json) does not match --expect: this is not the export you read");
+  errors.push(...ex.errors);
+  if (errors.length) return { errors };
+  const tree = readProjectsTree(root);
+  let m = { manifest_version: "1.0.0", runs: {} };
+  if (tree.manifestText !== null) {
+    try { m = parseJson(tree.manifestText); } catch (e) { return { errors: [`${MANIFEST} is not valid JSON (${e.message})`] }; }
+    if (!m || typeof m !== "object" || !m.runs || typeof m.runs !== "object") return { errors: checkProjects(tree, { employerMention, denylist: [] }) };
+  }
+  const id = ex.id, base = kind === "run" ? `${PROJECT}/runs/${id}` : `${PROJECT}/scorecard`;
+  const hashes = Object.fromEntries([...ex.files.keys()].sort().map((f) => [f, sha256(ex.files.get(f)).toString("hex")]));
+  const stamp = { checked: today, export_digest: ex.digest, tool_version: ex.doc.tool.version, exported_at: ex.doc.exported_at };
+  const oldFiles = (kind === "run" ? tree.runs[id] : tree.scorecard) ?? new Map();
+  const oldDirs = kind === "run" ? tree.runDirs[id] ?? [] : [];
+  if (kind === "run") {
+    const old = Object.hasOwn(m.runs, id) ? m.runs[id] : undefined;
+    if (!old && Object.hasOwn(tree.runs, id)) return { errors: [`${PROJECT}/runs/${id}/ already exists but isn't in the manifest; remove it (or restore its manifest entry) first`] };
+    if (old && !replace) return { errors: [`run ${id} is already published; to re-export it, read the new export, then rerun with --replace`] };
+    let figures = [];
+    try { figures = parseJson(ex.files.get("report.json").toString("utf8")).figures; } catch { /* reported by checkProjects below */ }
+    if (!Array.isArray(figures)) figures = [];
+    figures = figures.filter((f) => typeof f === "string");
+    const kept = (f) => old?.files?.[f] === hashes[f] && typeof old?.alt?.[f] === "string" ? old.alt[f] : "";
+    m.runs[id] = { ...stamp, ...(old && "role" in old ? { role: old.role } : {}), files: hashes, alt: Object.fromEntries(figures.map((f) => [f, kept(f)])) };
+    tree.runs[id] = ex.files;
+  } else {
+    m.scorecard = { eval_id: id, ...stamp, files: hashes };
+    tree.scorecard = ex.files;
+  }
+  tree.manifestText = serializeManifest(m);
+  errors.push(...checkProjects(tree, { employerMention, denylist: loadDenylist(root), pendingAlt: kind === "run" ? id : null }));
+  if (errors.length) return { errors };
+  const files = { [MANIFEST]: tree.manifestText, ...Object.fromEntries([...ex.files].map(([f, b]) => [`${base}/${f}`, b])) };
+  const previous = Object.fromEntries(Object.keys(files).map((f) => [f, existsSync(join(root, f)) ? readFileSync(join(root, f)) : null]));
+  const gone = [...oldFiles].filter(([f]) => !ex.files.has(f));
+  const keepDirs = new Set([...ex.files.keys()].flatMap((f) => f.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))));
+  const removal = {
+    files: Object.fromEntries(gone.map(([f, b]) => [`${base}/${f}`, b])),
+    dirs: oldDirs.filter((d) => !keepDirs.has(d)).sort((a, b) => b.split("/").length - a.split("/").length).map((d) => `${base}/${d}`),
+  };
+  writeStaged(root, files, previous, io, removal);
+  return { errors: [], id, written: Object.keys(files), removed: [...Object.keys(removal.files), ...removal.dirs] };
+}
+
+// The message for a failed --record: "nothing written" only when that is true. `r.error` is a thrown
+// error (from the write, with writePhase and rolledBack, or an unexpected one); else `r.errors`.
+export function formatRecordFailure(r) {
+  const e = r.error;
+  if (e?.writePhase && !e.rolledBack) return `RECORD FAILED while writing (${e.message}); rollback incomplete, so projects/ may be partly written — check git status and restore it before rerunning`;
+  if (e?.writePhase) return `RECORD FAILED while writing (${e.message}); rolled back, nothing written`;
+  if (e) return `RECORD FAILED (${e.message})`;
+  return "RECORD FAILED (nothing written)\n" + r.errors.join("\n");
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && (process.argv.includes("--record") || process.argv.includes("--record-scorecard"))) {
+  const args = process.argv.slice(2);
+  const kind = args.includes("--record-scorecard") ? "scorecard" : "run";
+  const value = (flag) => { const i = args.indexOf(flag); return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : undefined; };
+  const dir = value(kind === "run" ? "--record" : "--record-scorecard");
+  let r;
+  if (!dir) r = { errors: [`usage: node build.mjs ${kind === "run" ? "--record" : "--record-scorecard"} <export-dir> --expect <export digest>${kind === "run" ? " [--replace]" : ""}`] };
+  else {
+    try { r = record({ dir, expect: value("--expect"), kind, replace: args.includes("--replace") }); } catch (e) {
+      r = { error: e, errors: [e.message] };
+    }
+  }
+  if (r.errors.length) { console.error(formatRecordFailure(r)); process.exit(1); }
+  console.log(kind === "run"
+    ? `recorded run ${r.id} into ${PROJECT}/runs/${r.id}/. Next: write each figure's alt text (and the optional role) in ${MANIFEST}, then npm run build and npm test, then commit.`
+    : `recorded scorecard ${r.id} into ${PROJECT}/scorecard/. Next: npm run build and npm test, then commit.`);
+  process.exit(0);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
