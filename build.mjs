@@ -247,6 +247,12 @@ export function checkPage(html, c) {
   const side = within(section("side-projects"), byTag("article"));
   list("Side project titles", side.map((a) => texts(within(a, byTag("h3")))[0]), c.side_projects.map((p) => p.title), (k) => `side_projects.${k}.title`);
   list("Side project summaries", side.map((a) => texts(within(a, byTag("p")))[0]), c.side_projects.map((p) => p.summary), (k) => `side_projects.${k}.summary`);
+  // F-005 (Launch): a side project's url, when set, is the href of a link in its own card.
+  c.side_projects.forEach((p, k) => {
+    if (p.url === null || p.url === undefined) return;
+    used.add(`side_projects.${k}.url`);
+    if (!hrefs(side[k]).includes(p.url)) errors.push(`side_projects.${k}.url ${p.url} is not the href of a link in its card`);
+  });
 
   list("Background", texts(within(section("background"), byTag("p"))), c.background, "background");
   list("Skills", texts(within(section("skills"), byClass("skills")).flatMap((ul) => within(ul, byTag("li")))), c.skills, "skills");
@@ -1545,6 +1551,12 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   // ---- checks (all before any write) ----
   errors.push(...inlineErrors);
   errors.push(...checkPage(files["public/index.html"], c).map((e) => "index.html: " + e));
+  // F-005 (D9, Launch): launched exactly when the homepage lists the showcase (checkPage requires
+  // the entry's card to link it), so the noindex dark deploy and the public launch can't mix.
+  const listsShowcase = c.side_projects.some((x) => x.url === "/projects/research-agent");
+  const isLaunched = c.pages?.projects?.launched;
+  if (isLaunched === true && !listsShowcase) errors.push("content.json pages.projects.launched is true, but no side project has url /projects/research-agent; the launch PR adds that entry and its card's link in index.html");
+  if (isLaunched === false && listsShowcase) errors.push("content.json pages.projects.launched is false, but a side project has url /projects/research-agent; set launched to true in the launch PR, or remove the entry and its link");
   const writingOut = Object.entries(files).filter(([f]) => f.startsWith("public/writing/")).map(([f, t]) => [f.slice(7), t]);
   for (const [f, t] of [["index.html", files["public/index.html"]], ["404.html", html404], ["index.md", md], ["book.md", files["public/book.md"]], ["llms.txt", llms], ["privacy.html", files["public/privacy.html"]], ["book.html", files["public/book.html"]], ...writingOut]) if (employerMention(t)) errors.push(`${f} names an employer: ${employerMention(t)}`);
   const nf = parseHtml(html404);

@@ -98,7 +98,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, existsSync, read
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { build, decodeEntities } from "../build.mjs";
-import { report, scorecard, dump, sha, png, RUN_ID } from "./projects-helpers.mjs";
+import { report, scorecard, dump, sha, png, RUN_ID, runFiles, writeExport } from "./projects-helpers.mjs";
+import { record } from "../build.mjs";
+import { deflateSync } from "node:zlib";
 
 const NOW = Date.parse("2026-11-12T12:00:00Z");
 const TODAY = "2026-11-12";
@@ -605,5 +607,199 @@ test("F-005 (D7): a run page from a report.md holding raw HTML, links, autolinks
     const report = body(runPage(s, runId(1))).split(`<h2>${P.labels.section.report}</h2>`)[1].split(`<h2>${P.labels.section.figures}</h2>`)[0];
     assert.doesNotMatch(report, /<(a|script|img|iframe|svg|input)[\s>]/);
     assert.doesNotMatch(report, /mailto:/);
+  } finally { s.done(); }
+});
+
+// ---- Machine-readable copies, the launch switch and the _headers rules (US-3, D9, D10) ----
+import { checkHeaders } from "../build.mjs";
+const SIDE = { title: "Research agent", summary: "An agent built with LangGraph that plans, runs sandboxed analysis and reports.", url: "/projects/research-agent" };
+const CARD = `<li>
+            <article aria-labelledby="s-03-h">
+              <span class="label">S-03</span>
+              <h3 id="s-03-h"><a href="/projects/research-agent">${SIDE.title}</a></h3>
+              <p>${SIDE.summary}</p>
+            </article>
+          </li>
+        </ul>`;
+const sideCard = (h) => h.replace(/(<section id="side-projects"[\s\S]*?)<\/ul>/, (m, a) => a + CARD);
+const launch = (on = true, side = true) => (c) => { c.pages.projects.launched = on; if (side) c.side_projects.push(SIDE); };
+const launched = (s, runs, opts = {}) => publish(s, runs, { card: scorecard(), copy: launch(), html: sideCard, ...opts });
+
+test("F-005 (US-3): each page links its Markdown copy; report.md, report.json and the figures are byte-identical to the published files", () => {
+  const s = site();
+  try {
+    const r = run(1, { md: "# R\r\n\r\nCRLF kept, and a trailing space \n", figures: { [FIG]: png({ idat: deflateSync(Buffer.from([0xff, 0xfe, 0x0d, 0x0a, 0x00, 0x80]), { level: 0 }), width: 1, height: 1, colour: 0 }) } });
+    ok(publish(s, [r]));
+    for (const [f, md] of [["projects/index.html", "/projects/index.md"], [SHOWCASE, "/projects/research-agent.md"], [`projects/research-agent/runs/${r.id}/index.html`, `/projects/research-agent/runs/${r.id}/report.md`]]) {
+      assert.ok(out(s, f).includes(`<link rel="alternate" type="text/markdown" href="${md}">`), f);
+      assert.ok(existsSync(join(s.root, "public", md)), md);
+    }
+    const src = join(s.root, "projects/research-agent/runs", r.id), pub = join(s.root, "public/projects/research-agent/runs", r.id);
+    for (const f of ["report.md", "report.json", FIG]) assert.ok(readFileSync(join(pub, f)).equals(readFileSync(join(src, f))), f);
+    assert.ok(readFileSync(join(pub, "report.md")).equals(Buffer.from(r.md)), "no footer appended");
+    const md = out(s, "projects/research-agent.md");
+    assert.ok(md.includes(`${SITE}projects/research-agent/runs/${r.id}/report.md`) && md.includes(`Read and published by Patrick Vieira on ${TODAY}.`), "the showcase's Markdown links each run's report.md, with its checked date");
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): a figure with bytes that aren't UTF-8 and a \\r\\n round-trips byte-identical from the export through --record to projects/ and public/", () => {
+  const s = site();
+  try {
+    const fig = png({ idat: deflateSync(Buffer.from([0xff, 0xfe, 0xc3, 0x28, 0x0d, 0x0a, 0x00, 0x80, 0x0d, 0x0a]), { level: 0 }) });
+    assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(fig));
+    const dir = join(s.base, "export");
+    const files = { ...runFiles(), "calls/1/out/vol_by_minute.png": fig };
+    ok(record({ root: s.root, dir, expect: writeExport(dir, { files }), today: TODAY }));
+    const m = JSON.parse(readFileSync(join(s.root, MANIFEST), "utf8"));
+    m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A synthetic chart.";
+    writeFileSync(join(s.root, MANIFEST), JSON.stringify(m, null, 2) + "\n");
+    ok(build({ root: s.root, today: TODAY, now: NOW }));
+    for (const where of [`projects/research-agent/runs/${RUN_ID}`, `public/projects/research-agent/runs/${RUN_ID}`]) {
+      assert.ok(readFileSync(join(s.root, where, "calls/1/out/vol_by_minute.png")).equals(fig), where);
+    }
+    ok(build({ root: s.root, check: true, now: NOW }));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-3, D9): launched false — llms.txt, index.md and the sitemap don't list the pages, every page is noindex, and _headers has the /projects/* noindex rule", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1)], { card: scorecard() }));
+    for (const f of ["llms.txt", "index.md", "sitemap.xml"]) assert.doesNotMatch(out(s, f), /patrickjv\.com\/projects|## Projects/, f);
+    for (const f of ["projects/index.html", SHOWCASE, `projects/research-agent/runs/${runId(1)}/index.html`]) assert.ok(out(s, f).includes('<meta name="robots" content="noindex">'), f);
+    assert.match(out(s, "_headers"), /\n\/projects\/\*\n {2}X-Robots-Tag: noindex\n/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-3, D9): launched true — llms.txt, index.md and the sitemap list the pages and each run, and nothing is noindex", () => {
+  const s = site();
+  try {
+    const r1 = run(1, { checked: "2026-11-10" }), r2 = run(2, { edit: (d) => { d.question = "A second [synthetic] question?"; } });
+    ok(launched(s, [r1, r2]));
+    const sitemap = out(s, "sitemap.xml");
+    for (const [loc, lastmod] of [[`${SITE}projects/`, null], [`${SITE}projects/research-agent`, null], [`${SITE}projects/research-agent/runs/${r1.id}/`, "2026-11-10"], [`${SITE}projects/research-agent/runs/${r2.id}/`, TODAY]]) {
+      assert.match(sitemap, new RegExp(`<url><loc>${loc.replace(/[.?]/g, "\\$&")}</loc><lastmod>${lastmod ?? "\\d{4}-\\d{2}-\\d{2}"}</lastmod></url>`), loc);
+    }
+    for (const f of ["llms.txt", "index.md"]) {
+      const t = out(s, f);
+      assert.ok(t.includes("## Projects"), f);
+      assert.ok(t.includes(`[Research agent](${SITE}projects/research-agent.md)`), f);
+      assert.ok(t.includes(`- [${report().question}](${SITE}projects/research-agent/runs/${r1.id}/report.md) (checked 2026-11-10)`), f);
+      assert.ok(t.includes(`- [A second \\[synthetic\\] question?](${SITE}projects/research-agent/runs/${r2.id}/report.md) (checked ${TODAY})`), `${f}: the question as plain text in the link`);
+    }
+    for (const f of ["projects/index.html", SHOWCASE, `projects/research-agent/runs/${r1.id}/index.html`]) assert.doesNotMatch(out(s, f), /noindex/, f);
+    assert.doesNotMatch(out(s, "_headers"), /X-Robots-Tag/);
+  } finally { s.done(); }
+});
+
+test("F-005 (D9): launched true with no published run, or with no scorecard, fails the build", () => {
+  const s = site();
+  try {
+    for (const [what, r] of [["no run", launched(s, [])], ["no scorecard", launched(s, [run(1)], { card: null })]]) {
+      assert.ok(r.errors.some((e) => /launched is true, but launch needs at least one published run and the scorecard/.test(e)), `${what}: ${r.errors.join("\n")}`);
+    }
+  } finally { s.done(); }
+});
+
+test("F-005 (D9): the launch check — launched without the side-projects entry and its link, or the entry and link without launched, fails; a side project url that isn't a link in its card fails", () => {
+  const s = site();
+  try {
+    ok(launched(s, [run(1)]));
+    let r = publish(s, [run(1)], { card: scorecard(), copy: launch(true, false) });
+    assert.ok(r.errors.some((e) => /launched is true.*side project/.test(e)), `launched, no entry: ${r.errors.join("\n")}`);
+    r = publish(s, [run(1)], { card: scorecard(), copy: launch(false), html: sideCard });
+    assert.ok(r.errors.some((e) => /launched is false.*side project/.test(e)), `entry and link, not launched: ${r.errors.join("\n")}`);
+    r = publish(s, [run(1)], { card: scorecard(), copy: launch(), html: (h) => sideCard(h).replace('<a href="/projects/research-agent">Research agent</a>', "Research agent") });
+    assert.ok(r.errors.some((e) => /side_projects\.2\.url.*\/projects\/research-agent/.test(e)), `entry without its link: ${r.errors.join("\n")}`);
+    r = publish(s, [], { copy: (c) => { c.side_projects[0].url = "https://example.com/kaizen"; } });
+    assert.ok(r.errors.some((e) => /side_projects\.0\.url/.test(e)), `another side project's url without its link: ${r.errors.join("\n")}`);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D4): unpublishing a run leaves no file or directory for it, and no entry in the sitemap, llms.txt, index.md or the showcase", () => {
+  const s = site();
+  try {
+    const keep = run(1), gone = run(2, { figures: { "calls/7/out/deep.png": png() } });
+    ok(launched(s, [keep, gone]));
+    assert.ok(existsSync(join(s.root, "public/projects/research-agent/runs", gone.id, "calls/7/out/deep.png")));
+    const r = launched(s, [keep]); // its directory and manifest entry removed
+    ok(r);
+    assert.ok(!existsSync(join(s.root, "public/projects/research-agent/runs", gone.id)), "the run's whole directory, emptied calls/… included");
+    assert.ok(r.removed.includes(`public/projects/research-agent/runs/${gone.id}/calls/7/out/deep.png`));
+    for (const f of ["sitemap.xml", "llms.txt", "index.md", SHOWCASE, "projects/research-agent.md", "_headers"]) assert.ok(!out(s, f).includes(gone.id), f);
+    ok(build({ root: s.root, check: true, now: NOW }));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-3): JSON-LD parses on each page, and every @id reference resolves to #person, the showcase's #software or the page itself", () => {
+  const s = site();
+  try {
+    const r = run(1, { checked: "2026-11-09" });
+    ok(publish(s, [r], { card: scorecard() }));
+    const graph = JSON.parse(readFileSync(join(s.root, "public/index.html"), "utf8").match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1])["@graph"];
+    const sw = `${SITE}projects/research-agent#software`;
+    const known = new Set([...graph.map((n) => n["@id"]), sw]);
+    const ids = (v, acc = []) => { if (v && typeof v === "object") { if (v["@id"] && Object.keys(v).length === 1) acc.push(v["@id"]); Object.values(v).forEach((x) => ids(x, acc)); } return acc; };
+    const ix = jsonld(out(s, "projects/index.html")), sc = jsonld(out(s, SHOWCASE)), rp = jsonld(runPage(s, r.id));
+    for (const ld of [ix, sc, rp]) for (const id of ids(ld)) assert.ok(known.has(id) || id.startsWith(ld.url), id);
+    assert.ok(known.has(`${SITE}#person`));
+    assert.equal(ix["@type"], "CollectionPage");
+    assert.equal(ix.mainEntity["@type"], "ItemList");
+    assert.equal(ix.mainEntity.itemListElement[0].url, `${SITE}projects/research-agent`);
+    assert.equal(sc["@type"], "WebPage");
+    assert.deepEqual({ ...sc.mainEntity, keywords: undefined, description: undefined, name: undefined }, { "@type": "SoftwareSourceCode", "@id": sw, programmingLanguage: "Python", author: { "@id": `${SITE}#person` }, keywords: undefined, description: undefined, name: undefined });
+    for (const k of ["LangGraph", "LangChain", "MCP"]) assert.ok(sc.mainEntity.keywords.includes(k), k);
+    assert.ok(!("codeRepository" in sc.mainEntity));
+    assert.equal(rp["@type"], "Report");
+    assert.equal(rp.headline, report().question);
+    assert.deepEqual(rp.about, { "@id": sw });
+    assert.equal(rp.datePublished, "2026-11-09");
+    assert.deepEqual(rp.author, { "@id": `${SITE}#person` });
+  } finally { s.done(); }
+});
+
+test("F-005 (D1, D10): one exact CSP rule per new HTML, Markdown and JSON path, none with script-src, none for figures; the _headers guards pass", () => {
+  const s = site();
+  try {
+    const r = run(1);
+    ok(publish(s, [r], { card: scorecard() }));
+    const headers = out(s, "_headers");
+    assert.deepEqual(checkHeaders(headers), []);
+    const rules = Object.fromEntries(headers.split(/\n(?=\S)/).filter((b) => !b.startsWith("#") && b.trim()).map((b) => { const [p, ...l] = b.trim().split("\n"); return [p.trim(), l.map((x) => x.trim())]; }));
+    const base = `/projects/research-agent/runs/${r.id}/`;
+    for (const p of ["/projects/", "/projects/index.html", "/projects/research-agent", "/projects/research-agent.html", base, `${base}index.html`]) {
+      const csp = rules[p]?.find((l) => l.startsWith("Content-Security-Policy:"));
+      assert.ok(csp, p);
+      assert.match(csp, /^Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-[A-Za-z0-9+/=]+'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests$/, p);
+    }
+    for (const [p, type] of [["/projects/index.md", "text/markdown"], ["/projects/research-agent.md", "text/markdown"], [`${base}report.md`, "text/markdown"], [`${base}report.json`, "application/json"]]) {
+      assert.ok(rules[p]?.includes(`Content-Type: ${type}; charset=utf-8`), p);
+      assert.ok(rules[p]?.some((l) => l.startsWith("Content-Security-Policy: default-src 'none'")), p);
+    }
+    assert.ok(!Object.keys(rules).some((p) => p.endsWith(".png") && p.startsWith("/projects/")), "no rule for figures");
+    assert.doesNotMatch(Object.entries(rules).filter(([p]) => p.startsWith("/projects")).flatMap(([, l]) => l).join("\n"), /script-src/);
+    assert.equal(Object.keys(rules).filter((p) => p.startsWith("/projects")).length, 6 + 4 + 1, "6 fixed rules, 4 per run, 1 noindex wildcard");
+  } finally { s.done(); }
+});
+
+test("F-005 (D4): --check reports the /projects outputs stale when a source changes", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1)], { card: scorecard() }));
+    ok(build({ root: s.root, check: true, now: NOW }));
+    const page = `public/projects/research-agent/runs/${runId(1)}/index.html`;
+    const change = (f, fn) => { const p = join(s.root, f); writeFileSync(p, fn(readFileSync(p, "utf8"))); };
+    for (const [what, fn, want] of [
+      ["copy", () => change("content.json", (t) => t.replace(`"${P.copy.showcase.built_heading}"`, '"How I built it"')), "public/projects/research-agent.html"],
+      ["a label", () => change("content.json", (t) => t.replace(`"${P.labels.run.finished}"`, '"Ended"')), page],
+      ["the SVG", () => change("projects/research-agent/architecture.svg", (t) => t.replace(">Plan<", ">The plan<")), "public/projects/research-agent.html"],
+      ["alt text", () => change(MANIFEST, (t) => t.replace("Synthetic chart 1.", "A changed alt text.")), page],
+    ]) {
+      fn();
+      const checked = build({ root: s.root, check: true, now: NOW });
+      assert.ok(checked.errors.some((e) => e.startsWith("out of date") && e.includes(want)), `${what}: ${checked.errors.join("\n")}`);
+      ok(build({ root: s.root, today: TODAY, now: NOW }));
+      ok(build({ root: s.root, check: true, now: NOW }));
+    }
   } finally { s.done(); }
 });
