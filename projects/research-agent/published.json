@@ -18,36 +18,46 @@
       "export_digest": "aa03b7784f7f8d414e411f9b0621cc997e0b11780c05083e99bad5e1bde656b4",
       "tool_version": "0.1.0",
       "exported_at": "2026-11-12T17:06:38Z",
+      "role": "clean_pass",
       "files": {
         "report.json": "a1ea4b6bc9598ce90a79734b95df569eb39ef0fd24eff5b6a2d26ba7bc34d5de",
         "report.md": "4328ec32a0377e1344775fdc5a53d21d992e3fbbb17857a1af90c3d8392db837"
       },
-      "alt": {},
-      "role": "clean_pass"
+      "alt": {}
     },
     "20261112T165719Z-a93bec": {
       "checked": "2026-11-12",
       "export_digest": "ff17292a6bb2cf820ed30e3c02e45871bebf0d9093cde1e02a70423aa6b4f825",
       "tool_version": "0.1.0",
       "exported_at": "2026-11-12T17:06:39Z",
+      "role": "rejected_plan",
       "files": {
         "report.json": "ba31191e809ea034458cf8d2d253b644c48bb2535da7ea700126b3529c24a9c4",
         "report.md": "1c763114691408eae7950422c6dcfe4797931b5186c6a1163f1948680c190824"
       },
-      "alt": {},
-      "role": "rejected_plan"
+      "alt": {}
     },
     "20261112T165943Z-8eb45f": {
       "checked": "2026-11-12",
       "export_digest": "769cd8f87a36b0957fddbe8e167139b4c02b7f2ccd651a206ae0f2f7ab2674e7",
       "tool_version": "0.1.0",
       "exported_at": "2026-11-12T17:06:40Z",
+      "role": "trap_caught",
       "files": {
         "report.json": "6678d5536942d878d09bad333ceaca637f507abc416630e64f9e7e8fb92557fc",
         "report.md": "5e8f23668328bf8ad9c4a7c8a12ed70024ec7f30a0525afd93273888baf37c6e"
       },
-      "alt": {},
-      "role": "trap_caught"
+      "alt": {}
+    }
+  },
+  "scorecard": {
+    "eval_id": "eval-20261112T210414Z",
+    "checked": "2026-11-12",
+    "export_digest": "096c1d312b0f6beca5760e6faeb0a5a4bbb871bda57de9ff8d36115dc476b5bc",
+    "tool_version": "0.1.0",
+    "exported_at": "2026-11-12T21:05:33Z",
+    "files": {
+      "scorecard.json": "f203f885c004757ce8eefc9df3c118f7e9d23bfb71568515292526bdd6f40a66"
     }
   }
 }

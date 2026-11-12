@@ -74,6 +74,30 @@ The eval asks each question from a fixed set several times. The data is a seeded
 
 Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips metadata chunks from figures. This site then records a person's check of each export, with a hash of every file, before the build will use it.
 
+## Eval scorecard
+
+- Date: 2026-11-12
+- Runs: 50 runs: 10 questions × 5
+- Harness: Claude Code harness (50)
+- Models: analyst claude-code:claude-sonnet-5-5, critic claude-code:claude-opus-5-5
+- Seed: 20261111
+- Score: 0.90 (standard error 0.06)
+
+| Question | Correct | Trap handled | Trap recall | Critic precision |
+|---|---|---|---|---|
+| `open_vol_uplift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `open_vol_uplift_pct_change` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `open_vol_uplift_15m` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `afternoon_vol_ratio` | 0 / 5 | no planted trap | no planted trap | no planted trap |
+| `tuesday_drift` | 5 / 5 | no planted trap | no planted trap | no planted trap |
+| `thursday_drift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `monday_drift` | 5 / 5 | no planted trap | no planted trap | no planted trap |
+| `total_return` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `return_2024` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `largest_session_move` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+
+In these 50 eval runs no pass fell into a planted trap, so no trap reached the critic, and it raised no trap issue. That is why trap recall and critic precision are not defined here. The recorded runs on this page are separate runs.
+
 ## Recorded runs
 
 ### On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.

@@ -1056,7 +1056,7 @@ const PROJECTS_SHAPE = {
     run: keys("finished", "harness", "models", "status", "outcome", "dataset"),
     plan: keys("hypothesis", "dataset", "window", "method", "statistic", "significance"),
     links: keys("markdown", "json", "back"),
-    scorecard: { ...keys("heading", "date", "repeats", "harness", "models", "seed", "aggregate", "na", "se_na"), columns: keys("question", "correct", "trap_recall", "critic_precision") },
+    scorecard: { ...keys("heading", "date", "runs", "harness", "models", "seed", "aggregate", "no_trap", "no_trap_reached", "no_trap_flagged", "se_na"), columns: keys("question", "correct", "trap_handled", "trap_recall", "critic_precision") },
     card: keys("link", "harness", "status", "outcome", "role"),
   },
   empty: keys("runs", "issues"),

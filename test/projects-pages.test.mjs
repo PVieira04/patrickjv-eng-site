@@ -203,6 +203,10 @@ const runPage = (s, id) => out(s, `projects/research-agent/runs/${id}/index.html
 const SHOWCASE = "projects/research-agent.html";
 // The visible text of a page: tags removed (style, script and the SVG title dropped), entities decoded.
 const visible = (html) => decodeEntities(html.replace(/<(style|script|title)[^>]*>[\s\S]*?<\/\1>/g, " ").replace(/<\/?(a|strong|span|em|code)\b[^>]*>/g, "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+// The run set where the analyst fell into no trap: every trap question handled on every repeat,
+// no trapped pass (reviewed or not), no unscored pass, no null repeat, and no issue from the critic.
+const cleanTraps = (d) => { for (const q of d.questions) { q.trap_recall = { x: 0, n: 0 }; q.critic_precision = { x: 0, n: 0 }; q.unreviewed_trap_passes = 0; q.unscored_passes = 0; q.other_issues = {}; if (q.trap_handled !== null) q.trap_handled = q.n_repeats; }
+  d.runs = d.runs.map((r, i) => (r.run_id === null ? { ...d.runs.find((x) => x.run_id !== null), question_id: r.question_id, run_id: `20261111T14${String(i).padStart(2, "0")}00Z-9f9f9f` } : r)); };
 const body = (html) => html.slice(html.indexOf("<body>"));
 const headings = (html) => [...body(html).matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) => `h${m[1]} ${visible(m[2])}`);
 const title = (html) => decodeEntities(html.match(/<title>([\s\S]*?)<\/title>/)[1]);
@@ -359,7 +363,7 @@ test("F-005 (D5): the full fixture set — every status, outcome, tag, stop reas
     take();
     ok(publish(s, [run(20, { edit: capped(stops[13]) })]));
     take();
-    ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate.se = null; }) }));
+    ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate.se = null; cleanTraps(d); }) }));
     take();
     const text = shown.join("\n");
     const missing = strings(P).filter(([path, v]) => !(path.startsWith("templates.") ? v.split(/\{[a-z_]+\}/).map((x) => x.trim()).filter(Boolean) : [v]).every((lit) => text.includes(lit)));
@@ -394,47 +398,117 @@ test("F-005 (D5, D7): templates fill in one pass — a question holding {questio
 
 // ---- The scorecard (US-2) ----
 import { fixed2, truncate, truncateAtSpace } from "../lib/project-pages.mjs";
-const scoreTable = (h) => [...body(h).match(/<section aria-labelledby="scorecard-h">[\s\S]*?<\/section>/)[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => decodeEntities(c[1])));
-const scoreHead = (h) => Object.fromEntries([...body(h).match(/<section aria-labelledby="scorecard-h">[\s\S]*?<\/section>/)[0].matchAll(/<dt>([\s\S]*?)<\/dt><dd>([\s\S]*?)<\/dd>/g)].map((m) => [decodeEntities(m[1]), decodeEntities(m[2])]));
-
+const scoreSection = (h) => body(h).match(/<section aria-labelledby="scorecard-h">[\s\S]*?<\/section>/)[0];
+const plain = (x) => decodeEntities(x.replace(/<[^>]+>/g, ""));
+const scoreTable = (h) => [...scoreSection(h).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => plain(c[1])));
+const scoreHead = (h) => Object.fromEntries([...scoreSection(h).matchAll(/<dt>([\s\S]*?)<\/dt><dd>([\s\S]*?)<\/dd>/g)].map((m) => [plain(m[1]), plain(m[2])]));
+const scoreNote = (h) => scoreSection(h).match(/<p class="scorecard-note">([\s\S]*?)<\/p>/)?.[1];
 test("F-005 (US-2): number formatting — two places, half away from zero from String(x): 0.125 -> 0.13, 0.135 -> 0.14", () => {
   for (const [x, s] of [[0.125, "0.13"], [0.135, "0.14"], [0.75, "0.75"], [0, "0.00"], [1, "1.00"], [0.005, "0.01"], [0.004999, "0.00"], [0.995, "1.00"], [1e-7, "0.00"], [0.1, "0.10"], [0.5, "0.50"], [0.0549, "0.05"]]) assert.equal(fixed2(x), s, String(x));
 });
 
-test("F-005 (US-2): the scorecard is one table, a row per question, with correct, trap recall and critic precision as x / n, n/a for n = 0, and the aggregate with its standard error", () => {
+test("F-005 (US-2): the scorecard is one table, a row per question (id in code style), with correct and trap handled, trap recall and critic precision as x / n, a reason for each undefined value, and the score with its standard error", () => {
   const s = site();
   try {
     ok(publish(s, [], { card: scorecard() }));
     const h = out(s, SHOWCASE), c = P.labels.scorecard;
-    assert.equal(body(h).match(/<table>/g).length, 1, "one table");
+    assert.equal(body(h).match(/<table\b/g).length, 1, "one table");
     assert.deepEqual(scoreTable(h), [
-      [c.columns.question, c.columns.correct, c.columns.trap_recall, c.columns.critic_precision],
-      ["open-vol", "2 / 2", c.na, "1 / 1"],
-      ["roll-gap", "1 / 2", "1 / 2", "1 / 2"],
+      [c.columns.question, c.columns.correct, c.columns.trap_handled, c.columns.trap_recall, c.columns.critic_precision],
+      ["open-vol", "2 / 2", c.no_trap, c.no_trap, c.no_trap], // no planted trap: the same words in all three trap cells
+      ["roll-gap", "1 / 2", "1 / 2", "1 / 2", "1 / 1"],
     ]);
-    assert.equal(scoreHead(h)[c.aggregate], "0.75 ± 0.13", "0.125 rounds half away from zero");
-    assert.match(body(h), /<div class="scroll" role="region" aria-label="Eval scorecard" tabindex="0">\s*<table>/, "in the same focusable scroll wrapper as report tables");
+    assert.ok(scoreSection(h).includes('<th scope="row" role="rowheader"><code>open-vol</code></th>'), "the question id in code style");
+    assert.equal(scoreHead(h)[c.aggregate], "0.75 (standard error 0.13)", "0.125 rounds half away from zero");
+    assert.match(body(h), /<div class="scroll" role="region" aria-label="Eval scorecard" tabindex="0">\s*<table class="scorecard-stack" role="table">/, "in the same focusable scroll wrapper as report tables");
     ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate = { score: 0.135, se: null }; d.questions[1].critic_precision = { x: 0, n: 0 }; }) }));
     const h2 = out(s, SHOWCASE);
     assert.equal(scoreHead(h2)[c.aggregate], `0.14 ${c.se_na}`);
-    assert.deepEqual(scoreTable(h2)[2], ["roll-gap", "1 / 2", "1 / 2", c.na]);
+    assert.deepEqual(scoreTable(h2)[2], ["roll-gap", "1 / 2", "1 / 2", "1 / 2", c.no_trap_flagged]);
+    assert.doesNotMatch(visible(h2), /\bn\/a\b/, "no bare n/a");
     const md = out(s, "projects/research-agent.md");
-    assert.ok(md.includes(`| ${c.columns.question} | ${c.columns.correct} | ${c.columns.trap_recall} | ${c.columns.critic_precision} |`) && md.includes(`| roll-gap | 1 / 2 | 1 / 2 | ${c.na} |`) && md.includes(`- ${c.aggregate}: 0.14 ${c.se_na}`), "the Markdown copy has the scorecard as a table");
+    assert.ok(md.includes(`| ${c.columns.question} | ${c.columns.correct} | ${c.columns.trap_handled} | ${c.columns.trap_recall} | ${c.columns.critic_precision} |`), "the Markdown table's header");
+    assert.ok(md.includes(`| \`roll-gap\` | 1 / 2 | 1 / 2 | 1 / 2 | ${c.no_trap_flagged} |`) && md.includes(`| \`open-vol\` | 2 / 2 | ${c.no_trap} | ${c.no_trap} | ${c.no_trap} |`), "the Markdown rows");
+    assert.ok(md.includes(`- ${c.aggregate}: 0.14 ${c.se_na}`), "the Markdown score");
   } finally { s.done(); }
 });
 
-test("F-005 (US-2): the scorecard header — date, k, models, seed, and one entry per harness present with its count of non-null repeats, in the fixed order", () => {
+test("F-005 (US-2): a question with no planted trap says so in all three trap cells; the longer reasons are only for a trap question at 0 / 0", () => {
+  const s = site();
+  try {
+    const c = P.labels.scorecard;
+    ok(publish(s, [], { card: edit(scorecard(), cleanTraps) }));
+    const rows = scoreTable(out(s, SHOWCASE));
+    assert.deepEqual(rows[1].slice(2), [c.no_trap, c.no_trap, c.no_trap], "open-vol: no planted trap");
+    assert.deepEqual(rows[2].slice(2), ["2 / 2", c.no_trap_reached, c.no_trap_flagged], "roll-gap: a trap question at 0 / 0");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): on a narrow screen the scorecard table stacks as a list, each value labelled with its column", () => {
+  const s = site();
+  try {
+    ok(publish(s, [], { card: scorecard() }));
+    const h = out(s, SHOWCASE), c = P.labels.scorecard;
+    const sec = scoreSection(h);
+    assert.ok(sec.includes(`<td role="cell" data-label="${c.columns.trap_handled}">1 / 2</td>`), "each cell names its column");
+    // display: block drops a table's implicit roles, so each part states its own.
+    for (const [tag, role, n] of [["table", "table", 1], ["thead", "rowgroup", 1], ["tbody", "rowgroup", 1], ["tr", "row", 3], ["th scope=\"col\"", "columnheader", 5], ["th scope=\"row\"", "rowheader", 2], ["td", "cell", 8]]) {
+      assert.equal(sec.match(new RegExp(`<${tag}[^>]*role="${role}"`, "g"))?.length, n, `${n} × <${tag}> with role ${role}`);
+    }
+    assert.match(h, /@media \(max-width: 560px\) \{[^}]*\.scorecard-stack thead/, "the header row is hidden and the rows stack below 560px");
+    assert.match(h, /\.scorecard-stack td::before \{ content: attr\(data-label\) \/ ""; /, "each stacked value shows its column name, with empty alt text so it is not read twice");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): a note under the scorecard says why trap recall and critic precision are undefined, only when no eval run fell into a trap", () => {
+  const s = site();
+  try {
+    const c = P.labels.scorecard;
+    ok(publish(s, [], { card: scorecard() }));
+    assert.equal(scoreNote(out(s, SHOWCASE)), undefined, "a run set with trapped passes has no note");
+    ok(publish(s, [], { card: edit(scorecard(), cleanTraps) }));
+    const h = out(s, SHOWCASE);
+    const note = P.templates.scorecard_trap_note.replace("{count}", "4");
+    assert.equal(decodeEntities(scoreNote(h)), note, "4 eval runs, the same count as the Runs row");
+    assert.equal(scoreHead(h)[c.runs], "4 runs: 2 questions × 2");
+    assert.deepEqual(scoreTable(h)[2], ["roll-gap", "1 / 2", "2 / 2", c.no_trap_reached, c.no_trap_flagged]);
+    assert.ok(out(s, "projects/research-agent.md").includes(`\n${note}\n`), "the Markdown copy has the note");
+    for (const spoil of [
+      (d) => { d.questions[1].trap_handled = 1; }, (d) => { d.questions[1].unreviewed_trap_passes = 1; }, (d) => { d.questions[1].unscored_passes = 1; }, (d) => { d.questions[1].trap_handled = null; },
+      (d) => { d.questions[1].trap_recall = { x: 0, n: 1 }; }, (d) => { d.questions[1].critic_precision = { x: 0, n: 1 }; },
+      (d) => { d.questions[0].other_issues = { sample_size: 1 }; }, // the critic raised an issue, just not a trap one
+      (d) => { d.runs[0] = { run_id: null, question_id: "open-vol", status: null }; }, // a null repeat on a question with no trap
+    ]) {
+      ok(publish(s, [], { card: edit(edit(scorecard(), cleanTraps), spoil) }));
+      assert.equal(scoreNote(out(s, SHOWCASE)), undefined, "no note unless every trap question was handled on every repeat with nothing unscored");
+    }
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): the scorecard header — date, runs, one entry per harness present with its count of non-null repeats in the fixed order, models, seed and score", () => {
   const s = site();
   try {
     const card = edit(scorecard(), (d) => { d.runs.reverse(); }); // claude-code listed first; a null repeat among them
     ok(publish(s, [], { card }));
     const c = P.labels.scorecard, H = P.labels.harness;
     assert.deepEqual(scoreHead(out(s, SHOWCASE)), {
-      [c.date]: "2026-11-11", [c.repeats]: "2", [c.harness]: `${H.langgraph} (2), ${H["claude-code"]} (1)`,
-      [c.models]: "analyst example:analyst-model, critic example:critic-model", [c.seed]: "42", [c.aggregate]: "0.75 ± 0.13",
+      [c.date]: "2026-11-11", [c.runs]: "4 runs: 2 questions × 2", [c.harness]: `${H.langgraph} (2), ${H["claude-code"]} (1)`,
+      [c.models]: "analyst example:analyst-model, critic example:critic-model", [c.seed]: "42", [c.aggregate]: "0.75 (standard error 0.13)",
     });
     ok(publish(s, [], { card: edit(scorecard(), (d) => { for (const r of d.runs) if (r.models) r.models.harness = "claude-code"; }) }));
     assert.equal(scoreHead(out(s, SHOWCASE))[c.harness], `${H["claude-code"]} (3)`, "only the harnesses present");
+    ok(publish(s, [], { card: edit(scorecard(), (d) => { d.questions[1].n_repeats = 1; d.questions[1].correct = 1; d.questions[1].trap_handled = 1; d.questions[1].trap_recall = { x: 1, n: 1 }; d.runs.splice(2, 1); }) }));
+    assert.equal(scoreHead(out(s, SHOWCASE))[c.runs], "3", "repeats that differ from k: the run count only");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): a scorecard model id breaks only after a colon, never inside a part", () => {
+  const s = site();
+  try {
+    ok(publish(s, [], { card: scorecard() }));
+    const h = out(s, SHOWCASE);
+    assert.ok(scoreSection(h).includes('analyst <span class="scorecard-id"><span>example:</span><wbr><span>analyst-model</span></span>, critic <span class="scorecard-id"><span>example:</span><wbr><span>critic-model</span></span>'));
+    assert.match(h, /\.scorecard-id > span \{ white-space: nowrap; \}/, "a break only after a colon");
   } finally { s.done(); }
 });
 
@@ -637,7 +711,7 @@ test("F-005 (D7): a manifest alt text with \", & and < is one well-formed alt at
     assert.equal(img, `<img src="${FIG}" width="40" height="30" alt="A chart of &quot;open&quot; &amp; &lt;close&gt; volatility">`);
     assert.equal(decodeEntities(img.match(/alt="([^"]*)"/)[1]), alt);
     const h = out(s, SHOWCASE);
-    assert.ok(body(h).includes(`analyst vendor:model&amp;&quot;&lt;b&gt;, critic`));
+    assert.ok(body(h).includes(`analyst <span class="scorecard-id"><span>vendor:</span><wbr><span>model&amp;&quot;&lt;b&gt;</span></span>, critic`));
     assert.doesNotMatch(body(h), /<b>/);
     assert.ok(out(s, "projects/research-agent.md").includes(`analyst ${id}, critic`), "the Markdown copy holds the id as written");
   } finally { s.done(); }

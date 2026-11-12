@@ -34,8 +34,8 @@
     {
       "correct": 2,
       "critic_precision": {
-        "n": 1,
-        "x": 1
+        "n": 0,
+        "x": 0
       },
       "id": "open-vol",
       "n_repeats": 2,
@@ -54,7 +54,7 @@
     {
       "correct": 1,
       "critic_precision": {
-        "n": 2,
+        "n": 1,
         "x": 1
       },
       "id": "roll-gap",
