@@ -76,11 +76,11 @@ h3 { font-size: 1.0625rem; margin: 1.5em 0 0.4em; font-weight: 600; }
 .scroll { max-width: 100%; overflow-x: auto; margin: 0 0 16px; }
 .scroll pre { margin: 0; overflow: visible; }
 .scroll table { overflow-wrap: normal; }
-.id { white-space: nowrap; }
-.note { font-size: 0.9375rem; color: var(--muted); }
-@media (max-width: 560px) { .stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .stack, .stack tbody, .stack tr, .stack th, .stack td { display: block; } .stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); } .stack th, .stack td { border: 0; padding: 2px 0; } .stack td { display: flex; gap: 12px; } }
-.stack td::before { content: attr(data-label); display: none; }
-@media (max-width: 560px) { .stack td::before { display: block; flex: 0 0 9.5rem; font-family: var(--mono); font-size: 0.8125rem; color: var(--muted); } }
+.scorecard-id > span { white-space: nowrap; }
+.scorecard-note { font-size: 0.9375rem; color: var(--muted); }
+@media (max-width: 560px) { .scorecard-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .scorecard-stack, .scorecard-stack tbody, .scorecard-stack tr, .scorecard-stack th, .scorecard-stack td { display: block; } .scorecard-stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); } .scorecard-stack th, .scorecard-stack td { border: 0; padding: 2px 0; } .scorecard-stack td { display: flex; gap: 12px; } }
+.scorecard-stack td::before { content: attr(data-label); display: none; }
+@media (max-width: 560px) { .scorecard-stack td::before { display: block; flex: 0 0 9.5rem; font-family: var(--mono); font-size: 0.8125rem; color: var(--muted); } }
 table { border-collapse: collapse; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
 th, td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 thead th { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
@@ -223,28 +223,28 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <dt>Date</dt><dd>2026-11-12</dd>
 <dt>Runs</dt><dd>50 runs: 10 questions × 5</dd>
 <dt>Harness</dt><dd>Claude Code harness (50)</dd>
-<dt>Models</dt><dd>analyst <span class="id">claude-code:claude-sonnet-5-5</span>, critic <span class="id">claude-code:claude-opus-5-5</span></dd>
+<dt>Models</dt><dd>analyst <span class="scorecard-id"><span>claude-code:</span><wbr><span>claude-sonnet-5-5</span></span>, critic <span class="scorecard-id"><span>claude-code:</span><wbr><span>claude-opus-5-5</span></span></dd>
 <dt>Seed</dt><dd>20261111</dd>
 <dt>Score</dt><dd>0.90 (standard error 0.06)</dd>
 </dl>
 <div class="scroll" role="region" aria-label="Eval scorecard" tabindex="0">
-<table class="stack">
-<thead><tr><th scope="col">Question</th><th scope="col">Correct</th><th scope="col">Trap handled</th><th scope="col">Trap recall</th><th scope="col">Critic precision</th></tr></thead>
-<tbody>
-<tr><th scope="row"><code>open_vol_uplift</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">5 / 5</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>open_vol_uplift_pct_change</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">5 / 5</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>open_vol_uplift_15m</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">5 / 5</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>afternoon_vol_ratio</code></th><td data-label="Correct">0 / 5</td><td data-label="Trap handled">no planted trap</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>tuesday_drift</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">no planted trap</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>thursday_drift</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">5 / 5</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>monday_drift</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">no planted trap</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>total_return</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">5 / 5</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>return_2024</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">5 / 5</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
-<tr><th scope="row"><code>largest_session_move</code></th><td data-label="Correct">5 / 5</td><td data-label="Trap handled">5 / 5</td><td data-label="Trap recall">no trap reached the critic</td><td data-label="Critic precision">the critic flagged no trap</td></tr>
+<table class="scorecard-stack" role="table">
+<thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Question</th><th scope="col" role="columnheader">Correct</th><th scope="col" role="columnheader">Trap handled</th><th scope="col" role="columnheader">Trap recall</th><th scope="col" role="columnheader">Critic precision</th></tr></thead>
+<tbody role="rowgroup">
+<tr role="row"><th scope="row" role="rowheader"><code>open_vol_uplift</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">5 / 5</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>open_vol_uplift_pct_change</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">5 / 5</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>open_vol_uplift_15m</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">5 / 5</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>afternoon_vol_ratio</code></th><td role="cell" data-label="Correct">0 / 5</td><td role="cell" data-label="Trap handled">no planted trap</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>tuesday_drift</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">no planted trap</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>thursday_drift</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">5 / 5</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>monday_drift</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">no planted trap</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>total_return</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">5 / 5</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>return_2024</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">5 / 5</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
+<tr role="row"><th scope="row" role="rowheader"><code>largest_session_move</code></th><td role="cell" data-label="Correct">5 / 5</td><td role="cell" data-label="Trap handled">5 / 5</td><td role="cell" data-label="Trap recall">no trap reached the critic</td><td role="cell" data-label="Critic precision">the critic flagged none of this question's traps</td></tr>
 </tbody>
 </table>
 </div>
-<p class="note">In these 50 eval runs the analyst avoided every planted trap itself, so the critic had nothing to catch. That is why trap recall and critic precision are not defined for this run set. The recorded runs on this page are separate runs.</p>
+<p class="scorecard-note">In these 50 eval runs no pass fell into a planted trap, so no trap reached the critic, and it raised no trap issue. That is why trap recall and critic precision are not defined here. The recorded runs on this page are separate runs.</p>
 </section>
 <section aria-labelledby="runs-h">
 <h2 id="runs-h">Recorded runs</h2>

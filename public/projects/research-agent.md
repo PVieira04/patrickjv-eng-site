@@ -85,18 +85,18 @@ Nothing reaches this page straight from a run. A publish command checks a finish
 
 | Question | Correct | Trap handled | Trap recall | Critic precision |
 |---|---|---|---|---|
-| `open_vol_uplift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
-| `open_vol_uplift_pct_change` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
-| `open_vol_uplift_15m` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
-| `afternoon_vol_ratio` | 0 / 5 | no planted trap | no trap reached the critic | the critic flagged no trap |
-| `tuesday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged no trap |
-| `thursday_drift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
-| `monday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged no trap |
-| `total_return` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
-| `return_2024` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
-| `largest_session_move` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+| `open_vol_uplift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `open_vol_uplift_pct_change` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `open_vol_uplift_15m` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `afternoon_vol_ratio` | 0 / 5 | no planted trap | no trap reached the critic | the critic flagged none of this question's traps |
+| `tuesday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged none of this question's traps |
+| `thursday_drift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `monday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged none of this question's traps |
+| `total_return` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `return_2024` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
+| `largest_session_move` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged none of this question's traps |
 
-In these 50 eval runs the analyst avoided every planted trap itself, so the critic had nothing to catch. That is why trap recall and critic precision are not defined for this run set. The recorded runs on this page are separate runs.
+In these 50 eval runs no pass fell into a planted trap, so no trap reached the critic, and it raised no trap issue. That is why trap recall and critic precision are not defined here. The recorded runs on this page are separate runs.
 
 ## Recorded runs
 

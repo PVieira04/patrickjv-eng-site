@@ -409,7 +409,7 @@
         "checked": "Read and published by Patrick Vieira on {date}.",
         "scorecard_runs": "{runs} runs: {questions} questions × {k}",
         "scorecard_score": "{score} (standard error {se})",
-        "scorecard_trap_note": "In these {count} eval runs the analyst avoided every planted trap itself, so the critic had nothing to catch. That is why trap recall and critic precision are not defined for this run set. The recorded runs on this page are separate runs."
+        "scorecard_trap_note": "In these {count} eval runs no pass fell into a planted trap, so no trap reached the critic, and it raised no trap issue. That is why trap recall and critic precision are not defined here. The recorded runs on this page are separate runs."
       },
       "labels": {
         "status": {
@@ -502,7 +502,7 @@
           },
           "no_trap": "no planted trap",
           "no_trap_reached": "no trap reached the critic",
-          "no_trap_flagged": "the critic flagged no trap",
+          "no_trap_flagged": "the critic flagged none of this question's traps",
           "se_na": "(no standard error: a question has only one repeat)"
         },
         "card": {

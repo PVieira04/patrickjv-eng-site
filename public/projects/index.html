@@ -70,11 +70,11 @@ h3 { font-size: 1.0625rem; margin: 1.5em 0 0.4em; font-weight: 600; }
 .scroll { max-width: 100%; overflow-x: auto; margin: 0 0 16px; }
 .scroll pre { margin: 0; overflow: visible; }
 .scroll table { overflow-wrap: normal; }
-.id { white-space: nowrap; }
-.note { font-size: 0.9375rem; color: var(--muted); }
-@media (max-width: 560px) { .stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .stack, .stack tbody, .stack tr, .stack th, .stack td { display: block; } .stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); } .stack th, .stack td { border: 0; padding: 2px 0; } .stack td { display: flex; gap: 12px; } }
-.stack td::before { content: attr(data-label); display: none; }
-@media (max-width: 560px) { .stack td::before { display: block; flex: 0 0 9.5rem; font-family: var(--mono); font-size: 0.8125rem; color: var(--muted); } }
+.scorecard-id > span { white-space: nowrap; }
+.scorecard-note { font-size: 0.9375rem; color: var(--muted); }
+@media (max-width: 560px) { .scorecard-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .scorecard-stack, .scorecard-stack tbody, .scorecard-stack tr, .scorecard-stack th, .scorecard-stack td { display: block; } .scorecard-stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); } .scorecard-stack th, .scorecard-stack td { border: 0; padding: 2px 0; } .scorecard-stack td { display: flex; gap: 12px; } }
+.scorecard-stack td::before { content: attr(data-label); display: none; }
+@media (max-width: 560px) { .scorecard-stack td::before { display: block; flex: 0 0 9.5rem; font-family: var(--mono); font-size: 0.8125rem; color: var(--muted); } }
 table { border-collapse: collapse; font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
 th, td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 thead th { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
