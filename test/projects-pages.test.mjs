@@ -917,3 +917,14 @@ test("F-005 (US-4): the page-level scan also covers the build: a term only the r
     assert.ok(r.errors.some((e) => /runs\/[^/]+\/index\.html \(visible text\) names an employer/.test(e)), r.errors.join("\n"));
   } finally { s.done(); }
 });
+
+test("F-005 (D4): build-state.json's content hash covers the /projects outputs, figures by their sha256", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1)]));
+    const hash = () => JSON.parse(readFileSync(join(s.root, "build-state.json"), "utf8")).hash;
+    const before = hash();
+    ok(publish(s, [run(1, { figures: { [FIG]: png({ width: 40, height: 30, idat: deflateSync(Buffer.alloc(30 * (1 + 40 * 3), 1)) }) } })]));
+    assert.notEqual(hash(), before, "new figure bytes move the content hash (and so dateModified)");
+  } finally { s.done(); }
+});
