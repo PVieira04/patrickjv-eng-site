@@ -75,7 +75,7 @@ test("F-002 guide: an agent given only https://patrickjv.com/ reaches the full g
 function scratch() {
   const dir = mkdtempSync(join(tmpdir(), "site-guide-"));
   for (const f of ["content.json", "cv.json", "booking.json", "build-state.json"]) cpSync(join(ROOT, f), join(dir, f));
-  for (const d of ["writing", "public"]) cpSync(join(ROOT, d), join(dir, d), { recursive: true });
+  for (const d of ["writing", "public", "projects"]) cpSync(join(ROOT, d), join(dir, d), { recursive: true });
   return dir;
 }
 

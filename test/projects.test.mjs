@@ -349,13 +349,17 @@ import { writeExport, runFiles, scorecardFiles, dump, sha, pngOfSize, RUN_ID, re
 
 const MANIFEST = "projects/research-agent/published.json";
 const TODAY = "2026-11-12";
-// A scratch site root (only projects/ matters to --record) and a scratch export folder.
+// A scratch site root and a scratch export folder. --record reads projects/ and, to check the
+// pages it would render (PR 3), content.json and projects/research-agent/architecture.svg.
 function sandbox() {
   const base = mkdtempSync(join(tmpdir(), "site-record-"));
   const root = join(base, "site"), dir = join(base, "export");
   mkdirSync(root);
+  for (const f of ["content.json", "projects"]) cpSync(join(ROOT, f), join(root, f), { recursive: true });
   return { base, root, dir, done: () => rmSync(base, { recursive: true, force: true }) };
 }
+// Remove everything --record wrote (projects/ also holds sources, such as architecture.svg).
+const unpublishAll = (root) => { for (const f of ["projects/research-agent/runs", "projects/research-agent/scorecard", "projects/research-agent/published.json"]) rmSync(join(root, f), { recursive: true, force: true }); };
 // Every file under a directory, path -> bytes (as hex), so "wrote nothing" compares the whole tree.
 const snapshot = (dir) => existsSync(dir) ? Object.fromEntries(Object.entries(readTree(dir)).map(([f, b]) => [f, b.toString("hex")])) : {};
 const reportWith = (f) => dump(edit(report(), f));
@@ -498,7 +502,7 @@ test("F-005 (D3): patterns and limits — 20 figures, 204,800 bytes and 1,048,57
       return { ...Object.fromEntries(paths.map((p, i) => [p, sizes[i] ? pngOfSize(sizes[i]) : png()])), "report.json": reportWith((d) => { d.figures = paths; }), "calls/1/out/vol_by_minute.png": undefined };
     };
     const exp = (files) => { const f = { ...runFiles(), ...files }; for (const k of Object.keys(f)) if (f[k] === undefined) delete f[k]; return writeExport(s.dir, { files: f }); };
-    const ok = (files, what) => { const expect = exp(files); const r = record({ root: s.root, dir: s.dir, expect, today: TODAY }); assert.deepEqual(r.errors, [], what); rmSync(join(s.root, "projects"), { recursive: true }); };
+    const ok = (files, what) => { const expect = exp(files); const r = record({ root: s.root, dir: s.dir, expect, today: TODAY }); assert.deepEqual(r.errors, [], what); unpublishAll(s.root); };
     ok(figs(Array(20).fill(0)), "20 figures");
     ok(figs([204_800]), "a figure of 204,800 bytes");
     ok(figs([...Array(5).fill(204_800), 24_576]), "1,048,576 bytes of figures");
@@ -547,11 +551,11 @@ test("F-005 (US-4): .denylist.local — a term in the export fails --record; ins
     writeFileSync(join(s.root, ".denylist.local"), "zorblax\n# old one\n");
     assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, [], "inside a longer word, and comment text, pass");
     const withTerms = snapshot(s.root);
-    rmSync(join(s.root, "projects"), { recursive: true });
+    unpublishAll(s.root);
     writeFileSync(join(s.root, ".denylist.local"), "# only comments\n\n   \n");
     assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, []);
     const commentsOnly = snapshot(s.root);
-    rmSync(join(s.root, "projects"), { recursive: true });
+    unpublishAll(s.root);
     rmSync(join(s.root, ".denylist.local"));
     assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, []);
     const absent = snapshot(s.root);
@@ -649,11 +653,14 @@ test("F-005 (US-4): node build.mjs --record <dir> --expect <digest> records, and
   try {
     const expect = runExport(s.dir);
     const cli = (args) => { try { return { code: 0, out: execFileSync(process.execPath, [join(ROOT, "build.mjs"), ...args], { cwd: s.root, encoding: "utf8", stdio: "pipe" }) }; } catch (e) { return { code: e.status, out: e.stderr }; } };
+    const before = snapshot(join(s.root, "projects"));
     const bad = cli(["--record", s.dir, "--expect", "0".repeat(64)]);
     assert.equal(bad.code, 1);
     assert.match(bad.out, /digest/);
-    assert.ok(!existsSync(join(s.root, "projects")));
+    assert.deepEqual(snapshot(join(s.root, "projects")), before, "nothing written under projects/");
+    assert.ok(!existsSync(join(s.root, MANIFEST)) && !existsSync(join(s.root, "projects/research-agent/runs")));
     assert.equal(cli(["--record", s.dir]).code, 1, "--expect is required");
+    assert.deepEqual(snapshot(join(s.root, "projects")), before, "nothing written under projects/");
     const ok = cli(["--record", s.dir, "--expect", expect]);
     assert.equal(ok.code, 0, ok.out);
     assert.match(ok.out, new RegExp(RUN_ID));
@@ -680,16 +687,18 @@ test("F-005 (US-4): --record runs the build's checks on the whole would-be tree:
 import { build } from "../build.mjs";
 
 const NOW = Date.parse("2026-11-12T12:00:00Z");
-// A scratch copy of the site's inputs with the fixture run and scorecard recorded and alt text
-// written, as the owner would leave it before `npm run build`.
+// A scratch copy of the site's inputs with the fixture run and scorecard recorded, alt text
+// written and the site built, as the owner would leave it before committing.
 function publishedSite() {
   const s = sandbox();
-  for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public"]) cpSync(join(ROOT, f), join(s.root, f), { recursive: true });
+  for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public", "projects"]) cpSync(join(ROOT, f), join(s.root, f), { recursive: true });
   assert.deepEqual(record({ root: s.root, dir: s.dir, expect: runExport(s.dir), today: TODAY }).errors, []);
   writeAlt(s.root);
   const sdir = join(s.base, "sc");
   assert.deepEqual(record({ root: s.root, dir: sdir, expect: writeExport(sdir, { kind: "scorecard", id: EVAL_ID, files: scorecardFiles() }), kind: "scorecard", today: TODAY }).errors, []);
   s.run = join(s.root, "projects/research-agent/runs", RUN_ID);
+  // ... then `npm run build`: the published run and scorecard change the /projects pages (PR 3).
+  assert.deepEqual(build({ root: s.root, today: TODAY, now: NOW }).errors, []);
   return s;
 }
 const editManifest = (s, f) => { const m = manifestOf(s.root); f(m); writeFileSync(join(s.root, MANIFEST), JSON.stringify(m, null, 2) + "\n"); };
@@ -818,7 +827,7 @@ test("F-005 (US-4): .denylist.local fails the local build on a term in exported 
   let s = publishedSite();
   try {
     writeFileSync(join(s.root, ".denylist.local"), "zorblax\n");
-    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "no term present");
+    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "no term present (--check, with .denylist.local present)");
     republish(s, "report.md", "# Research report\n\nAs we did at Zorblax.\n");
     buildFails(s, /report\.md matches a term in \.denylist\.local/);
   } finally { s.done(); }
@@ -828,7 +837,8 @@ test("F-005 (US-4): .denylist.local fails the local build on a term in exported 
     editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A Zorblax chart."; });
     buildFails(s, /published\.json matches a term in \.denylist\.local/);
     editManifest(s, (m) => { m.runs[RUN_ID].alt["calls/1/out/vol_by_minute.png"] = "A Zorblaxian chart."; });
-    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "inside a longer word");
+    assert.deepEqual(build({ root: s.root, now: NOW }).errors, [], "inside a longer word");
+    assert.deepEqual(build({ root: s.root, check: true, now: NOW }).errors, [], "inside a longer word (--check, with .denylist.local present)");
     writeFileSync(join(s.root, ".denylist.local"), "trap_caught\n");
     editManifest(s, (m) => { m.runs[RUN_ID].role = "trap_caught"; });
     buildFails(s, /published\.json matches a term in \.denylist\.local/);

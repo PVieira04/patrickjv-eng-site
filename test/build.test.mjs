@@ -152,6 +152,7 @@ function scratch() {
   cpSync(join(ROOT, "writing"), join(dir, "writing"), { recursive: true });
   cpSync(join(ROOT, "build-state.json"), join(dir, "build-state.json"));
   cpSync(join(ROOT, "public"), join(dir, "public"), { recursive: true });
+  cpSync(join(ROOT, "projects"), join(dir, "projects"), { recursive: true });
   return dir;
 }
 const NOW = Date.parse("2026-10-06T12:00:00Z");
@@ -500,6 +501,9 @@ test("F-005 (D4): writeStaged deletes files, links and emptied directories in th
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
 
+// What the build always writes under public/projects/ (F-005 PR 3), with no runs published.
+const GENERATED = ["index.html", "index.md", "research-agent.html", "research-agent.md"];
+
 // Converge a scratch tree, then give it a pending content change, so a build has outputs to write.
 function pendingChange(dir) {
   assert.deepEqual(build({ root: dir, today: "2098-01-01", now: NOW }).errors, []);
@@ -521,7 +525,7 @@ test("F-005 (D4): a stray file under public/projects/ fails --check naming it; a
     const built = build({ root: dir, today: "2099-01-01", now: NOW });
     assert.deepEqual(built.errors, []);
     assert.ok(built.removed.includes(stray));
-    assert.deepEqual(readdirSync(join(dir, "public/projects")), [], "the stray and its emptied directories are gone");
+    assert.deepEqual(readdirSync(join(dir, "public/projects")), GENERATED, "the stray and its emptied directories are gone");
     assert.deepEqual(build({ root: dir, check: true, now: NOW }).errors, []);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -532,7 +536,7 @@ test("F-005 (D4): an empty directory placed under public/projects/ is a stray to
     mkdirSync(join(dir, "public/projects/empty/deeper"), { recursive: true });
     assert.ok(build({ root: dir, check: true, now: NOW }).errors.some((e) => e.includes("public/projects/empty/deeper")));
     assert.deepEqual(build({ root: dir, now: NOW }).errors, []);
-    assert.deepEqual(readdirSync(join(dir, "public/projects")), []);
+    assert.deepEqual(readdirSync(join(dir, "public/projects")), GENERATED);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -543,14 +547,14 @@ test("F-005 (D4): symlinks under public/projects/ (to a file and to a directory 
     writeFileSync(join(outside, "secret.txt"), "outside");
     mkdirSync(join(outside, "tree"));
     writeFileSync(join(outside, "tree/inner.txt"), "inner");
-    mkdirSync(join(dir, "public/projects"));
+    mkdirSync(join(dir, "public/projects"), { recursive: true });
     symlinkSync(join(outside, "secret.txt"), join(dir, "public/projects/file-link"));
     symlinkSync(join(outside, "tree"), join(dir, "public/projects/dir-link"));
     const checked = build({ root: dir, check: true, now: NOW });
     for (const l of ["public/projects/file-link", "public/projects/dir-link"]) assert.ok(checked.errors.some((e) => e.includes(l)), l);
     assert.ok(!checked.errors.some((e) => e.includes("inner.txt")), "the walk does not follow the directory link");
     assert.deepEqual(build({ root: dir, now: NOW }).errors, []);
-    assert.deepEqual(readdirSync(join(dir, "public/projects")), []);
+    assert.deepEqual(readdirSync(join(dir, "public/projects")), GENERATED);
     assert.equal(readFileSync(join(outside, "secret.txt"), "utf8"), "outside");
     assert.equal(readFileSync(join(outside, "tree/inner.txt"), "utf8"), "inner");
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
