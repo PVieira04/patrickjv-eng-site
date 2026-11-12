@@ -25,18 +25,45 @@ export function chunk(type, data = Buffer.alloc(0), crc) {
   return Buffer.concat([len, t, data, c]);
 }
 export const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-export function ihdr(width, height) {
+// IHDR: 8-bit RGB by default; `depth`, `colour`, `compression`, `filter` and `interlace` override.
+export function ihdr(width, height, { depth = 8, colour = 2, compression = 0, filter = 0, interlace = 0 } = {}) {
   const d = Buffer.alloc(13);
   d.writeUInt32BE(width, 0); d.writeUInt32BE(height, 4);
-  d[8] = 8; d[9] = 2; // 8-bit RGB
+  d[8] = depth; d[9] = colour; d[10] = compression; d[11] = filter; d[12] = interlace;
   return chunk("IHDR", d);
 }
-// A PNG whose IDAT holds `idat` (by default a real grey image; the check does not inflate it), so
-// its total size is exact: 8 + 25 + (12 + idat length) + 12 bytes.
-const pixels = (w, h) => deflateSync(Buffer.concat(Array.from({ length: h }, () => Buffer.concat([Buffer.from([0]), Buffer.alloc(3 * w, 0x80)]))));
-export const png = ({ width = 4, height = 3, idat = pixels(width, height), extra = [] } = {}) =>
-  Buffer.concat([SIGNATURE, ihdr(width, height), ...extra, chunk("IDAT", idat), chunk("IEND")]);
-export const pngOfSize = (bytes, opts) => png({ ...opts, idat: Buffer.alloc(bytes - 57, 0xab) });
+const CHANNELS = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+// The raw (filtered, non-interlaced) image bytes: a filter byte, then the row's pixels, per row.
+const rawSize = (w, h, depth, colour) => h * (1 + Math.ceil((w * CHANNELS[colour] * depth) / 8));
+export const pixels = (w, h, depth = 8, colour = 2) => deflateSync(Buffer.alloc(rawSize(w, h, depth, colour)));
+// A PNG whose IDAT holds `idat` (by default a real image of the given header), so its total size
+// is 8 + 25 + (12 + idat length) + 12 bytes plus any `extra` chunks.
+export const png = ({ width = 4, height = 3, depth = 8, colour = 2, idat = pixels(width, height, depth, colour), extra = [], header = {} } = {}) =>
+  Buffer.concat([SIGNATURE, ihdr(width, height, { depth, colour, ...header }), ...extra, chunk("IDAT", idat), chunk("IEND")]);
+
+// A zlib stream of exactly `size` bytes inflating to zeros: stored blocks (5 bytes of header
+// each, up to 65,535 bytes of data), a 2-byte zlib header and a 4-byte Adler-32.
+function adler32(b) { let a = 1, c = 0; for (const x of b) { a = (a + x) % 65521; c = (c + a) % 65521; } return ((c << 16) | a) >>> 0; }
+export function storedZlib(size) {
+  let k = 1;
+  while (size - 6 - 5 * k > 65535 * k) k++;
+  const data = Buffer.alloc(size - 6 - 5 * k);
+  const parts = [Buffer.from([0x78, 0x01])];
+  for (let i = 0; i < k; i++) {
+    const piece = data.subarray(Math.floor((i * data.length) / k), Math.floor(((i + 1) * data.length) / k));
+    const h = Buffer.alloc(5);
+    h[0] = i === k - 1 ? 1 : 0; h.writeUInt16LE(piece.length, 1); h.writeUInt16LE(~piece.length & 0xffff, 3);
+    parts.push(h, piece);
+  }
+  const a = Buffer.alloc(4); a.writeUInt32BE(adler32(data));
+  return Buffer.concat([...parts, a]);
+}
+// A valid PNG of exactly `bytes` bytes: 4096 pixels wide, 16-bit RGBA, tall enough that the
+// inflated stream fits within its raw size.
+export function pngOfSize(bytes) {
+  const idat = storedZlib(bytes - 57);
+  return png({ width: 4096, height: Math.ceil(idat.length / (1 + 4096 * 8)) + 1, depth: 16, colour: 6, idat });
+}
 
 // Write `files` (path -> Buffer or string) into `dir` with an export.json listing them, and return
 // the export digest. `edit(doc)` may change export.json before it is written; `raw` replaces it.

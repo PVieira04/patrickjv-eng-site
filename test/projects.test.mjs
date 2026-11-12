@@ -77,18 +77,47 @@ test("F-005 (US-4): a denylist term matches case-insensitively, never inside a l
 
 // ---- PNG check (D3) ----
 import { pngCheck } from "../lib/projects.mjs";
-import { png, chunk, ihdr, SIGNATURE } from "./projects-helpers.mjs";
+import { png, chunk, ihdr, pixels, SIGNATURE } from "./projects-helpers.mjs";
+import { deflateSync } from "node:zlib";
 
 test("F-005 (D3): a valid PNG passes the PNG check and reports its IHDR size; 4096 x 4096 passes", () => {
   assert.deepEqual(pngCheck(png()), { width: 4, height: 3 });
-  assert.deepEqual(pngCheck(png({ width: 4096, height: 4096, idat: Buffer.from([1]) })), { width: 4096, height: 4096 });
-  const allowed = ["PLTE", "tRNS", "gAMA", "cHRM", "sRGB", "pHYs", "bKGD"].map((t) => chunk(t, Buffer.alloc(3)));
-  assert.equal(pngCheck(png({ extra: allowed })).error, undefined, "every allow-listed chunk type passes");
+  assert.deepEqual(pngCheck(png({ width: 4096, height: 4096, depth: 1, colour: 0 })), { width: 4096, height: 4096 });
+  const allowed = [["PLTE", 3], ["tRNS", 1], ["gAMA", 4], ["cHRM", 32], ["sRGB", 1], ["pHYs", 9], ["bKGD", 1]].map(([t, n]) => chunk(t, Buffer.alloc(n)));
+  assert.equal(pngCheck(png({ extra: allowed })).error, undefined, "every allow-listed chunk type, at its length, passes");
+  for (const [t, ns] of Object.entries({ bKGD: [1, 2, 6], tRNS: [1, 256], PLTE: [3, 768] })) for (const n of ns) assert.equal(pngCheck(png({ extra: [chunk(t, Buffer.alloc(n))] })).error, undefined, `${t} of ${n}`);
+  for (const [depth, colour] of [[1, 0], [2, 0], [4, 0], [16, 0], [16, 2], [1, 3], [2, 3], [4, 3], [8, 3], [8, 4], [16, 4], [8, 6], [16, 6]]) {
+    assert.equal(pngCheck(png({ depth, colour })).error, undefined, `depth ${depth}, colour ${colour}`);
+  }
+  assert.equal(pngCheck(png({ header: { interlace: 1 }, idat: deflateSync(Buffer.alloc(30)) })).error, undefined, "Adam7 interlace");
+  const split = pixels(4, 3);
+  assert.equal(pngCheck(Buffer.concat([SIGNATURE, ihdr(4, 3), chunk("IDAT", split.subarray(0, 5)), chunk("IDAT", split.subarray(5)), chunk("IEND")])).error, undefined, "IDAT split across chunks");
+});
+
+test("F-005 (D3): as F-001e's chunk filter: fixed or bounded lengths, at most once each, a valid IHDR, and IDAT exactly one zlib stream", () => {
+  const bad = {
+    "gAMA of 3": [chunk("gAMA", Buffer.alloc(3))], "cHRM of 31": [chunk("cHRM", Buffer.alloc(31))], "sRGB of 2": [chunk("sRGB", Buffer.alloc(2))],
+    "pHYs of 8": [chunk("pHYs", Buffer.alloc(8))], "bKGD of 3": [chunk("bKGD", Buffer.alloc(3))], "bKGD of 0": [chunk("bKGD")],
+    "tRNS of 0": [chunk("tRNS")], "tRNS of 257": [chunk("tRNS", Buffer.alloc(257))],
+    "PLTE of 0": [chunk("PLTE")], "PLTE of 4": [chunk("PLTE", Buffer.alloc(4))], "PLTE of 771": [chunk("PLTE", Buffer.alloc(771))],
+    "two gAMA": [chunk("gAMA", Buffer.alloc(4)), chunk("gAMA", Buffer.alloc(4))], "two PLTE": [chunk("PLTE", Buffer.alloc(3)), chunk("PLTE", Buffer.alloc(3))],
+    "two tRNS": [chunk("tRNS", Buffer.alloc(1)), chunk("tRNS", Buffer.alloc(1))],
+  };
+  for (const [what, extra] of Object.entries(bad)) assert.equal(typeof pngCheck(png({ extra })).error, "string", what);
+  for (const [what, header] of Object.entries({ "depth 3": { depth: 3 }, "16-bit palette": { depth: 16, colour: 3 }, "colour type 1": { colour: 1 }, "colour type 7": { colour: 7 }, "4-bit RGB": { depth: 4 }, "compression 1": { compression: 1 }, "filter 1": { filter: 1 }, "interlace 2": { interlace: 2 } })) {
+    assert.equal(typeof pngCheck(Buffer.concat([SIGNATURE, ihdr(4, 3, header), chunk("IDAT", pixels(4, 3)), chunk("IEND")])).error, "string", what);
+  }
+  const z = pixels(4, 3);
+  for (const [what, idat] of Object.entries({
+    "not zlib": Buffer.from([1, 2, 3]), "a truncated stream": z.subarray(0, z.length - 3), "trailing bytes after the stream": Buffer.concat([z, Buffer.from([0])]),
+    "two streams": Buffer.concat([z, z]), "inflates past the raw size": deflateSync(Buffer.alloc(39 + 1025)),
+  })) assert.equal(typeof pngCheck(png({ idat })).error, "string", what);
+  assert.equal(pngCheck(png({ idat: deflateSync(Buffer.alloc(39 + 1024)) })).error, undefined, "within the raw size (3 rows of 1 + 12 bytes) plus F-001e's 1,024 bytes of slack");
 });
 
 test("F-005 (D3): the PNG check refuses each malformed or disallowed case", () => {
   const good = png();
-  const iend = chunk("IEND"), idat = chunk("IDAT", Buffer.from([1, 2, 3]));
+  const iend = chunk("IEND"), idat = chunk("IDAT", pixels(4, 3));
   const withBadCrc = Buffer.from(good); withBadCrc[good.length - 1] ^= 0xff;
   const pastEnd = Buffer.from(good); pastEnd.writeUInt32BE(1e6, 8 + 25);
   const bad = {
@@ -103,8 +132,8 @@ test("F-005 (D3): the PNG check refuses each malformed or disallowed case", () =
     "an IHDR of length 12": Buffer.concat([SIGNATURE, chunk("IHDR", ihdr(4, 3).subarray(8, 20)), idat, iend]),
     "a zero width": png({ width: 0 }),
     "a zero height": png({ height: 0 }),
-    "a width of 4097": png({ width: 4097, idat: Buffer.from([1]) }),
-    "a height of 4097": png({ height: 4097, idat: Buffer.from([1]) }),
+    "a width of 4097": png({ width: 4097, height: 1 }),
+    "a height of 4097": png({ height: 4097, width: 1 }),
     "no IDAT": Buffer.concat([SIGNATURE, ihdr(4, 3), iend]),
     "PLTE after IDAT": Buffer.concat([SIGNATURE, ihdr(4, 3), idat, chunk("PLTE", Buffer.alloc(3)), iend]),
     "data after IEND": Buffer.concat([good, Buffer.from([0])]),
@@ -204,7 +233,7 @@ test("F-005 (US-4, D6): the synthetic-only gate on a run: visibility, source and
 
 // ---- Scorecard types (F-001e "Scorecard types", re-checked) and the scorecard gate ----
 import { scorecardErrors } from "../lib/projects.mjs";
-import { scorecard, EVAL_ID } from "./projects-helpers.mjs";
+import { scorecard, EVAL_ID, FIXTURES } from "./projects-helpers.mjs";
 
 const withBaseline = (d) => { d.baseline = { config_differences: ["fingerprint.config.models.analyst"], change: 0.1, se: 0.05, mde: 0.12, verdict: "no detectable change", left_out: ["roll-gap"] }; };
 const card = (f) => edit(scorecard(), f);
@@ -372,7 +401,9 @@ test("F-005 (US-4, D2, D3): --record copies exactly report.json, report.md and t
 test("F-005 (D3): a figure that isn't valid UTF-8 and holds \\r\\n round-trips byte-identical from the export to projects/", () => {
   const s = sandbox();
   try {
-    const fig = png({ idat: Buffer.from([0xff, 0xfe, 0xc3, 0x28, 0x0d, 0x0a, 0x00, 0x80, 0x0d, 0x0a]) });
+    // A stored (level 0) zlib stream keeps these bytes as they are inside the IDAT.
+    const fig = png({ idat: deflateSync(Buffer.from([0xff, 0xfe, 0xc3, 0x28, 0x0d, 0x0a, 0x00, 0x80, 0x0d, 0x0a]), { level: 0 }) });
+    assert.ok(fig.includes(Buffer.from([0xff, 0xfe, 0xc3, 0x28, 0x0d, 0x0a])));
     assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(fig));
     const expect = runExport(s.dir, { files: { "calls/1/out/vol_by_minute.png": fig } });
     assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, []);
@@ -848,4 +879,54 @@ test("F-005 (D2, D4): an injected write failure during --record --replace restor
     assert.deepEqual(snapshot(s.root), before);
     assert.ok(existsSync(join(s.root, "projects/research-agent/runs", RUN_ID, "calls/1/out")), "the removed directory is recreated");
   } finally { s.done(); }
+});
+
+// ---- Review fixes: duplicate JSON keys (what is published is the raw file, not JSON.parse's view) ----
+import { parseJson } from "../lib/projects.mjs";
+
+test("F-005 (US-4, D3): parseJson refuses a duplicate key at any depth, and accepts the same key in different objects", () => {
+  assert.deepEqual(parseJson('{"a": {"b": 1}, "c": [{"b": 2}, {"b": "\\"b\\""}]}'), { a: { b: 1 }, c: [{ b: 2 }, { b: '"b"' }] });
+  assert.throws(() => parseJson('{"a": 1, "a": 2}'), /duplicate key "a"/);
+  assert.throws(() => parseJson('{"x": {"a": 1, "b": {}, "a": 2}}'), /duplicate key "a"/);
+  assert.throws(() => parseJson('[{"k": 1}, {"k": 1, "\\u006b": 2}]'), /duplicate key "k"/, "an escaped spelling is the same key");
+  assert.throws(() => parseJson('{"a": 1,'), SyntaxError);
+  assert.deepEqual(Object.keys(parseJson('{"__proto__": 1}')), ["__proto__"], "__proto__ is an ordinary own key");
+});
+
+const REAL = '{"licence": "Licensed", "name": "real-feed", "source": "vendor:feed", "visibility": "private"}';
+test("F-005 (US-4, D6): a report.json with a real dataset followed by a synthetic one is refused by --record and by the build", () => {
+  const twice = dump(report()).replace('"dataset": {', `"dataset": ${REAL},\n  "dataset": {`);
+  assert.equal(JSON.parse(twice).dataset.visibility, "public", "JSON.parse alone would see only the synthetic one");
+  const s = sandbox();
+  try { refuses(s, { dir: s.dir, expect: runExport(s.dir, { files: { "report.json": twice } }) }, /report\.json.*duplicate key "dataset"/); } finally { s.done(); }
+  const b = publishedSite();
+  try { republish(b, "report.json", twice); buildFails(b, /report\.json.*duplicate key "dataset"/); } finally { b.done(); }
+});
+
+test("F-005 (US-4, D6): a scorecard with a duplicate runs[].dataset is refused by --record-scorecard and by the build", () => {
+  const text = dump(scorecard());
+  const i = text.indexOf('"dataset": {');
+  const twice = text.slice(0, i) + `"dataset": ${REAL},\n      ` + text.slice(i);
+  const s = sandbox();
+  try { refuses(s, { dir: s.dir, kind: "scorecard", expect: writeExport(s.dir, { kind: "scorecard", id: EVAL_ID, files: { "scorecard.json": twice } }) }, /scorecard\.json.*duplicate key "dataset"/); } finally { s.done(); }
+  const b = publishedSite();
+  try {
+    writeFileSync(join(b.root, "projects/research-agent/scorecard/scorecard.json"), twice);
+    editManifest(b, (m) => { m.scorecard.files["scorecard.json"] = sha(Buffer.from(twice)); });
+    buildFails(b, /scorecard\.json.*duplicate key "dataset"/);
+  } finally { b.done(); }
+});
+
+test("F-005 (US-4, D3): a duplicate key in export.json or published.json is refused", () => {
+  const s = sandbox();
+  try {
+    const raw = readFileSync(join(FIXTURES, "run/export.json"), "utf8").replace('"kind": "run"', '"kind": "scorecard",\n  "kind": "run"');
+    refuses(s, { dir: s.dir, expect: runExport(s.dir, { raw }) }, /export\.json.*duplicate key "kind"/);
+  } finally { s.done(); }
+  const b = publishedSite();
+  try {
+    const m = readFileSync(join(b.root, MANIFEST), "utf8");
+    writeFileSync(join(b.root, MANIFEST), m.replace('"role"', '"x"').replace(/"checked": "([^"]+)"/, '"checked": "2026-01-01",\n      "checked": "$1"'));
+    buildFails(b, /published\.json.*duplicate key "checked"/);
+  } finally { b.done(); }
 });

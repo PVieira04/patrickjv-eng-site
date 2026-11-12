@@ -25,7 +25,7 @@ import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
 import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROVIDER_NAMES } from "./mcp/booking-config.js";
 import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
-import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, MANIFEST, PROJECT } from "./lib/projects.mjs";
+import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, parseJson, MANIFEST, PROJECT } from "./lib/projects.mjs";
 
 export const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -1416,7 +1416,7 @@ export function record({ root = process.cwd(), dir, expect, kind = "run", replac
   const tree = readProjectsTree(root);
   let m = { manifest_version: "1.0.0", runs: {} };
   if (tree.manifestText !== null) {
-    try { m = JSON.parse(tree.manifestText); } catch (e) { return { errors: [`${MANIFEST} is not valid JSON (${e.message})`] }; }
+    try { m = parseJson(tree.manifestText); } catch (e) { return { errors: [`${MANIFEST} is not valid JSON (${e.message})`] }; }
     if (!m || typeof m !== "object" || !m.runs || typeof m.runs !== "object") return { errors: checkProjects(tree, { employerMention, denylist: [] }) };
   }
   const id = ex.id, base = kind === "run" ? `${PROJECT}/runs/${id}` : `${PROJECT}/scorecard`;
@@ -1428,7 +1428,7 @@ export function record({ root = process.cwd(), dir, expect, kind = "run", replac
     const old = m.runs[id];
     if (old && !replace) return { errors: [`run ${id} is already published; to re-export it, read the new export, then rerun with --replace`] };
     let figures = [];
-    try { figures = JSON.parse(ex.files.get("report.json").toString("utf8")).figures; } catch { /* reported by checkProjects below */ }
+    try { figures = parseJson(ex.files.get("report.json").toString("utf8")).figures; } catch { /* reported by checkProjects below */ }
     if (!Array.isArray(figures)) figures = [];
     figures = figures.filter((f) => typeof f === "string");
     const kept = (f) => old?.files?.[f] === hashes[f] && typeof old?.alt?.[f] === "string" ? old.alt[f] : "";
