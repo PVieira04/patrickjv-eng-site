@@ -345,3 +345,265 @@ test("F-005 (D5, D7): templates fill in one pass — a question holding {questio
     assert.ok(visible(out(s, SHOWCASE)).includes(q));
   } finally { s.done(); }
 });
+
+// ---- The scorecard (US-2) ----
+import { fixed2, truncate, truncateAtSpace } from "../lib/project-pages.mjs";
+const scoreTable = (h) => [...body(h).match(/<section aria-labelledby="scorecard-h">[\s\S]*?<\/section>/)[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => decodeEntities(c[1])));
+const scoreHead = (h) => Object.fromEntries([...body(h).match(/<section aria-labelledby="scorecard-h">[\s\S]*?<\/section>/)[0].matchAll(/<dt>([\s\S]*?)<\/dt><dd>([\s\S]*?)<\/dd>/g)].map((m) => [decodeEntities(m[1]), decodeEntities(m[2])]));
+
+test("F-005 (US-2): number formatting — two places, half away from zero from String(x): 0.125 -> 0.13, 0.135 -> 0.14", () => {
+  for (const [x, s] of [[0.125, "0.13"], [0.135, "0.14"], [0.75, "0.75"], [0, "0.00"], [1, "1.00"], [0.005, "0.01"], [0.004999, "0.00"], [0.995, "1.00"], [1e-7, "0.00"], [0.1, "0.10"], [0.5, "0.50"], [0.0549, "0.05"]]) assert.equal(fixed2(x), s, String(x));
+});
+
+test("F-005 (US-2): the scorecard is one table, a row per question, with correct, trap recall and critic precision as x / n, n/a for n = 0, and the aggregate with its standard error", () => {
+  const s = site();
+  try {
+    ok(publish(s, [], { card: scorecard() }));
+    const h = out(s, SHOWCASE), c = P.labels.scorecard;
+    assert.equal(body(h).match(/<table>/g).length, 1, "one table");
+    assert.deepEqual(scoreTable(h), [
+      [c.columns.question, c.columns.correct, c.columns.trap_recall, c.columns.critic_precision],
+      ["open-vol", "2 / 2", c.na, "1 / 1"],
+      ["roll-gap", "1 / 2", "1 / 2", "1 / 2"],
+    ]);
+    assert.equal(scoreHead(h)[c.aggregate], "0.75 ± 0.13", "0.125 rounds half away from zero");
+    assert.match(body(h), /<div class="scroll" role="region" aria-label="Eval scorecard" tabindex="0">\s*<table>/, "in the same focusable scroll wrapper as report tables");
+    ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate = { score: 0.135, se: null }; d.questions[1].critic_precision = { x: 0, n: 0 }; }) }));
+    const h2 = out(s, SHOWCASE);
+    assert.equal(scoreHead(h2)[c.aggregate], `0.14 ${c.se_na}`);
+    assert.deepEqual(scoreTable(h2)[2], ["roll-gap", "1 / 2", "1 / 2", c.na]);
+    const md = out(s, "projects/research-agent.md");
+    assert.ok(md.includes(`| ${c.columns.question} | ${c.columns.correct} | ${c.columns.trap_recall} | ${c.columns.critic_precision} |`) && md.includes(`| roll-gap | 1 / 2 | 1 / 2 | ${c.na} |`) && md.includes(`- ${c.aggregate}: 0.14 ${c.se_na}`), "the Markdown copy has the scorecard as a table");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): the scorecard header — date, k, models, seed, and one entry per harness present with its count of non-null repeats, in the fixed order", () => {
+  const s = site();
+  try {
+    const card = edit(scorecard(), (d) => { d.runs.reverse(); }); // claude-code listed first; a null repeat among them
+    ok(publish(s, [], { card }));
+    const c = P.labels.scorecard, H = P.labels.harness;
+    assert.deepEqual(scoreHead(out(s, SHOWCASE)), {
+      [c.date]: "2026-11-11", [c.repeats]: "2", [c.harness]: `${H.langgraph} (2), ${H["claude-code"]} (1)`,
+      [c.models]: "analyst example:analyst-model, critic example:critic-model", [c.seed]: "42", [c.aggregate]: "0.75 ± 0.13",
+    });
+    ok(publish(s, [], { card: edit(scorecard(), (d) => { for (const r of d.runs) if (r.models) r.models.harness = "claude-code"; }) }));
+    assert.equal(scoreHead(out(s, SHOWCASE))[c.harness], `${H["claude-code"]} (3)`, "only the harnesses present");
+  } finally { s.done(); }
+});
+
+// ---- Run cards and run pages (US-2) ----
+test("F-005 (US-2): run cards are ordered by role, then finished_at newest first, then run id", () => {
+  const s = site();
+  try {
+    const at = (t) => (d) => { d.finished_at = t; };
+    ok(publish(s, [
+      run(1, { edit: at("2026-11-11T10:00:00Z") }),                          // no role
+      run(2, { role: "clean_pass", edit: at("2026-11-11T09:00:00Z") }),
+      run(3, { role: "trap_caught", edit: at("2026-11-11T08:00:00Z") }),
+      run(4, { role: "trap_caught", edit: at("2026-11-11T12:00:00Z") }),     // newer than run 3
+      run(5, { role: "rejected_plan", edit: (d) => { rejected(d); d.finished_at = "2026-11-11T08:00:00Z"; }, figures: {} }),
+      run(6, { role: "trap_caught", edit: at("2026-11-11T12:00:00Z") }),     // ties run 4: by run id
+    ]));
+    const order = [...body(out(s, SHOWCASE)).matchAll(/<a href="\/projects\/research-agent\/runs\/([^/]+)\/"/g)].map((m) => m[1]);
+    assert.deepEqual(order, [4, 6, 3, 5, 2, 1].map(runId));
+    const card = body(out(s, SHOWCASE)).match(/<ul class="cards">\s*<li>([\s\S]*?)<\/li>/)[1];
+    assert.ok(card.includes(`<h3>${report().question}</h3>`));
+    for (const [k, v] of [["harness", P.labels.harness.langgraph], ["status", P.labels.status.completed], ["outcome", P.labels.outcome.passed], ["role", P.labels.role.trap_caught]]) assert.ok(card.includes(`<dt>${P.labels.card[k]}</dt><dd>${v}</dd>`), k);
+    assert.ok(card.includes(`>${P.labels.card.link}</a>`));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): a completed run page shows the header, plan, critic, report and figures", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1)]));
+    const h = runPage(s, runId(1)), d = report(), L = P.labels;
+    assert.deepEqual(headings(h), [`h1 ${d.question}`, `h2 ${L.section.plan}`, `h2 ${L.section.critic}`, `h2 ${L.section.report}`, "h3 Report", `h2 ${L.section.figures}`, `h2 ${L.section.links}`]);
+    const v = visible(h);
+    for (const t of [`${L.run.finished} 2026-11-11`, `${L.run.harness} ${L.harness.langgraph}`, `${L.run.models} planner example:analyst-model, analyst example:analyst-model, critic example:critic-model`,
+      `${L.run.status} ${L.status.completed}`, `${L.run.outcome} ${L.outcome.passed}`, `${L.run.dataset} synth-futures-1m (synthetic)`, P.copy.synthetic,
+      `${L.plan.hypothesis} ${d.plan.hypothesis}`, `${L.plan.dataset} synth-futures-1m`, `${L.plan.window} 2025-01-02 to 2025-06-30`, `${L.plan.method} ${d.plan.method}`, `${L.plan.statistic} open_vol_ratio`, `${L.plan.significance} ${d.plan.significance}`,
+      `${L.tag.sample_size}: ${d.review.open_issues[0].explanation}`, "Synthetic result.", `${L.links.markdown} ${L.links.json} ${L.links.back}`, `Read and published by Patrick Vieira on ${TODAY}.`]) assert.ok(v.includes(t), t);
+    assert.match(body(h), /<a href="\/projects\/research-agent\/runs\/[^"]+\/report\.md">Markdown<\/a>/);
+    assert.match(body(h), /<a href="\/projects\/research-agent">Back to the research agent<\/a>/);
+    assert.ok(!v.includes(P.templates.rejected), "no rejection");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): a rejected run shows the plan, 'Plan rejected at approval' and the reason, and no analysis", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1, { edit: rejected, figures: {} })]));
+    const h = runPage(s, runId(1)), v = visible(h);
+    assert.ok(v.includes(`${P.labels.plan.hypothesis} ${report().plan.hypothesis}`), "the plan");
+    assert.ok(v.includes(`${P.labels.plan.window} 2025-01-02 to 2025-06-30 ${P.labels.plan.method}`));
+    assert.match(body(h), /<p><strong>Plan rejected at approval<\/strong><\/p>\s*<p>The window is too short for the claim\.<\/p>/);
+    assert.ok(!headings(h).includes(`h2 ${P.labels.section.figures}`), "no figures");
+    assert.ok(!v.includes(P.templates.stopped.split("{")[0].trim()), "not described as stopped");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): a failed run with no plan says so with its stop reason in words; a capped run names its stop reason", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1, { edit: failedNoPlan("sandbox_unavailable"), figures: {} }), run(2, { edit: capped("run_tool_calls") })]));
+    const failed = visible(runPage(s, runId(1)));
+    assert.ok(failed.includes(`${P.labels.section.plan} No plan was written: the run stopped before planning (${P.labels.stop_reason.sandbox_unavailable}).`));
+    assert.ok(!failed.includes(P.labels.plan.hypothesis));
+    assert.ok(visible(runPage(s, runId(2))).includes(`The run stopped before it finished: ${P.labels.stop_reason.run_tool_calls}.`));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2): every open issue is shown with its tag in words and its explanation, including when the review did not pass", () => {
+  const s = site();
+  try {
+    const tags = ["look_ahead", "contract_roll", "multiple_comparisons"];
+    ok(publish(s, [run(1, { edit: (d) => { issues(...tags)(d); d.review.outcome = "not_passed"; } })]));
+    const h = runPage(s, runId(1));
+    assert.ok(visible(h).includes(`${P.labels.run.outcome}: ${P.labels.outcome.not_passed}`));
+    const items = [...body(h).match(/<ul class="issues">([\s\S]*?)<\/ul>/)[1].matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => visible(m[1]));
+    assert.deepEqual(items, tags.map((t) => `${P.labels.tag[t]}: Explanation for ${t}.`));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-2, D8): figures in report.json order, with IHDR width and height, the manifest's alt text, lazy after the first; every src resolves to a written file; none without figures", () => {
+  const s = site();
+  try {
+    const figures = { "calls/3/out/z.png": png({ width: 50, height: 20 }), "calls/1/out/a.png": png({ width: 7, height: 9 }), "calls/12/out/m.png": png({ width: 2000, height: 4 }) };
+    ok(publish(s, [run(1, { figures, alt: { "calls/3/out/z.png": "Zed.", "calls/1/out/a.png": "Ay.", "calls/12/out/m.png": "Em." } }), run(2, { figures: {} })]));
+    const h = runPage(s, runId(1));
+    const imgs = [...body(h).matchAll(/<img ([^>]*)>/g)].map((m) => Object.fromEntries([...m[1].matchAll(/([a-z]+)(?:="([^"]*)")?/g)].map((a) => [a[1], a[2] ?? true])));
+    assert.deepEqual(imgs, [
+      { src: "calls/3/out/z.png", width: "50", height: "20", alt: "Zed." },
+      { src: "calls/1/out/a.png", width: "7", height: "9", alt: "Ay.", loading: "lazy" },
+      { src: "calls/12/out/m.png", width: "2000", height: "4", alt: "Em.", loading: "lazy" },
+    ]);
+    const page = new URL(`${SITE}projects/research-agent/runs/${runId(1)}/`);
+    for (const i of imgs) {
+      const path = new URL(i.src, page).pathname;
+      assert.ok(readFileSync(join(s.root, "public", path)).equals(figures[i.src]), path);
+    }
+    assert.ok(body(h).indexOf(`<h2>${P.labels.section.figures}</h2>`) > 0);
+    assert.ok(!headings(runPage(s, runId(2))).includes(`h2 ${P.labels.section.figures}`));
+    assert.doesNotMatch(body(runPage(s, runId(2))), /<img/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-1, US-3): truncation of the run title and meta description is by code point, before escaping", () => {
+  assert.equal(truncate("a".repeat(61), 60), "a".repeat(60) + "…");
+  assert.equal(truncate("a".repeat(60), 60), "a".repeat(60));
+  assert.equal(truncate("a".repeat(59) + "😀b", 60), "a".repeat(59) + "😀…", "an astral character at the cut is kept whole");
+  assert.equal(truncate("a".repeat(58) + "😀😀b", 60), "a".repeat(58) + "😀😀…");
+  const words = ("word ".repeat(40)).trim(); // 199 code points
+  assert.equal(truncateAtSpace(words, 160), "word ".repeat(32).trim() + "…", "cut at the last space at or before 160");
+  assert.equal(truncateAtSpace("x".repeat(170), 160), "x".repeat(160) + "…", "a hard cut with no space");
+  assert.equal(truncateAtSpace("a".repeat(150), 160), "a".repeat(150));
+  const s = site();
+  try {
+    const q = "q".repeat(59) + "&b"; // 61 code points: the & is the 60th
+    const summary = "s".repeat(155) + " a&b " + "t".repeat(20); // a space at 156: cut there, & kept whole after it
+    ok(publish(s, [run(1, { edit: (d) => { d.question = q; d.summary.text = summary; } })]));
+    const h = runPage(s, runId(1));
+    assert.match(h, new RegExp(`<title>${"q".repeat(59)}&amp;… — Research agent — Patrick Vieira</title>`));
+    assert.equal(meta(h, "name", "description"), "s".repeat(155) + " a&b…");
+    assert.match(h, new RegExp(`<meta name="description" content="${"s".repeat(155)} a&amp;b…">`), "escaped after the cut, never a broken entity");
+    ok(publish(s, [run(1, { edit: (d) => { d.question = "q".repeat(59) + "😀z"; } })]));
+    assert.equal(title(runPage(s, runId(1))), "q".repeat(59) + "😀… — Research agent — Patrick Vieira");
+  } finally { s.done(); }
+});
+
+test("F-005 (D7): on a run page the report's headings shift under the Report <h2>, and the page has exactly one <h1>", () => {
+  const s = site();
+  try {
+    for (const [md, want] of [["## A\n\n### B\n", ["h3 A", "h4 B"]], ["# A\n\n## B\n", ["h3 A", "h4 B"]], ["# A\n\n## B\n\n### C\n\n#### D\n\n##### E\n", ["h3 A", "h4 B", "h5 C", "h6 D", "h6 E"]]]) {
+      ok(publish(s, [run(1, { md })]));
+      const hs = headings(runPage(s, runId(1)));
+      assert.deepEqual(hs.slice(hs.indexOf(`h2 ${P.labels.section.report}`) + 1, hs.indexOf(`h2 ${P.labels.section.figures}`)), want, md);
+      assert.equal(hs.filter((x) => x.startsWith("h1 ")).length, 1);
+    }
+  } finally { s.done(); }
+});
+
+// ---- D7b: every interpolated string is escaped plain text ----
+const PAYLOAD = `<a href="https://example.com">x</a> <script>alert(1)</script> "quoted" & **x**`;
+// Every element in the page whose start tag the payload could have injected.
+const injected = (h) => /<a href="https:\/\/example\.com"|<script>alert|<strong>x<\/strong>/.test(body(h));
+const FIELDS = {
+  question: [(d) => { d.question = PAYLOAD; }, {}],
+  "plan.hypothesis": [(d) => { d.plan.hypothesis = PAYLOAD; }, {}],
+  "plan.method": [(d) => { d.plan.method = PAYLOAD; }, {}],
+  "plan.statistic": [(d) => { d.plan.statistic = PAYLOAD; }, {}],
+  "plan.significance": [(d) => { d.plan.significance = PAYLOAD; }, {}],
+  "review.open_issues[].explanation": [(d) => { d.review.open_issues[0].explanation = PAYLOAD; }, {}],
+  "rejection.reason": [(d) => { rejected(d); d.rejection.reason = PAYLOAD; }, { figures: {} }],
+  "summary.text": [(d) => { d.summary.text = PAYLOAD; }, {}],
+};
+
+test("F-005 (D7): each model-written report.json string shows escaped in the body: no <a> or <script>, and no Markdown (**x** stays literal)", () => {
+  const s = site();
+  try {
+    for (const [field, [fn, opts]] of Object.entries(FIELDS)) {
+      ok(publish(s, [run(1, { edit: fn, ...opts })]));
+      for (const h of [runPage(s, runId(1)), out(s, SHOWCASE)]) {
+        assert.ok(!injected(h), field);
+        assert.equal(body(h).match(/<script/g), null, `${field}: no script element in the body`);
+      }
+      if (field !== "summary.text") assert.ok(visible(runPage(s, runId(1))).includes(PAYLOAD), `${field}: the text is intact, ** and all`);
+      assert.ok(body(runPage(s, runId(1))).includes(PAYLOAD.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")) || field === "summary.text", field);
+    }
+  } finally { s.done(); }
+});
+
+test("F-005 (D7): <title>, the meta description and every og: value hold the escaped text and parse as one attribute", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1, { edit: (d) => { d.question = PAYLOAD; d.summary.text = PAYLOAD; } })]));
+    const h = runPage(s, runId(1)), head = h.slice(0, h.indexOf("</head>"));
+    const want = truncate(PAYLOAD, 60) + " — Research agent — Patrick Vieira";
+    assert.equal(title(h), want);
+    assert.equal(meta(h, "property", "og:title"), want);
+    assert.equal(meta(h, "name", "description"), PAYLOAD);
+    assert.equal(meta(h, "property", "og:description"), PAYLOAD);
+    assert.equal((head.match(/<meta /g) ?? []).length, 9, "no meta element injected");
+    assert.doesNotMatch(head.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, ""), /<a |<script>|content="[^"]*"[^>\s]/);
+  } finally { s.done(); }
+});
+
+test("F-005 (D7): the JSON-LD block parses, holds no literal <, and round-trips the question", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1, { edit: (d) => { d.question = PAYLOAD + " </script>  "; } })]));
+    const h = runPage(s, runId(1));
+    const raw = h.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1];
+    assert.ok(!raw.includes("<"), "no literal <");
+    assert.equal(JSON.parse(raw).headline, PAYLOAD + " </script>  ");
+  } finally { s.done(); }
+});
+
+test("F-005 (D7): a manifest alt text with \", & and < is one well-formed alt attribute; a scorecard model id with &, \" and < is escaped in the header and unchanged in the Markdown copy", () => {
+  const s = site();
+  try {
+    const alt = `A chart of "open" & <close> volatility`;
+    const id = `vendor:model&"<b>`;
+    ok(publish(s, [run(1, { alt: { [FIG]: alt } })], { card: edit(scorecard(), (d) => { d.fingerprint.config.models.analyst = id; }) }));
+    const img = body(runPage(s, runId(1))).match(/<img [^>]*>/)[0];
+    assert.equal(img, `<img src="${FIG}" width="40" height="30" alt="A chart of &quot;open&quot; &amp; &lt;close&gt; volatility">`);
+    assert.equal(decodeEntities(img.match(/alt="([^"]*)"/)[1]), alt);
+    const h = out(s, SHOWCASE);
+    assert.ok(body(h).includes(`analyst vendor:model&amp;&quot;&lt;b&gt;, critic`));
+    assert.doesNotMatch(body(h), /<b>/);
+    assert.ok(out(s, "projects/research-agent.md").includes(`analyst ${id}, critic`), "the Markdown copy holds the id as written");
+  } finally { s.done(); }
+});
+
+test("F-005 (D7): a run page from a report.md holding raw HTML, links, autolinks and a task list builds, passes the inline-code guards, and shows nothing live", () => {
+  const s = site();
+  try {
+    const md = "# R\n\n<script>alert(1)</script>\n\n<iframe src=//e.com></iframe> <b onclick=alert(1)>b</b> <svg onload=alert(1)>\n\n[x](https://example.com) [y](javascript:alert(1)) <https://example.com> www.example.com someone@example.com\n\n- [x] done\n";
+    ok(publish(s, [run(1, { md })]));
+    const report = body(runPage(s, runId(1))).split(`<h2>${P.labels.section.report}</h2>`)[1].split(`<h2>${P.labels.section.figures}</h2>`)[0];
+    assert.doesNotMatch(report, /<(a|script|img|iframe|svg|input)[\s>]/);
+    assert.doesNotMatch(report, /mailto:/);
+  } finally { s.done(); }
+});
