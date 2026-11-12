@@ -137,7 +137,7 @@ test("Chromium /projects: at 400 px the scorecard stacks, each value labelled wi
       return {
         headHidden: head.width <= 1 && head.height <= 1,
         stacked: getComputedStyle(cells[0]).display !== "table-cell",
-        labels: cells.map((td) => { const b = getComputedStyle(td, "::before"); return b.display !== "none" && b.content === JSON.stringify(td.dataset.label); }),
+        labels: cells.map((td) => { const b = getComputedStyle(td, "::before"); return b.display !== "none" && b.content.includes(JSON.stringify(td.dataset.label)); }),
         roles: [t.getAttribute("role"), cells[0].getAttribute("role"), t.querySelector("tbody th").getAttribute("role")],
       };
     });
@@ -145,6 +145,10 @@ test("Chromium /projects: at 400 px the scorecard stacks, each value labelled wi
     assert.ok(got.stacked, "the cells stack");
     assert.ok(got.labels.length > 0 && got.labels.every(Boolean), "every value shows its column name");
     assert.deepEqual(got.roles, ["table", "cell", "rowheader"]);
+    // The visible label is decoration: each cell's accessible name is its value alone.
+    const cell = page.getByRole("cell", { name: "1 / 2", exact: true }).first();
+    assert.equal(await cell.count(), 1, "a cell named by its value, without the generated label");
+    assert.equal(await page.getByRole("cell", { name: /^Trap handled/ }).count(), 0, "no cell's name starts with its column label");
     assert.ok(await overflow(page) <= 0, `no horizontal scroll (${await sticking(page)})`);
   } finally { await done(); }
   const wide = await open("/projects/research-agent", { width: 1000 });

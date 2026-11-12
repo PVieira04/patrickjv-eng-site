@@ -204,8 +204,8 @@ const SHOWCASE = "projects/research-agent.html";
 // The visible text of a page: tags removed (style, script and the SVG title dropped), entities decoded.
 const visible = (html) => decodeEntities(html.replace(/<(style|script|title)[^>]*>[\s\S]*?<\/\1>/g, " ").replace(/<\/?(a|strong|span|em|code)\b[^>]*>/g, "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 // The run set where the analyst fell into no trap: every trap question handled on every repeat,
-// no trapped pass (reviewed or not), no unscored pass, no null repeat, and no trap issue from the critic.
-const cleanTraps = (d) => { for (const q of d.questions) { q.trap_recall = { x: 0, n: 0 }; q.critic_precision = { x: 0, n: 0 }; q.unreviewed_trap_passes = 0; q.unscored_passes = 0; if (q.trap_handled !== null) q.trap_handled = q.n_repeats; }
+// no trapped pass (reviewed or not), no unscored pass, no null repeat, and no issue from the critic.
+const cleanTraps = (d) => { for (const q of d.questions) { q.trap_recall = { x: 0, n: 0 }; q.critic_precision = { x: 0, n: 0 }; q.unreviewed_trap_passes = 0; q.unscored_passes = 0; q.other_issues = {}; if (q.trap_handled !== null) q.trap_handled = q.n_repeats; }
   d.runs = d.runs.map((r, i) => (r.run_id === null ? { ...d.runs.find((x) => x.run_id !== null), question_id: r.question_id, run_id: `20261111T14${String(i).padStart(2, "0")}00Z-9f9f9f` } : r)); };
 const body = (html) => html.slice(html.indexOf("<body>"));
 const headings = (html) => [...body(html).matchAll(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) => `h${m[1]} ${visible(m[2])}`);
@@ -456,7 +456,7 @@ test("F-005 (US-2): on a narrow screen the scorecard table stacks as a list, eac
       assert.equal(sec.match(new RegExp(`<${tag}[^>]*role="${role}"`, "g"))?.length, n, `${n} × <${tag}> with role ${role}`);
     }
     assert.match(h, /@media \(max-width: 560px\) \{[^}]*\.scorecard-stack thead/, "the header row is hidden and the rows stack below 560px");
-    assert.match(h, /\.scorecard-stack td::before \{ content: attr\(data-label\)/, "each stacked value shows its column name");
+    assert.match(h, /\.scorecard-stack td::before \{ content: attr\(data-label\) \/ ""; /, "each stacked value shows its column name, with empty alt text so it is not read twice");
   } finally { s.done(); }
 });
 
@@ -476,6 +476,7 @@ test("F-005 (US-2): a note under the scorecard says why trap recall and critic p
     for (const spoil of [
       (d) => { d.questions[1].trap_handled = 1; }, (d) => { d.questions[1].unreviewed_trap_passes = 1; }, (d) => { d.questions[1].unscored_passes = 1; }, (d) => { d.questions[1].trap_handled = null; },
       (d) => { d.questions[1].trap_recall = { x: 0, n: 1 }; }, (d) => { d.questions[1].critic_precision = { x: 0, n: 1 }; },
+      (d) => { d.questions[0].other_issues = { sample_size: 1 }; }, // the critic raised an issue, just not a trap one
       (d) => { d.runs[0] = { run_id: null, question_id: "open-vol", status: null }; }, // a null repeat on a question with no trap
     ]) {
       ok(publish(s, [], { card: edit(edit(scorecard(), cleanTraps), spoil) }));
