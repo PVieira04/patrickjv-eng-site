@@ -1,7 +1,7 @@
 # Feature Spec: Research agent showcase and /projects index
 
 > **Purpose:** Add a showcase page for the private research-agent project at `/projects/research-agent`, a `/projects` index that lists it, and their machine-readable copies, built from reports the owner has checked.
-> **Update when:** Requirements shift, the export contract changes, the real-data gate opens, or scope moves during the build.
+> **Update when:** Requirements shift, the export contract changes, or scope moves during the build.
 > **Related:** [`../02-content-and-build.md`](../02-content-and-build.md), [`../03-seo-aeo-machine-readability.md`](../03-seo-aeo-machine-readability.md), [`../05-quality-and-audits.md`](../05-quality-and-audits.md), [`../06-operations.md`](../06-operations.md). In the private `research-agent` repository: its F-001 index spec, sections "Showcase page (F-002)", "patrickjv.com integration over MCP (F-003)" and open question 1 (Databento derived data), and F-001e (`research publish`).
 
 ---
@@ -14,7 +14,7 @@
 | Status | Built in PRs 1 to 4 (smoke and docs in PR 4); not launched. Revised in PR 4 to match the build (see "Decisions made in the build") |
 | Owner | @PVieira04 |
 | Created | 2026-11-11 |
-| Depends on | (1) **research-agent F-001e, `research publish`** (research-agent PR #14, at `74d5d82`), which produces the export this spec consumes. It already keeps figures run-relative, uses a PNG chunk allow-list, states the full source regex, refuses `summary.author: human` and image links in `report.md`, and defines the scorecard's "Scorecard types" table and the scan rules (`SCAN_RULES`), both normative for this spec. Both specs cap figure dimensions at 4,096 × 4,096. (2) **F-001d schema change (`models.harness`)**: merged on research-agent `main` (`schemas/report.v1.json`); listed so a later schema change is checked against this spec. (3) **F-001c's eval** (not built): its build (branch `feat/f001c-eval`) adds `fingerprint.config.harness`, `questions[].other_issues` and `questions[].unreviewed_trap_passes` (recorded in its "Decisions made in the build"), which the scorecard export keeps, and should adopt the `eval-YYYYMMDDTHHMMSSZ` directory name. (4) At least one published synthetic run and one published scorecard before launch. |
+| Depends on | (1) **research-agent F-001e, `research publish`** (research-agent PR #14, at `74d5d82`), which produces the export this spec consumes. It already keeps figures run-relative, uses a PNG chunk allow-list, states the full source regex, refuses `summary.author: human` and image links in `report.md`, and defines the scorecard's "Scorecard types" table and the scan rules (`SCAN_RULES`), both normative for this spec. Both specs cap figure dimensions at 4,096 × 4,096. (2) **F-001d schema change (`models.harness`)**: merged on research-agent `main` (`schemas/report.v1.json`); listed so a later schema change is checked against this spec. (3) **F-001c's eval** (not built): its build (branch `feat/f001c-eval`) adds `fingerprint.config.harness`, `questions[].other_issues` and `questions[].unreviewed_trap_passes` (recorded in its "Decisions made in the build"), which the scorecard export keeps, and should adopt the `eval-YYYYMMDDTHHMMSSZ` directory name. The launch scorecard comes from `research eval --score-runs` (F-001c Amendment A, being built), which scores recorded Claude Code harness runs without paid API keys; launch does not wait for the paid LangGraph eval, which the showcase lists under "With more time". (4) At least one published synthetic run and one published scorecard before launch. |
 
 **Numbering.** The research-agent repository calls this page "F-002" in its F-001 index. This repository already uses F-002 (signed-in agent booking), F-003 and F-004, so the showcase is **F-005** here. Mapping: research-agent "F-002" = patrickjv-eng-site **F-005**. Research-agent "F-003" (MCP tools on the site's server, then a live Worker) will take the next free number here when it is written; it is not this spec.
 
@@ -30,7 +30,7 @@ This spec adds static pages to patrickjv.com, served as assets by the existing `
 - **`/projects/research-agent`**, the showcase: what the project is, its architecture, the eval scorecard and recorded runs from published synthetic data, and how it was built;
 - **`/projects/research-agent/runs/<run_id>/`**, one page per published run, with the run's `report.md` and `report.json` beside it.
 
-The code stays private. The only things that cross from the private repository are `research publish` exports that the owner has read, recorded by file hash in a manifest the build enforces. Committing an export to this public repository publishes it: the owner's read is the last check before it is public, and `--record` runs every build check before it writes anything. The build owns everything under `public/projects/`: what it doesn't generate from the manifest is deleted, and `--check` fails on it. Until Databento confirms its licence terms, the build refuses anything that isn't on the synthetic dataset.
+The code stays private. The only things that cross from the private repository are `research publish` exports that the owner has read, recorded by file hash in a manifest the build enforces. Committing an export to this public repository publishes it: the owner's read is the last check before it is public, and `--record` runs every build check before it writes anything. The build owns everything under `public/projects/`: what it doesn't generate from the manifest is deleted, and `--check` fails on it. The build refuses anything that isn't on the synthetic dataset, for good: Databento's licence terms rule out publishing real-data results (see Non-Goals).
 
 LangChain and LangGraph appear in the title, meta description, lead paragraph and JSON-LD keywords, not in the URL.
 
@@ -52,7 +52,7 @@ As **an AI agent acting for a visitor**, I want **the index, the showcase and ev
 
 ### US-4: Owner publishing safely
 
-As **the owner**, I want **only exports I have read, byte for byte, to be committed and served, every automated check to run before anything is written to this public repository, unpublishing to remove a run from the site (git history keeps it), and real-data results refused until the licence question is answered**, so that **nothing private, licensed or unchecked is published by accident**.
+As **the owner**, I want **only exports I have read, byte for byte, to be committed and served, every automated check to run before anything is written to this public repository, unpublishing to remove a run from the site (git history keeps it), and real-data results always refused**, so that **nothing private, licensed or unchecked is published by accident**.
 
 ---
 
@@ -61,7 +61,7 @@ As **the owner**, I want **only exports I have read, byte for byte, to be commit
 **Goals**
 - Static pages with no script, generated by the build, with the writing pages' look (IBM Plex, palette, light and dark).
 - Every served file under `public/projects/` is either generated from source or a byte copy of a manifest-listed, hash-checked export file; nothing else survives a build.
-- Synthetic data only, enforced by the build and by `--record`, until a later spec change opens the real-data gate.
+- Synthetic data only, enforced by the build and by `--record`, for good (the D6 gate stays closed).
 - The site's existing guarantees hold on every new page: per-path CSP, no third-party requests, the employer denylist, "deployed = repo" smoke checks, Lighthouse 100 for performance, accessibility and best practices.
 - Cost stays at £0: static assets only, no new Worker, no R2.
 
@@ -69,7 +69,7 @@ As **the owner**, I want **only exports I have read, byte for byte, to be commit
 - **F-003 in the research-agent index** (MCP tools `list_research` and `get_research_report` on the site's MCP server, and the later live research Worker): a separate spec. This page uses no MCP or WebMCP tool and adds none.
 - A live demo, any execution on the website, or any model spend.
 - Publishing the research-agent code. The page says "The code is available on request" and links to `/book`.
-- **Real-data (Databento) results, for good.** Databento answered on 11 Nov 2026: publishing anything derived from their data needs a paid plan. The showcase is synthetic-only, and the D6 gate stays closed.
+- **Real-data (Databento) results, for good.** Databento answered on 11 Nov 2026: publishing anything derived from their data needs their paid Plus plan and the exchange licensing fees, which this project won't buy. The showcase is synthetic-only, and the D6 gate stays closed.
 - **The generator's constants** (planted effect sizes, trap parameters) are not published; reports may state measured estimates.
 - A general "projects" CMS. Kaizen Kingdom and the marine-weather agent stay as side projects on the homepage.
 - Changes to the homepage nav.
