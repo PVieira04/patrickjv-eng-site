@@ -310,3 +310,337 @@ test("F-005 (US-4, D6): the scorecard gate: no non-null repeat, a non-null repea
   assert.notDeepEqual(gate((d) => { delete d.runs[1].models; }), [], "no models");
   assert.notDeepEqual(gate((d) => { delete d.runs[1].models.harness; }), [], "no models.harness");
 });
+
+// ---- --record and --record-scorecard: the export contract, and every check before any write ----
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, lstatSync, symlinkSync, existsSync, cpSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { record } from "../build.mjs";
+import { writeExport, runFiles, scorecardFiles, dump, sha, pngOfSize, RUN_ID, readTree } from "./projects-helpers.mjs";
+
+const MANIFEST = "projects/research-agent/published.json";
+const TODAY = "2026-11-12";
+// A scratch site root (only projects/ matters to --record) and a scratch export folder.
+function sandbox() {
+  const base = mkdtempSync(join(tmpdir(), "site-record-"));
+  const root = join(base, "site"), dir = join(base, "export");
+  mkdirSync(root);
+  return { base, root, dir, done: () => rmSync(base, { recursive: true, force: true }) };
+}
+// Every file under a directory, path -> bytes (as hex), so "wrote nothing" compares the whole tree.
+const snapshot = (dir) => existsSync(dir) ? Object.fromEntries(Object.entries(readTree(dir)).map(([f, b]) => [f, b.toString("hex")])) : {};
+const reportWith = (f) => dump(edit(report(), f));
+const runExport = (dir, { files: over = {}, ...opts } = {}) => writeExport(dir, { files: { ...runFiles(), ...over }, ...opts });
+const manifestOf = (root) => JSON.parse(readFileSync(join(root, MANIFEST), "utf8"));
+// The owner's step after --record: write every figure's alt text (the build refuses it empty).
+const writeAlt = (root) => {
+  const m = manifestOf(root);
+  for (const run of Object.values(m.runs)) for (const f of Object.keys(run.alt)) run.alt[f] ||= "A synthetic chart.";
+  writeFileSync(join(root, MANIFEST), JSON.stringify(m, null, 2) + "\n");
+};
+
+// Run --record and require it to fail, naming `pattern`, with the site root unchanged.
+function refuses(s, args, pattern) {
+  const before = snapshot(s.root);
+  const r = record({ root: s.root, today: TODAY, ...args });
+  assert.ok(r.errors.some((e) => pattern.test(e)), `expected ${pattern}, got:\n${r.errors.join("\n")}`);
+  assert.deepEqual(snapshot(s.root), before, "nothing written");
+}
+
+test("F-005 (US-4, D2, D3): --record copies exactly report.json, report.md and the named figures, byte for byte, and adds the run to published.json", () => {
+  const s = sandbox();
+  try {
+    const expect = runExport(s.dir);
+    const r = record({ root: s.root, dir: s.dir, expect, today: TODAY });
+    assert.deepEqual(r.errors, []);
+    const base = join(s.root, "projects/research-agent/runs", RUN_ID);
+    const exported = runFiles();
+    assert.deepEqual(Object.keys(readTree(base)).sort(), Object.keys(exported).sort());
+    for (const [f, b] of Object.entries(exported)) assert.ok(readFileSync(join(base, f)).equals(b), f);
+    assert.ok(!existsSync(join(base, "export.json")), "export.json is never written");
+    assert.deepEqual(manifestOf(s.root), {
+      manifest_version: "1.0.0",
+      runs: { [RUN_ID]: {
+        checked: TODAY, export_digest: expect, tool_version: "0.1.0", exported_at: "2026-11-11T15:04:05Z",
+        files: Object.fromEntries(Object.keys(exported).sort().map((f) => [f, sha(exported[f])])),
+        alt: { "calls/1/out/vol_by_minute.png": "" },
+      } },
+    });
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): a figure that isn't valid UTF-8 and holds \\r\\n round-trips byte-identical from the export to projects/", () => {
+  const s = sandbox();
+  try {
+    const fig = png({ idat: Buffer.from([0xff, 0xfe, 0xc3, 0x28, 0x0d, 0x0a, 0x00, 0x80, 0x0d, 0x0a]) });
+    assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(fig));
+    const expect = runExport(s.dir, { files: { "calls/1/out/vol_by_minute.png": fig } });
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, []);
+    assert.ok(readFileSync(join(s.root, "projects/research-agent/runs", RUN_ID, "calls/1/out/vol_by_minute.png")).equals(fig));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record reads each export file once, and writes the bytes it hashed", () => {
+  const s = sandbox();
+  try {
+    const expect = runExport(s.dir);
+    const reads = {};
+    const read = (f) => { reads[f] = (reads[f] ?? 0) + 1; return readFileSync(f); };
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY, read }).errors, []);
+    assert.deepEqual(Object.keys(reads).map((f) => f.slice(s.dir.length + 1).replaceAll("\\", "/")).sort(), ["calls/1/out/vol_by_minute.png", "export.json", "report.json", "report.md"]);
+    assert.ok(Object.values(reads).every((n) => n === 1), JSON.stringify(reads));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record fails, writing nothing, on a digest mismatch or a missing --expect", () => {
+  const s = sandbox();
+  try {
+    runExport(s.dir);
+    refuses(s, { dir: s.dir, expect: "0".repeat(64) }, /digest/);
+    refuses(s, { dir: s.dir }, /--expect/);
+    refuses(s, { dir: s.dir, expect: "not-a-digest" }, /--expect/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record fails, writing nothing, on a symlink, FIFO or directory where a file is expected", { skip: process.platform === "win32" && "no FIFOs or unprivileged symlinks on Windows" }, () => {
+  const s = sandbox();
+  try {
+    let expect = runExport(s.dir);
+    rmSync(join(s.dir, "report.md"));
+    symlinkSync(join(s.base, "elsewhere.md"), join(s.dir, "report.md"));
+    writeFileSync(join(s.base, "elsewhere.md"), runFiles()["report.md"]);
+    refuses(s, { dir: s.dir, expect }, /report\.md.*symlink/);
+    expect = runExport(s.dir);
+    execFileSync("mkfifo", [join(s.dir, "pipe")]);
+    refuses(s, { dir: s.dir, expect }, /pipe.*not a regular file/);
+    expect = runExport(s.dir);
+    rmSync(join(s.dir, "report.md"));
+    mkdirSync(join(s.dir, "report.md"));
+    refuses(s, { dir: s.dir, expect }, /report\.md/);
+    expect = runExport(s.dir);
+    rmSync(s.dir, { recursive: true });
+    mkdirSync(join(s.base, "real"));
+    runExport(join(s.base, "real"));
+    symlinkSync(join(s.base, "real"), s.dir);
+    refuses(s, { dir: s.dir, expect }, /symlink/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record fails, writing nothing, on each export.json contract failure", () => {
+  const s = sandbox();
+  try {
+    const cases = [
+      ["an extra file", () => { const d = runExport(s.dir); writeFileSync(join(s.dir, "notes.txt"), "x"); return d; }, /notes\.txt.*not listed/],
+      ["a missing file", () => { const d = runExport(s.dir); rmSync(join(s.dir, "report.md")); return d; }, /report\.md.*missing/],
+      ["a sha256 mismatch", () => runExport(s.dir, { edit: (x) => { x.files[1].sha256 = "0".repeat(64); } }), /report\.json.*sha256/],
+      ["a bytes mismatch", () => runExport(s.dir, { edit: (x) => { x.files[1].bytes += 1; } }), /report\.json.*bytes/],
+      ["unsorted files", () => runExport(s.dir, { edit: (x) => { x.files.reverse(); } }), /sorted/],
+      ["duplicate files", () => runExport(s.dir, { edit: (x) => { x.files.splice(1, 0, x.files[1]); } }), /duplicate/],
+      ["a wrong kind", () => runExport(s.dir, { edit: (x) => { x.kind = "scorecard"; } }), /kind/],
+      ["an export_version major other than 1", () => runExport(s.dir, { edit: (x) => { x.export_version = "2.0.0"; } }), /export_version/],
+      ["another tool", () => runExport(s.dir, { edit: (x) => { x.tool.name = "other-agent"; } }), /tool\.name/],
+      ["exported_at without Z", () => runExport(s.dir, { edit: (x) => { x.exported_at = "2026-11-11T15:04:05+00:00"; } }), /exported_at/],
+      ["an unknown key", () => runExport(s.dir, { edit: (x) => { x.checked = true; } }), /export\.json.*checked/],
+      ["export.json not JSON", () => runExport(s.dir, { raw: "{" }), /export\.json/],
+      ["no export.json", () => { runExport(s.dir); rmSync(join(s.dir, "export.json")); return "0".repeat(64); }, /export\.json/],
+      ["an id that doesn't match the folder's report", () => runExport(s.dir, { id: "20261111T143000Z-ffffff", edit: (x) => { x.id = "20261111T143000Z-ffffff"; } }), /run_id/],
+      ["a bad run id pattern", () => runExport(s.dir, { edit: (x) => { x.id = "run-1"; } }), /id/],
+      ["a bad figure path", () => runExport(s.dir, { files: { "calls/0/out/x.png": png(), "report.json": reportWith((d) => { d.figures = ["calls/0/out/x.png"]; }) } }), /figure/],
+      ["a figure report.json doesn't name", () => runExport(s.dir, { files: { "calls/2/out/extra.png": png() } }), /calls\/2\/out\/extra\.png/],
+      ["a figure report.json names that isn't there", () => runExport(s.dir, { files: { "report.json": reportWith((d) => { d.figures.push("calls/2/out/gone.png"); }) } }), /calls\/2\/out\/gone\.png/],
+      ["a failed PNG check", () => runExport(s.dir, { files: { "calls/1/out/vol_by_minute.png": png({ extra: [chunk("tEXt", Buffer.from("k\0v"))] }) } }), /PNG|tEXt/],
+      ["report.md with image syntax", () => runExport(s.dir, { files: { "report.md": "# Research report\n\n![a](calls/1/out/x.png)\n" } }), /report\.md.*image/],
+      ["report.md not UTF-8", () => runExport(s.dir, { files: { "report.md": Buffer.from([0x23, 0x20, 0xff, 0x0a]) } }), /report\.md.*UTF-8/],
+    ];
+    for (const [what, make, pattern] of cases) {
+      const expect = make();
+      try { refuses(s, { dir: s.dir, expect }, pattern); } catch (e) { e.message = `${what}: ${e.message}`; throw e; }
+    }
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): patterns and limits — 20 figures, 204,800 bytes and 1,048,576 bytes per run pass; one more of each fails", () => {
+  const s = sandbox();
+  try {
+    const figs = (sizes) => {
+      const paths = sizes.map((_, i) => `calls/${i + 1}/out/f${i}.png`);
+      return { ...Object.fromEntries(paths.map((p, i) => [p, sizes[i] ? pngOfSize(sizes[i]) : png()])), "report.json": reportWith((d) => { d.figures = paths; }), "calls/1/out/vol_by_minute.png": undefined };
+    };
+    const exp = (files) => { const f = { ...runFiles(), ...files }; for (const k of Object.keys(f)) if (f[k] === undefined) delete f[k]; return writeExport(s.dir, { files: f }); };
+    const ok = (files, what) => { const expect = exp(files); const r = record({ root: s.root, dir: s.dir, expect, today: TODAY }); assert.deepEqual(r.errors, [], what); rmSync(join(s.root, "projects"), { recursive: true }); };
+    ok(figs(Array(20).fill(0)), "20 figures");
+    ok(figs([204_800]), "a figure of 204,800 bytes");
+    ok(figs([...Array(5).fill(204_800), 24_576]), "1,048,576 bytes of figures");
+    refuses(s, { dir: s.dir, expect: exp(figs(Array(21).fill(0))) }, /at most 20/);
+    refuses(s, { dir: s.dir, expect: exp(figs([204_801])) }, /204,?801.*204,?800|over 204,?800/);
+    refuses(s, { dir: s.dir, expect: exp(figs([...Array(5).fill(204_800), 24_577])) }, /1,?048,?577/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record fails, writing nothing, when the export would fail a build check: gate, scan, employer denylist, fields, enums", () => {
+  const s = sandbox();
+  try {
+    const cases = [
+      ["D6 gate", { "report.json": reportWith((d) => { d.dataset.visibility = "private"; }) }, /D6/],
+      ["scan rule in report.md", { "report.md": "# Research report\n\nRead from /home/someone/data.\n" }, /report\.md.*home_path/],
+      ["scan rule in a report.json value", { "report.json": reportWith((d) => { d.summary.text = "Used key AKIA" + "A".repeat(16) + "."; }) }, /report\.json.*key_aws/],
+      ["scan rule in a report.json key only (escaped in the raw text)", { "report.json": dump(report()).replace('"answer"', '"\\u007e/notes": 1,\n  "answer"') }, /report\.json.*tilde_home/],
+      ["employer in report.md", { "report.md": "# Research report\n\nAs the CEO said.\n" }, /report\.md.*employer/],
+      ["employer in report.json", { "report.json": reportWith((d) => { d.question = "What would a fintech do?"; }) }, /report\.json.*employer/],
+      ["a field check", { "report.json": reportWith((d) => { delete d.question; }) }, /question/],
+      ["summary.author human", { "report.json": reportWith((d) => { d.summary.author = "human"; }) }, /summary\.author/],
+    ];
+    for (const [field, value] of [["status", "paused"], ["review.outcome", "skipped"], ["tag", "survivorship"], ["stop_reason", "out_of_time"], ["models.harness", "autogen"], ["summary.author", "editor"]]) {
+      cases.push([`enum ${field}`, { "report.json": reportWith((d) => {
+        if (field === "status") d.status = value;
+        else if (field === "review.outcome") d.review.outcome = value;
+        else if (field === "tag") d.review.open_issues[0].tag = value;
+        else if (field === "stop_reason") { d.status = "failed"; d.stop_reason = value; }
+        else if (field === "models.harness") d.models.harness = value;
+        else d.summary.author = value;
+      }) }, new RegExp(field.replace(".", "\\."))]);
+    }
+    for (const [what, files, pattern] of cases) {
+      const expect = runExport(s.dir, { files });
+      try { refuses(s, { dir: s.dir, expect }, pattern); } catch (e) { e.message = `${what}: ${e.message}`; throw e; }
+    }
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4): .denylist.local — a term in the export fails --record; inside a longer word it passes; a comment is not a term; comments-only behaves as absent", () => {
+  const s = sandbox();
+  try {
+    const expect = runExport(s.dir, { files: { "report.md": "# Research report\n\nBuilt with Zorblaxian tools, not the old one.\n" } });
+    writeFileSync(join(s.root, ".denylist.local"), "# Zorblax Ltd\n\nold one\n");
+    refuses(s, { dir: s.dir, expect }, /\.denylist\.local/);
+    writeFileSync(join(s.root, ".denylist.local"), "zorblax\n# old one\n");
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, [], "inside a longer word, and comment text, pass");
+    const withTerms = snapshot(s.root);
+    rmSync(join(s.root, "projects"), { recursive: true });
+    writeFileSync(join(s.root, ".denylist.local"), "# only comments\n\n   \n");
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, []);
+    const commentsOnly = snapshot(s.root);
+    rmSync(join(s.root, "projects"), { recursive: true });
+    rmSync(join(s.root, ".denylist.local"));
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, []);
+    const absent = snapshot(s.root);
+    delete withTerms[".denylist.local"]; delete commentsOnly[".denylist.local"];
+    assert.deepEqual(commentsOnly, absent, "a comments-only file gives the same outputs as no file");
+    assert.deepEqual(withTerms, absent);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4): .denylist.local — a term in report.json fails --record, matched case-insensitively", () => {
+  const s = sandbox();
+  try {
+    writeFileSync(join(s.root, ".denylist.local"), "zorblax\n");
+    refuses(s, { dir: s.dir, expect: runExport(s.dir, { files: { "report.json": reportWith((d) => { d.plan.method = "As done at ZORBLAX."; }) } }) }, /report\.json.*\.denylist\.local/);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4, D2): --record refuses a run id already in the manifest", () => {
+  const s = sandbox();
+  try {
+    const expect = runExport(s.dir);
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, []);
+    refuses(s, { dir: s.dir, expect }, /already published/);
+  } finally { s.done(); }
+});
+
+test("F-005 (D10): --record refuses a ninth run", () => {
+  const s = sandbox();
+  try {
+    for (let i = 0; i < 9; i++) {
+      const id = `20261111T14300${i}Z-a1b2c3`;
+      const expect = runExport(s.dir, { id, files: { "report.json": reportWith((d) => { d.run_id = id; }) } });
+      if (i < 8) { assert.deepEqual(record({ root: s.root, dir: s.dir, expect, today: TODAY }).errors, [], `run ${i}`); writeAlt(s.root); }
+      else refuses(s, { dir: s.dir, expect }, /9 runs.*at most 8/);
+    }
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): --record --replace keeps alt text and role only for unchanged figures, empties changed and new ones, removes dropped figures, and updates digest and date", () => {
+  const s = sandbox();
+  try {
+    const keep = png({ width: 2, height: 2 }), change = png({ width: 3, height: 3 }), drop = png({ width: 5, height: 5 });
+    const files = (figs) => ({ "report.json": reportWith((d) => { d.figures = Object.keys(figs); }), "report.md": runFiles()["report.md"], ...figs });
+    const first = writeExport(s.dir, { files: files({ "calls/1/out/keep.png": keep, "calls/1/out/change.png": change, "calls/2/out/drop.png": drop }) });
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect: first, today: "2026-11-12" }).errors, []);
+    const m = manifestOf(s.root);
+    m.runs[RUN_ID].alt = { "calls/1/out/keep.png": "Kept", "calls/1/out/change.png": "Changed", "calls/2/out/drop.png": "Dropped" };
+    m.runs[RUN_ID].role = "trap_caught";
+    writeFileSync(join(s.root, MANIFEST), JSON.stringify(m, null, 2) + "\n");
+    const second = writeExport(s.dir, { files: files({ "calls/1/out/keep.png": keep, "calls/1/out/change.png": png({ width: 3, height: 4 }), "calls/3/out/new.png": png() }), version: "0.2.0" });
+    refuses(s, { dir: s.dir, expect: second, today: "2026-11-20" }, /already published.*--replace/);
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect: second, today: "2026-11-20", replace: true }).errors, []);
+    const run = manifestOf(s.root).runs[RUN_ID];
+    assert.deepEqual(run.alt, { "calls/1/out/keep.png": "Kept", "calls/1/out/change.png": "", "calls/3/out/new.png": "" });
+    assert.equal(run.role, "trap_caught");
+    assert.equal(run.checked, "2026-11-20");
+    assert.equal(run.export_digest, second);
+    assert.equal(run.tool_version, "0.2.0");
+    const base = join(s.root, "projects/research-agent/runs", RUN_ID);
+    assert.deepEqual(Object.keys(readTree(base)).sort(), ["calls/1/out/change.png", "calls/1/out/keep.png", "calls/3/out/new.png", "report.json", "report.md"]);
+    assert.ok(!existsSync(join(base, "calls/2")), "the emptied directory is removed");
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): --record-scorecard records the scorecard with the same checks, and replaces the published one", () => {
+  const s = sandbox();
+  try {
+    const sc = (f, id = EVAL_ID) => writeExport(s.dir, { kind: "scorecard", id, files: { "scorecard.json": dump(edit(scorecard(), f)) } });
+    let expect = sc(() => {});
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, kind: "scorecard", today: TODAY }).errors, []);
+    assert.ok(readFileSync(join(s.root, "projects/research-agent/scorecard/scorecard.json")).equals(scorecardFiles()["scorecard.json"]));
+    assert.ok(!existsSync(join(s.root, "projects/research-agent/scorecard/export.json")));
+    assert.deepEqual(manifestOf(s.root).scorecard, { eval_id: EVAL_ID, checked: TODAY, export_digest: expect, tool_version: "0.1.0", exported_at: "2026-11-11T15:04:05Z", files: { "scorecard.json": sha(scorecardFiles()["scorecard.json"]) } });
+    // The same checks: digest, kind, id pattern, types, gate, dropped field, scan, employer.
+    refuses(s, { dir: s.dir, expect: "0".repeat(64), kind: "scorecard" }, /digest/);
+    refuses(s, { dir: s.dir, expect: runExport(s.dir), kind: "scorecard" }, /kind/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.eval_id = "eval-1"; }, "eval-1"), kind: "scorecard" }, /id/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.k = "2"; }), kind: "scorecard" }, /scorecard\.json: k/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.runs[0].dataset.licence = "Licensed"; }), kind: "scorecard" }, /D6/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.fingerprint.sha256 = "0".repeat(64); }), kind: "scorecard" }, /fingerprint\.sha256/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.fingerprint.config.models.analyst = "~/models/x"; }), kind: "scorecard" }, /scorecard\.json.*tilde_home/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.fingerprint.config.models.critic = "wimbledon-model"; }), kind: "scorecard" }, /scorecard\.json.*employer/);
+    refuses(s, { dir: s.dir, expect: sc((d) => { d.scorecard_version = "2.0.0"; }), kind: "scorecard" }, /scorecard_version/);
+    // A newer scorecard replaces the old one.
+    const next = "eval-20261112T090000Z";
+    expect = sc((d) => { d.eval_id = next; d.k = 3; d.questions.forEach((q) => { q.n_repeats = q.n_repeats; }); }, next);
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect, kind: "scorecard", today: "2026-11-13" }).errors, []);
+    assert.equal(manifestOf(s.root).scorecard.eval_id, next);
+    assert.equal(JSON.parse(readFileSync(join(s.root, "projects/research-agent/scorecard/scorecard.json"), "utf8")).k, 3);
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4): node build.mjs --record <dir> --expect <digest> records, and exits 1 writing nothing on a failure", () => {
+  const s = sandbox();
+  try {
+    const expect = runExport(s.dir);
+    const cli = (args) => { try { return { code: 0, out: execFileSync(process.execPath, [join(ROOT, "build.mjs"), ...args], { cwd: s.root, encoding: "utf8", stdio: "pipe" }) }; } catch (e) { return { code: e.status, out: e.stderr }; } };
+    const bad = cli(["--record", s.dir, "--expect", "0".repeat(64)]);
+    assert.equal(bad.code, 1);
+    assert.match(bad.out, /digest/);
+    assert.ok(!existsSync(join(s.root, "projects")));
+    assert.equal(cli(["--record", s.dir]).code, 1, "--expect is required");
+    const ok = cli(["--record", s.dir, "--expect", expect]);
+    assert.equal(ok.code, 0, ok.out);
+    assert.match(ok.out, new RegExp(RUN_ID));
+    assert.ok(existsSync(join(s.root, "projects/research-agent/runs", RUN_ID, "report.json")));
+    writeAlt(s.root);
+    const sdir = join(s.base, "sc");
+    const sexp = writeExport(sdir, { kind: "scorecard", id: EVAL_ID, files: scorecardFiles() });
+    const r = cli(["--record-scorecard", sdir, "--expect", sexp]);
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(join(s.root, "projects/research-agent/scorecard/scorecard.json")));
+  } finally { s.done(); }
+});
+
+test("F-005 (US-4): --record runs the build's checks on the whole would-be tree: a run still missing its alt text blocks the next record", () => {
+  const s = sandbox();
+  try {
+    assert.deepEqual(record({ root: s.root, dir: s.dir, expect: runExport(s.dir), today: TODAY }).errors, []);
+    const id = "20261112T090000Z-0f0f0f";
+    refuses(s, { dir: s.dir, expect: runExport(s.dir, { id, files: { "report.json": reportWith((d) => { d.run_id = id; }) } }) }, /alt for calls\/1\/out\/vol_by_minute\.png is empty/);
+  } finally { s.done(); }
+});

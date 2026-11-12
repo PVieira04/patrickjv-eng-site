@@ -2,6 +2,11 @@
 //   node build.mjs          validate everything, then write the public/ files that changed
 //   node build.mjs --check  write nothing; exit 1 if anything is out of date or a check fails
 //
+//   node build.mjs --record <export-dir> --expect <digest> [--replace]
+//   node build.mjs --record-scorecard <export-dir> --expect <digest>
+//                          check a `research publish` export as every build would, then copy it
+//                          into projects/research-agent/ and add it to published.json (F-005)
+//
 // Generated: the head metadata (title, description, Open Graph, Twitter), the JSON-LD @graph and
 // the WebMCP data inside public/index.html, public/index.md, public/llms.txt, public/sitemap.xml,
 // public/robots.txt, public/_headers and build-state.json. The visible HTML is hand-written (it is
@@ -20,6 +25,7 @@ import { tools as mcpTools, BOOKING_CONFIG } from "./mcp/handler.js";
 import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROVIDER_NAMES } from "./mcp/booking-config.js";
 import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
+import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, MANIFEST, PROJECT, MAX_RUNS } from "./lib/projects.mjs";
 
 export const SITE = "https://patrickjv.com/";
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -1244,8 +1250,6 @@ ${imageFiles.map((f) => `/${f}\n  Cache-Control: public, max-age=86400\n  Conten
 // left out: _headers, the 404 page, fonts, security.txt, mcp-registry-auth and did.json (frozen,
 // with its own hash check).
 // ---------------------------------------------------------------------------------------------
-const MANIFEST = "projects/research-agent/published.json";
-const MAX_RUNS = 8;
 const CONTENT_OUTPUTS = ["public/index.html", "public/index.md", "public/book.md", "public/llms.txt", "public/sitemap.xml", "public/robots.txt", "public/cv.html", "public/privacy.html", "public/book.html"];
 
 // Write `files` (name -> text or Buffer) under `root`: every file to "<name>.tmp" first, then
@@ -1399,6 +1403,76 @@ export function build({ root = process.cwd(), check = false, today = new Date().
   const removal = { files: Object.fromEntries(strayFiles.map((f) => [f, readFileSync(p(f))])), links: tree.links, dirs: strayDirs };
   writeStaged(root, Object.fromEntries(stale.map((f) => [f, files[f]])), Object.fromEntries(stale.map((f) => [f, readBytes(f)])), io, removal);
   return { errors, stale, removed: strays, date };
+}
+
+// F-005 --record / --record-scorecard: check the export folder `dir` against export.json and the
+// owner's --expect digest, then run every check the build would on the would-be result (the
+// published tree with this export in it), and only then copy exactly the listed files — the Buffers
+// that were hashed — into projects/research-agent/, and add the export to published.json, staged
+// with rollback. A run's figures get empty alt text for the owner to write (the build refuses it
+// empty). --replace re-exports a published run: its alt text is kept only for figures whose hash is
+// unchanged, and its role is kept. A scorecard always replaces the published one.
+export function record({ root = process.cwd(), dir, expect, kind = "run", replace = false, today = new Date().toISOString().slice(0, 10), io, read } = {}) {
+  if (typeof expect !== "string" || !/^[0-9a-f]{64}$/.test(expect)) return { errors: ["--expect <export digest> is required: the sha256 of export.json that research publish printed last"] };
+  const ex = readExport(dir, kind, read);
+  const errors = [];
+  if (ex.digest && ex.digest !== expect) errors.push("the export digest (sha256 of export.json) does not match --expect: this is not the export you read");
+  errors.push(...ex.errors);
+  if (errors.length) return { errors };
+  const tree = readProjectsTree(root);
+  let m = { manifest_version: "1.0.0", runs: {} };
+  if (tree.manifestText !== null) {
+    try { m = JSON.parse(tree.manifestText); } catch (e) { return { errors: [`${MANIFEST} is not valid JSON (${e.message})`] }; }
+    if (!m || typeof m !== "object" || !m.runs || typeof m.runs !== "object") return { errors: checkProjects(tree, { employerMention, denylist: [] }) };
+  }
+  const id = ex.id, base = kind === "run" ? `${PROJECT}/runs/${id}` : `${PROJECT}/scorecard`;
+  const hashes = Object.fromEntries([...ex.files.keys()].sort().map((f) => [f, sha256(ex.files.get(f)).toString("hex")]));
+  const stamp = { checked: today, export_digest: ex.digest, tool_version: ex.doc.tool.version, exported_at: ex.doc.exported_at };
+  const oldFiles = (kind === "run" ? tree.runs[id] : tree.scorecard) ?? new Map();
+  const oldDirs = kind === "run" ? tree.runDirs[id] ?? [] : [];
+  if (kind === "run") {
+    const old = m.runs[id];
+    if (old && !replace) return { errors: [`run ${id} is already published; to re-export it, read the new export, then rerun with --replace`] };
+    const figures = JSON.parse(ex.files.get("report.json").toString("utf8")).figures;
+    const kept = (f) => old?.files?.[f] === hashes[f] && typeof old?.alt?.[f] === "string" ? old.alt[f] : "";
+    m.runs[id] = { ...stamp, ...(old && "role" in old ? { role: old.role } : {}), files: hashes, alt: Object.fromEntries(figures.map((f) => [f, kept(f)])) };
+    tree.runs[id] = ex.files;
+  } else {
+    m.scorecard = { eval_id: id, ...stamp, files: hashes };
+    tree.scorecard = ex.files;
+  }
+  tree.manifestText = serializeManifest(m);
+  errors.push(...checkProjects(tree, { employerMention, denylist: loadDenylist(root), pendingAlt: kind === "run" ? id : null }));
+  if (errors.length) return { errors };
+  const files = { [MANIFEST]: tree.manifestText, ...Object.fromEntries([...ex.files].map(([f, b]) => [`${base}/${f}`, b])) };
+  const previous = Object.fromEntries(Object.keys(files).map((f) => [f, existsSync(join(root, f)) ? readFileSync(join(root, f)) : null]));
+  const gone = [...oldFiles].filter(([f]) => !ex.files.has(f));
+  const keepDirs = new Set([...ex.files.keys()].flatMap((f) => f.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))));
+  const removal = {
+    files: Object.fromEntries(gone.map(([f, b]) => [`${base}/${f}`, b])),
+    dirs: oldDirs.filter((d) => !keepDirs.has(d)).sort((a, b) => b.split("/").length - a.split("/").length).map((d) => `${base}/${d}`),
+  };
+  writeStaged(root, files, previous, io, removal);
+  return { errors: [], id, written: Object.keys(files), removed: [...Object.keys(removal.files), ...removal.dirs] };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && (process.argv.includes("--record") || process.argv.includes("--record-scorecard"))) {
+  const args = process.argv.slice(2);
+  const kind = args.includes("--record-scorecard") ? "scorecard" : "run";
+  const value = (flag) => { const i = args.indexOf(flag); return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : undefined; };
+  const dir = value(kind === "run" ? "--record" : "--record-scorecard");
+  let r;
+  if (!dir) r = { errors: [`usage: node build.mjs ${kind === "run" ? "--record" : "--record-scorecard"} <export-dir> --expect <export digest>${kind === "run" ? " [--replace]" : ""}`] };
+  else {
+    try { r = record({ dir, expect: value("--expect"), kind, replace: args.includes("--replace") }); } catch (e) {
+      r = { errors: [e.writePhase ? `failed while writing (${e.message}); ${e.rolledBack ? "rolled back" : "rollback incomplete — check git status"}` : e.message] };
+    }
+  }
+  if (r.errors.length) { console.error("RECORD FAILED (nothing written)\n" + r.errors.join("\n")); process.exit(1); }
+  console.log(kind === "run"
+    ? `recorded run ${r.id} into ${PROJECT}/runs/${r.id}/. Next: write each figure's alt text (and the optional role) in ${MANIFEST}, then npm run build and npm test, then commit.`
+    : `recorded scorecard ${r.id} into ${PROJECT}/scorecard/. Next: npm run build and npm test, then commit.`);
+  process.exit(0);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
