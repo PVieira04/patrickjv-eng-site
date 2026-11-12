@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";
 import { renderReportMd, reportHtmlErrors } from "../lib/project-pages.mjs";
+import { decodeEntities } from "../build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -39,6 +40,32 @@ test("F-005 (D7): the rendered report passes an allow-list of elements and attri
     '<p onclick="x">a</p>', '<p style="color:red">a</p>', '<span href="x">a</span>', '<div src="x">a</div>', '<p class="x">a</p>']) {
     assert.ok(reportHtmlErrors(good + bad).length > 0, bad);
   }
+});
+
+test("F-005 (D7): ordinary text with <, >, & and escapes renders escaped once, passes the allow-list and keeps its visible text", () => {
+  for (const [md, shown] of [
+    ["p < 0.05", "p < 0.05"], ["a > b", "a > b"], ["\\<b>", "<b>"], ["&#60;a href=x&#62;", "<a href=x>"], ["S&P", "S&P"], ["S&amp;P", "S&P"],
+  ]) {
+    const html = renderReportMd(md + "\n");
+    NOTHING_LIVE(html);
+    assert.deepEqual(reportHtmlErrors(html), [], md);
+    assert.equal(decodeEntities(html.replace(/<[^>]+>/g, "")).trim(), shown, md);
+    assert.doesNotMatch(html, /&amp;(amp|lt|gt|#)/, `${md}: no double-encoding`);
+  }
+});
+
+// research-agent's report.py _plain_text: CR and CRLF end lines, leading spaces and tabs dropped,
+// every ASCII punctuation character backslash-escaped.
+const plainText = (t) => t.replace(/\r\n?/g, "\n").split("\n").map((l) => l.replace(/^[ \t]+/, "")).map((l) => (l.trim() ? l.replace(/([!-/:-@[-`{-~])/g, "\\$1") : "")).join("\n");
+
+test("F-005 (D7): narrative text escaped as research-agent's _plain_text writes it renders as the original text and passes the allow-list", () => {
+  const original = `# Not a heading: p < 0.05 & a > b, S&P 500 at 5% (n=124); <script>alert(1)</script> [x](https://e.example) *not em* \`not code\` ~/notes!? {a|b} "q" 'q' _u_ ^ + = $ @`;
+  const md = plainText(original);
+  assert.ok(md.includes("\\<") && md.includes("\\>") && md.includes("\\&") && md.includes("\\#"));
+  const html = renderReportMd(md + "\n");
+  NOTHING_LIVE(html);
+  assert.deepEqual(reportHtmlErrors(html), []);
+  assert.equal(decodeEntities(html.replace(/<[^>]+>/g, "")).trim(), original);
 });
 
 test("F-005 (D7): links render as their text followed by the target as plain text; no <a>", () => {
@@ -110,7 +137,7 @@ test("F-005 (D7): the writing pages still use the shared marked instance, unchan
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
-import { build, decodeEntities } from "../build.mjs";
+import { build } from "../build.mjs";
 import { report, scorecard, dump, sha, png, RUN_ID, runFiles, writeExport } from "./projects-helpers.mjs";
 import { record } from "../build.mjs";
 import { deflateSync } from "node:zlib";
