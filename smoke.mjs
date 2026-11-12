@@ -5,10 +5,10 @@
 // Every check requires its exact success status and exact media type (parameters ignored).
 // "deployed = repo" checks compare the live bytes with this checkout, so they also FAIL when
 // commits are not deployed yet.
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict } from "./lib/smoke-lib.mjs";
+import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict, projectPages, firstFigure, robotsVerdict } from "./lib/smoke-lib.mjs";
 
 // The frozen did.json (also enforced by build.mjs). Production AND the repo copy must match it.
 const DID_SHA256 = "c713c3b182128838452fdf1cf9f9b9bde71969933573a46a4341b4b42046a25c";
@@ -60,6 +60,12 @@ async function req(url, { read: readBody = false, timeout = 10_000, ...init } = 
 }
 const at = (p) => base + p;
 
+// F-005: the /projects checks follow this checkout's published.json (absent until the first export)
+// and its launch switch, so the count follows publishing.
+const MANIFEST = "projects/research-agent/published.json";
+const manifest = existsSync(new URL(MANIFEST, import.meta.url)) ? JSON.parse(read(MANIFEST)) : undefined;
+const launched = JSON.parse(read("content.json")).pages?.projects?.launched === true;
+
 // ---- did.json ----
 await check("did.json: 200, application/json, no redirect, bytes = repo = frozen hash", async () => {
   const r = await req(at("/.well-known/did.json"), { read: true });
@@ -91,6 +97,9 @@ const PAGES = [
     const s = f.slice(0, -3);
     return [[`/writing/${s}`, ["text/html"], `public/writing/${s}.html`], [`/writing/${s}.md`, ["text/markdown"], `public/writing/${s}.md`]];
   }),
+  // F-005: the index, the showcase, and each published run's page, report.md, report.json and
+  // figures (figures compared as bytes, like every file here).
+  ...projectPages(manifest),
 ];
 for (const [p, types, file] of PAGES) {
   await check(`${p}: 200 ${types.join("|")}, deployed = repo ${file}`, async () => {
@@ -146,6 +155,41 @@ await check("missing /fonts/does-not-exist.woff2: 404, at most one CSP, no 30-da
   if (/max-age=2592000/.test(cache)) problems.push(`cache-control ${cache}`);
   return expect(!problems.length, problems.join("; ") || `404, ${n} CSP header(s)`);
 });
+
+// ---- /projects (F-005) ----
+await check("/projects/research-agent: exactly one CSP, = public/_headers", async () => {
+  const r = await req(at("/projects/research-agent"));
+  const want = expectedCsp(read("public/_headers").toString(), "/projects/research-agent");
+  const got = r.headers.get("content-security-policy");
+  const problems = [];
+  if (r.status !== 200) problems.push(`status ${r.status}`);
+  if (!want) problems.push("no CSP for /projects/research-agent in public/_headers");
+  else if (cspCount(got) !== 1) problems.push(`${cspCount(got)} CSP headers`);
+  else if (got !== want) problems.push("CSP differs from public/_headers");
+  return expect(!problems.length, problems.join("; "));
+});
+
+// A run id that can't be published (its date is before the project): the 404 page, with at most
+// one CSP (the 6 Oct wildcard bug, guarded against for the run directories).
+const MISSING_RUN = "/projects/research-agent/runs/20000101T000000Z-000000/";
+await check(`missing ${MISSING_RUN}: 404, at most one CSP`, async () => {
+  const r = await req(at(MISSING_RUN));
+  const n = cspCount(r.headers.get("content-security-policy"));
+  const problems = [];
+  if (r.status !== 404) problems.push(`status ${r.status}`);
+  if (n > 1) problems.push(`${n} CSP headers`);
+  return expect(!problems.length, problems.join("; ") || `404, ${n} CSP header(s)`);
+});
+
+// D9: while not launched every /projects response carries X-Robots-Tag: noindex (the /projects/*
+// rule); after launch none does. Checked on the showcase, its Markdown and the first figure.
+for (const p of ["/projects/research-agent", "/projects/research-agent.md", ...(firstFigure(manifest) ? [firstFigure(manifest)] : [])]) {
+  await check(launched ? `${p}: no X-Robots-Tag (launched)` : `${p}: X-Robots-Tag: noindex (not launched)`, async () => {
+    const r = await req(at(p));
+    const v = robotsVerdict(r.headers.get("x-robots-tag"), launched);
+    return expect(v.ok, v.detail);
+  });
+}
 
 // HTTP -> HTTPS on the primary host. Not yet enabled by the owner (Cloudflare "Always Use HTTPS"
 // is a dashboard setting outside this repo), so it reports WARN unless --strict-https is passed.

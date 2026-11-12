@@ -8,7 +8,7 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { harness } from "../mcp/booking-harness.mjs";
-import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict } from "../lib/smoke-lib.mjs";
+import { mediaType, cspCount, expectedCsp, parseMcpBody, redirectVerdict, healthVerdict, nelVerdict, dnssecVerdict, caaVerdict, dmarcVerdict, projectPages, firstFigure, robotsVerdict } from "../lib/smoke-lib.mjs";
 import { handle } from "../mcp/handler.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -32,6 +32,55 @@ test("expectedCsp reads the policy for / from the generated _headers", () => {
   const csp = expectedCsp(file("public/_headers").toString());
   assert.match(csp, /^default-src 'none'; img-src 'self';/);
   assert.equal(cspCount(csp), 1);
+});
+
+// F-005: the CSP for any exact path, as Cloudflare applies every matching rule (exact paths and
+// "/prefix/*" wildcards); "/" stays the default.
+test("F-005 (US-3, D9): expectedCsp gives each /projects path its own exact rule, and wildcard rules match by prefix", () => {
+  const h = "/*\n  X-Content-Type-Options: nosniff\n\n/\n  Content-Security-Policy: root\n\n/projects/research-agent\n  Content-Security-Policy: showcase\n\n/projects/*\n  X-Robots-Tag: noindex\n";
+  assert.equal(expectedCsp(h), "root");
+  assert.equal(expectedCsp(h, "/"), "root");
+  assert.equal(expectedCsp(h, "/projects/research-agent"), "showcase");
+  assert.equal(expectedCsp(h, "/projects/research-agent.md"), null, "no rule, no CSP");
+  assert.equal(expectedCsp(h + "\n/projects/*\n  Content-Security-Policy: wild\n", "/projects/research-agent"), "showcase, wild", "a matching wildcard's CSP joins the exact one");
+  assert.equal(expectedCsp(file("public/_headers").toString(), "/projects/research-agent"), expectedCsp(file("public/_headers").toString(), "/projects/research-agent.html"));
+});
+
+test("F-005 (US-3): projectPages lists the four fixed paths, then each run's page, report.md, report.json and figures from published.json; firstFigure is the first figure listed", () => {
+  const fixed = [
+    ["/projects/", ["text/html"], "public/projects/index.html"],
+    ["/projects/index.md", ["text/markdown"], "public/projects/index.md"],
+    ["/projects/research-agent", ["text/html"], "public/projects/research-agent.html"],
+    ["/projects/research-agent.md", ["text/markdown"], "public/projects/research-agent.md"],
+  ];
+  assert.deepEqual(projectPages(undefined), fixed, "no manifest yet (main before the first export)");
+  assert.deepEqual(projectPages({ manifest_version: "1.0.0", runs: {} }), fixed);
+  assert.equal(firstFigure({ runs: {} }), null);
+  const a = "20261111T140200Z-000002", b = "20261111T140100Z-000001";
+  const m = { runs: {
+    [a]: { files: { "calls/2/out/b.png": "x", "calls/1/out/a.png": "x", "report.json": "x", "report.md": "x" } },
+    [b]: { files: { "report.json": "x", "report.md": "x" } },
+  } };
+  const r = (id) => `/projects/research-agent/runs/${id}/`;
+  assert.deepEqual(projectPages(m).slice(4), [
+    [r(b), ["text/html"], `public${r(b)}index.html`],
+    [r(b) + "report.json", ["application/json"], `public${r(b)}report.json`],
+    [r(b) + "report.md", ["text/markdown"], `public${r(b)}report.md`],
+    [r(a), ["text/html"], `public${r(a)}index.html`],
+    [r(a) + "calls/1/out/a.png", ["image/png"], `public${r(a)}calls/1/out/a.png`],
+    [r(a) + "calls/2/out/b.png", ["image/png"], `public${r(a)}calls/2/out/b.png`],
+    [r(a) + "report.json", ["application/json"], `public${r(a)}report.json`],
+    [r(a) + "report.md", ["text/markdown"], `public${r(a)}report.md`],
+  ], "runs by id, files by path");
+  assert.equal(firstFigure(m), r(a) + "calls/1/out/a.png");
+});
+
+test("F-005 (D9): robotsVerdict — noindex required while not launched, X-Robots-Tag absent after launch", () => {
+  assert.equal(robotsVerdict("noindex", false).ok, true);
+  assert.equal(robotsVerdict(" NoIndex ", false).ok, true);
+  for (const v of [null, "", "nofollow", "noindex, nofollow", "none"]) assert.equal(robotsVerdict(v, false).ok, false, String(v));
+  assert.equal(robotsVerdict(null, true).ok, true);
+  for (const v of ["noindex", "all", ""]) assert.equal(robotsVerdict(v, true).ok, false, v);
 });
 
 test("parseMcpBody: JSON, the last SSE event, and nothing for other types", () => {
@@ -124,11 +173,18 @@ test("DNS verdicts: DS + AD, CAA issue, exactly one DMARC record", () => {
 });
 
 // ---- whole runs against a local mock ----
-const TYPES = { ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml; charset=utf-8", ".webp": "image/webp", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".html": "text/html; charset=utf-8", ".pdf": "application/pdf" };
+const TYPES = { ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml; charset=utf-8", ".webp": "image/webp", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".html": "text/html; charset=utf-8", ".pdf": "application/pdf", ".png": "image/png" };
 const ext = (p) => p.slice(p.lastIndexOf("."));
 
-function mockSite(faults = {}) {
-  const csp = expectedCsp(file("public/_headers").toString());
+// `root` is the site the mock serves (this checkout, or a scratch site with published runs). Under
+// /projects/ it applies public/_headers as Cloudflare does: each matching rule's CSP, and the
+// /projects/* X-Robots-Tag while that rule exists. `faults.projects` breaks one /projects response.
+function mockSite(faults = {}, root = ROOT) {
+  const file = (f) => readFileSync(join(root, f));
+  const headersText = file("public/_headers").toString();
+  const csp = expectedCsp(headersText);
+  const robots = /^\/projects\/\*\n {2}X-Robots-Tag: noindex$/m.test(headersText);
+  const pf = faults.projects ?? {};
   const base = { "strict-transport-security": "max-age=31536000; includeSubDomains", "x-content-type-options": "nosniff" };
   const allow = { limit: async () => ({ success: true }) };
   const env = {
@@ -167,27 +223,47 @@ function mockSite(faults = {}) {
     }
     if (url.pathname.startsWith("/fonts/does-not-exist"))
       return send(404, { "content-type": "text/html", ...(faults.fontCsp ? { "content-security-policy": "default-src 'none', default-src 'none'" } : {}) }, file("public/404.html"));
+    // F-005: the headers Cloudflare's _headers rules add under /projects/, then the faults.
+    const p = url.pathname;
+    const projectHeaders = (status) => {
+      if (!p.startsWith("/projects/")) return {};
+      const out = {};
+      const own = status === 200 ? expectedCsp(headersText, p) : null;
+      const policies = pf.csp && p === pf.csp.path ? pf.csp.value : own;
+      if (policies) out["content-security-policy"] = policies;
+      if ((robots && p !== pf.noRobots) || pf.robots) out["x-robots-tag"] = "noindex";
+      return out;
+    };
+    if (pf.notFound404 === "ok" && p.startsWith("/projects/research-agent/runs/20000101T000000Z-000000/"))
+      return send(200, { "content-type": "text/html; charset=utf-8" }, file("public/projects/index.html"));
+    if (pf.notFound404 === "csp" && p.startsWith("/projects/research-agent/runs/20000101T000000Z-000000/"))
+      return send(404, { "content-type": "text/html", "content-security-policy": "default-src 'none', default-src 'none'" }, file("public/404.html"));
     try {
       // Like the asset server's html_handling: /cv serves cv.html.
       if (faults.noPrivacy && url.pathname === "/privacy") throw new Error("missing");
+      if (pf.missing === p) throw new Error("missing");
       const path = url.pathname === "/cv" ? "/cv.html" : url.pathname === "/privacy" ? "/privacy.html"
         : url.pathname.endsWith("/") ? url.pathname + "index.html"
-        : url.pathname.startsWith("/writing/") && !url.pathname.includes(".") ? url.pathname + ".html" : url.pathname;
+        : /^\/(writing|projects)\//.test(url.pathname) && !url.pathname.includes(".") ? url.pathname + ".html" : url.pathname;
       let body = file("public" + path);
       if (faults.emptyImages && /\.(webp|jpg|ico)$/.test(url.pathname)) body = Buffer.alloc(0);
-      return send(200, { "content-type": TYPES[ext(path)] ?? "application/octet-stream" }, body);
+      if (pf.bytes === p) body = Buffer.concat([body, Buffer.from(" ")]);
+      const type = pf.type?.path === p ? pf.type.value : TYPES[ext(path)] ?? "application/octet-stream";
+      return send(200, { "content-type": type, ...projectHeaders(200) }, body);
     } catch {
-      return send(404, { "content-type": "text/html" }, file("public/404.html"));
+      return send(404, { "content-type": "text/html", ...projectHeaders(404) }, file("public/404.html"));
     }
   });
 }
 
-async function runSmoke(faults, args = []) {
-  const server = mockSite(faults);
+// `root` is the checkout smoke.mjs compares against: this one, or a scratch site holding its own copy
+// of smoke.mjs (which reads the files next to it).
+async function runSmoke(faults, args = [], root = ROOT) {
+  const server = mockSite(faults, root);
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   try {
     const { port } = server.address();
-    return await new Promise((resolve) => execFile(process.execPath, [join(ROOT, "smoke.mjs"), `http://127.0.0.1:${port}`, ...args], { timeout: 60_000 }, (err, stdout) =>
+    return await new Promise((resolve) => execFile(process.execPath, [join(root, "smoke.mjs"), `http://127.0.0.1:${port}`, ...args], { timeout: 60_000 }, (err, stdout) =>
       resolve({ code: err ? err.code : 0, lines: stdout.split("\n"), fails: stdout.split("\n").filter((l) => l.startsWith("FAIL")) })));
   } finally { server.close(); }
 }
@@ -239,4 +315,135 @@ test("smoke FAILs each false-PASS case from the round-2 review", async () => {
     assert.equal(r.code, 1, `${JSON.stringify(f)}: exit ${r.code}\n${r.lines.join("\n")}`);
     assert.ok(r.fails.some((l) => pattern.test(l)), `${JSON.stringify(f)}: no FAIL matching ${pattern}\n${r.fails.join("\n")}`);
   });
+});
+
+// ---- F-005: /projects against a scratch site with synthetic runs published ----
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname } from "node:path";
+import { build } from "../build.mjs";
+import { report, scorecard, dump, sha, png } from "./projects-helpers.mjs";
+
+const TODAY = "2026-11-12";
+const RUN_A = "20261111T140100Z-000001", RUN_B = "20261111T140200Z-000002";
+const FIG_1 = "calls/1/out/vol_by_minute.png", FIG_2 = "calls/2/out/spread.png";
+const SIDE = { title: "Research agent", summary: "A synthetic side-project entry.", url: "/projects/research-agent" };
+const SIDE_CARD = `<li>
+            <article aria-labelledby="s-03-h">
+              <span class="label">S-03</span>
+              <h3 id="s-03-h"><a href="/projects/research-agent">${SIDE.title}</a></h3>
+              <p>${SIDE.summary}</p>
+            </article>
+          </li>
+        </ul>`;
+
+// A scratch copy of this site with two synthetic runs (A with no figures, B with two) and the
+// fixture scorecard recorded in published.json, built, and with its own smoke.mjs. `launched`
+// also makes the launch PR's content.json and index.html edits. Hand-made fixtures only.
+function projectsSite({ launched = false } = {}) {
+  const base = mkdtempSync(join(tmpdir(), "smoke-projects-"));
+  const root = join(base, "site");
+  mkdirSync(root);
+  for (const f of ["content.json", "cv.json", "build-state.json", "writing", "public", "projects", "smoke.mjs", "lib"]) cpSync(join(ROOT, f), join(root, f), { recursive: true });
+  const put = (f, b) => { mkdirSync(dirname(join(root, f)), { recursive: true }); writeFileSync(join(root, f), b); };
+  const m = { manifest_version: "1.0.0", runs: {} };
+  for (const [id, figures] of [[RUN_A, {}], [RUN_B, { [FIG_1]: png({ width: 40, height: 30 }), [FIG_2]: png({ width: 20, height: 10 }) }]]) {
+    const doc = report();
+    doc.run_id = id;
+    doc.figures = Object.keys(figures);
+    const files = { "report.json": Buffer.from(dump(doc)), "report.md": Buffer.from("# Report\n\nSynthetic result.\n"), ...figures };
+    for (const [f, b] of Object.entries(files)) put(`projects/research-agent/runs/${id}/${f}`, b);
+    m.runs[id] = { checked: TODAY, export_digest: "a".repeat(64), tool_version: "0.1.0", exported_at: "2026-11-11T15:04:05Z",
+      files: Object.fromEntries(Object.entries(files).sort().map(([f, b]) => [f, sha(b)])), alt: Object.fromEntries(Object.keys(figures).map((f) => [f, "A synthetic chart."])) };
+  }
+  const card = Buffer.from(dump(scorecard()));
+  put("projects/research-agent/scorecard/scorecard.json", card);
+  m.scorecard = { eval_id: scorecard().eval_id, checked: TODAY, export_digest: "b".repeat(64), tool_version: "0.1.0", exported_at: "2026-11-11T16:00:00Z", files: { "scorecard.json": sha(card) } };
+  put("projects/research-agent/published.json", JSON.stringify(m, null, 2) + "\n");
+  if (launched) {
+    const c = JSON.parse(readFileSync(join(root, "content.json"), "utf8"));
+    c.pages.projects.launched = true;
+    delete c.pages.projects._status;
+    c.side_projects.push(SIDE);
+    writeFileSync(join(root, "content.json"), JSON.stringify(c, null, 2) + "\n");
+    const html = readFileSync(join(root, "public/index.html"), "utf8");
+    writeFileSync(join(root, "public/index.html"), html.replace(/(<section id="side-projects"[\s\S]*?)<\/ul>/, (x, a) => a + SIDE_CARD));
+  }
+  const r = build({ root, today: TODAY, now: Date.parse("2026-11-12T12:00:00Z") });
+  assert.deepEqual(r.errors, []);
+  return { root, done: () => rmSync(base, { recursive: true, force: true }) };
+}
+
+const runPath = (id, f = "") => `/projects/research-agent/runs/${id}/${f}`;
+const PROJECT_PATHS = ["/projects/", "/projects/index.md", "/projects/research-agent", "/projects/research-agent.md",
+  runPath(RUN_A), runPath(RUN_A, "report.json"), runPath(RUN_A, "report.md"),
+  runPath(RUN_B), runPath(RUN_B, FIG_1), runPath(RUN_B, FIG_2), runPath(RUN_B, "report.json"), runPath(RUN_B, "report.md")];
+const ROBOTS_PATHS = ["/projects/research-agent", "/projects/research-agent.md", runPath(RUN_B, FIG_1)];
+const passes = (r, pattern) => r.lines.some((l) => l.startsWith("PASS ") && pattern.test(l));
+const re = (s) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
+test("F-005 (US-3, D9): smoke on the repository as it is (no runs, launched false) checks the four /projects paths, the showcase CSP, the 404 and noindex", async () => {
+  const r = await runSmoke({});
+  assert.deepEqual(r.fails, [], r.lines.join("\n"));
+  for (const p of PROJECT_PATHS.slice(0, 4)) assert.ok(passes(r, re(`${p}: 200 `)), `${p}\n${r.lines.join("\n")}`);
+  assert.ok(passes(r, /\/projects\/research-agent: exactly one CSP, = public\/_headers/), r.lines.join("\n"));
+  assert.ok(passes(r, /runs\/20000101T000000Z-000000\/: 404, at most one CSP/), r.lines.join("\n"));
+  for (const p of ROBOTS_PATHS.slice(0, 2)) assert.ok(passes(r, re(`${p}: X-Robots-Tag: noindex`)), p);
+  assert.ok(!r.lines.some((l) => /\.png: X-Robots-Tag/.test(l)), "no figure published, so no figure checked");
+});
+
+test("F-005 (US-3, D9): smoke against a correct dark deploy with runs: every page, run file and figure 200 and deployed = repo, noindex on the first figure, no FAIL", async () => {
+  const s = projectsSite();
+  try {
+    const r = await runSmoke({}, [], s.root);
+    assert.deepEqual(r.fails, [], r.lines.join("\n"));
+    assert.equal(r.code, 0);
+    for (const p of PROJECT_PATHS) assert.ok(passes(r, re(`${p}: 200 `)) && r.lines.some((l) => l.startsWith(`PASS ${p}: 200 `) && /deployed = repo/.test(l)), `${p}\n${r.lines.join("\n")}`);
+    for (const p of ROBOTS_PATHS) assert.ok(passes(r, re(`${p}: X-Robots-Tag: noindex`)), `${p}\n${r.lines.join("\n")}`);
+    assert.ok(!r.lines.some((l) => l.includes(FIG_2) && /X-Robots-Tag/.test(l)), "only the first figure is checked for noindex");
+  } finally { s.done(); }
+});
+
+test("F-005 (US-3, D9): smoke FAILs a dark deploy broken one way at a time", async () => {
+  const s = projectsSite();
+  try {
+    const showcase = "/projects/research-agent";
+    const cases = [
+      [{ missing: "/projects/index.md" }, /\/projects\/index\.md: 200/],
+      [{ bytes: showcase }, re(`${showcase}: 200`)],
+      [{ type: { path: "/projects/research-agent.md", value: "text/plain" } }, /\/projects\/research-agent\.md: 200/],
+      [{ missing: runPath(RUN_A) }, re(`${runPath(RUN_A)}: 200`)],
+      [{ type: { path: runPath(RUN_A, "report.json"), value: "text/plain" } }, re(`${runPath(RUN_A, "report.json")}: 200`)],
+      [{ bytes: runPath(RUN_A, "report.md") }, re(`${runPath(RUN_A, "report.md")}: 200`)],
+      [{ bytes: runPath(RUN_B, FIG_2) }, re(`${runPath(RUN_B, FIG_2)}: 200`)],
+      [{ type: { path: runPath(RUN_B, FIG_1), value: "application/octet-stream" } }, re(`${runPath(RUN_B, FIG_1)}: 200`)],
+      [{ csp: { path: showcase, value: null } }, /research-agent: exactly one CSP/],
+      [{ csp: { path: showcase, value: "default-src 'none'" } }, /research-agent: exactly one CSP/],
+      [{ csp: { path: showcase, value: "default-src 'none', default-src 'none'" } }, /research-agent: exactly one CSP/],
+      [{ notFound404: "ok" }, /20000101T000000Z-000000\/: 404/],
+      [{ notFound404: "csp" }, /20000101T000000Z-000000\/: 404/],
+      ...ROBOTS_PATHS.map((p) => [{ noRobots: p }, re(`${p}: X-Robots-Tag: noindex`)]),
+    ];
+    const results = await Promise.all(cases.map(([f]) => runSmoke({ projects: f }, [], s.root)));
+    results.forEach((r, k) => {
+      const [f, pattern] = cases[k];
+      assert.equal(r.code, 1, `${JSON.stringify(f)}: exit ${r.code}\n${r.lines.join("\n")}`);
+      assert.ok(r.fails.some((l) => pattern.test(l)), `${JSON.stringify(f)}: no FAIL matching ${pattern}\n${r.fails.join("\n")}`);
+      assert.equal(r.fails.length, 1, `${JSON.stringify(f)}: only its own check fails\n${r.fails.join("\n")}`);
+    });
+  } finally { s.done(); }
+});
+
+test("F-005 (D9): after launch, smoke requires X-Robots-Tag absent on the showcase, its Markdown and the first figure, and FAILs when it is there", async () => {
+  const s = projectsSite({ launched: true });
+  try {
+    assert.doesNotMatch(readFileSync(join(s.root, "public/_headers"), "utf8"), /X-Robots-Tag/);
+    const ok = await runSmoke({}, [], s.root);
+    assert.deepEqual(ok.fails, [], ok.lines.join("\n"));
+    for (const p of ROBOTS_PATHS) assert.ok(passes(ok, re(`${p}: no X-Robots-Tag (launched)`)), `${p}\n${ok.lines.join("\n")}`);
+    const bad = await runSmoke({ projects: { robots: true } }, [], s.root);
+    assert.equal(bad.code, 1);
+    for (const p of ROBOTS_PATHS) assert.ok(bad.fails.some((l) => re(`${p}: no X-Robots-Tag (launched)`).test(l)), `${p}\n${bad.fails.join("\n")}`);
+    assert.equal(bad.fails.length, ROBOTS_PATHS.length, bad.fails.join("\n"));
+  } finally { s.done(); }
 });
