@@ -77,24 +77,26 @@ Nothing reaches this page straight from a run. A publish command checks a finish
 ## Eval scorecard
 
 - Date: 2026-11-12
-- Repeats per question: 5
+- Runs: 50 runs: 10 questions × 5
 - Harness: Claude Code harness (50)
 - Models: analyst claude-code:claude-sonnet-5-5, critic claude-code:claude-opus-5-5
 - Seed: 20261111
-- Aggregate: 0.90 ± 0.06
+- Score: 0.90 (standard error 0.06)
 
-| Question | Correct | Trap recall | Critic precision |
-|---|---|---|---|
-| open_vol_uplift | 5 / 5 | n/a | n/a |
-| open_vol_uplift_pct_change | 5 / 5 | n/a | n/a |
-| open_vol_uplift_15m | 5 / 5 | n/a | n/a |
-| afternoon_vol_ratio | 0 / 5 | n/a | n/a |
-| tuesday_drift | 5 / 5 | n/a | n/a |
-| thursday_drift | 5 / 5 | n/a | n/a |
-| monday_drift | 5 / 5 | n/a | n/a |
-| total_return | 5 / 5 | n/a | n/a |
-| return_2024 | 5 / 5 | n/a | n/a |
-| largest_session_move | 5 / 5 | n/a | n/a |
+| Question | Correct | Trap handled | Trap recall | Critic precision |
+|---|---|---|---|---|
+| `open_vol_uplift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+| `open_vol_uplift_pct_change` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+| `open_vol_uplift_15m` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+| `afternoon_vol_ratio` | 0 / 5 | no planted trap | no trap reached the critic | the critic flagged no trap |
+| `tuesday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged no trap |
+| `thursday_drift` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+| `monday_drift` | 5 / 5 | no planted trap | no trap reached the critic | the critic flagged no trap |
+| `total_return` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+| `return_2024` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+| `largest_session_move` | 5 / 5 | 5 / 5 | no trap reached the critic | the critic flagged no trap |
+
+In these 50 eval runs the analyst avoided every planted trap itself, so the critic had nothing to catch. That is why trap recall and critic precision are not defined for this run set. The recorded runs on this page are separate runs.
 
 ## Recorded runs
 
