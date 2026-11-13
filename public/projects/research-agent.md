@@ -242,7 +242,7 @@ If that isn't enough, v1.5.0 would have the analysis tool report facts about the
 
 ### Guarding against tuning to the test
 
-The fixes have to work beyond the eval set. The model may be given facts that every dataset carries, such as its timezone, session and contract switches. The critic checklist names trap categories, which is shared domain knowledge given to both harnesses. No prompt may name a specific eval question or trap, and a test already blocks eval answers in prompts. The held-out questions, on another instrument and session, will never be used for tuning and will be reported apart from the eval set's, so they will test whether the fixes generalise.
+The fixes have to work beyond the eval set. The model may be given facts that every dataset carries, such as its timezone, session and contract switches. The critic checklist describes trap categories, including the CME roll rule, as shared domain knowledge given to both harnesses. No prompt may name a specific eval question or trap, and a test already blocks eval answers in prompts. The held-out questions, on another instrument and session, will never be used for tuning and will be reported apart from the eval set's, so they will test whether the fixes generalise.
 
 ### Results
 
@@ -253,7 +253,7 @@ To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then
 | v1.4.0 | gpt-oss:20b alone, one run per question | to come |
 | v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, one run per question | to come |
 | v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, five runs per question | to come |
-| v1.5.0 | the analysis tool reports facts about the data it used | only if needed |
+| v1.5.0 | the analysis tool reporting facts about the data it used | only if needed |
 
 ## With more time
 
@@ -269,7 +269,7 @@ I designed an unattended verification runner for my own machine and dropped it a
 
 ### Run the full LangGraph eval with hosted models
 
-The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The ten hosted-critic runs so far had a spend guard that would have stopped the experiment if OpenAI usage passed 3 million input or 300,000 output tokens. They used about 68,000 input and 38,000 output tokens. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
+The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The ten hosted-critic runs so far had a one-off spend guard set for that experiment, a guard on the whole experiment rather than a cap on each critic call: it would have stopped the experiment if OpenAI usage passed 3 million input or 300,000 output tokens. They used about 68,000 input and 38,000 output OpenAI tokens. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling built into the harness first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
 
 ### Add a canary on real market data
 
