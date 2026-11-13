@@ -160,7 +160,7 @@ I designed an unattended verification runner for my own machine and dropped it a
 
 ### Run the LangGraph eval with paid models
 
-During development the project uses no paid model API. The graph is tested with fake models and has had one pass with local open models, reported at the end of this section. The Claude Code harness runs on a subscription. Running the eval through the graph with paid models is a deliberate later step, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
+During development the project uses no paid model API. The graph is tested with fake models and has had one trial with local open models, reported at the end of this section. The Claude Code harness runs on a subscription. Running the eval through the graph with paid models is a deliberate later step, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
 
 ### Add a canary on real market data
 
@@ -184,7 +184,7 @@ The verification plan is sized to fit the free CI minutes. It uses one job inste
 
 ### Local models on a DGX Spark
 
-On 13 November 2026 I ran the LangGraph pipeline on the same eval questions with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.
+On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.
 
 | Model | Correct | Median minutes | Main failure |
 |---|---|---|---|
@@ -198,7 +198,7 @@ On 13 November 2026 I ran the LangGraph pipeline on the same eval questions with
 
 Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five models that ran every question were correct. The Claude Code harness scored 0.90 on this set, but with five runs per question and different models and prompts, so the two are not like-for-like.
 
-Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. The critic is what most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.
+Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. Among the local models, the critic is what most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.
 
 ---
 

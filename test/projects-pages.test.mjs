@@ -1264,7 +1264,12 @@ test("F-005: 'With more time' ends with the local-model results: intro, a stacki
     assert.ok(sec.indexOf(`<div class="scroll" role="region" aria-label="${lm.heading}" tabindex="0">\n<table class="scorecard-stack" role="table">`) > h3, "the scorecard's stacking table, in the scroll wrapper");
     const rows = [...sec.slice(h3).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => visible(c[1])));
     assert.deepEqual(rows, [lm.columns, ...lm.rows]);
-    assert.ok(sec.includes(`<th scope="row" role="rowheader"><code>${lm.rows[0][0]}</code></th><td role="cell" data-label="${lm.columns[1]}">`), "model id in code style; each cell names its column");
+    const trs = [...sec.slice(h3).matchAll(/<tr role="row">([\s\S]*?)<\/tr>/g)].map((m) => m[1]).slice(1);
+    assert.equal(trs.length, lm.rows.length);
+    trs.forEach((tr, j) => {
+      assert.ok(tr.startsWith(`<th scope="row" role="rowheader"><code>${lm.rows[j][0]}</code></th>`), `row ${j}: model id in code style`);
+      assert.deepEqual([...tr.matchAll(/<td role="cell" data-label="([^"]*)">/g)].map((m) => m[1]), lm.columns.slice(1), `row ${j}: every cell names its column`);
+    });
     const md = out(s, "projects/research-agent.md");
     assert.ok(md.includes(`### ${lm.heading}\n\n${lm.intro}\n\n| ${lm.columns.join(" | ")} |`));
     for (const [m, ...r] of lm.rows) assert.ok(md.includes(`| \`${m}\` | ${r.join(" | ")} |`), m);
