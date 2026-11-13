@@ -222,7 +222,7 @@ test("F-005 (US-1, US-2): /projects/ and /projects/research-agent have the secti
     assert.deepEqual(headings(out(s, SHOWCASE)), [
       `h1 ${sh.heading}`, `h2 ${sh.what_heading}`, `h2 ${sh.architecture_heading}`, ...sh.architecture.map((a) => `h3 ${a.heading}`),
       `h2 ${P.labels.scorecard.heading}`, `h2 ${sh.runs_heading}`, `h3 ${report().question}`, `h2 ${sh.built_heading}`,
-      `h2 ${sh.next_heading}`, ...sh.next.map((n) => `h3 ${n.heading}`),
+      `h2 ${sh.next_heading}`, ...sh.next.map((n) => `h3 ${n.heading}`), `h3 ${sh.local_models.heading}`,
     ]);
     const lead = visible(body(out(s, SHOWCASE)).match(/<p class="lead">[\s\S]*?<\/p>\s*<p>([\s\S]*?)<\/p>/)[1]);
     assert.equal(lead, sh.code, "the lead, then 'The code is available on request'");
@@ -412,7 +412,7 @@ test("F-005 (US-2): the scorecard is one table, a row per question (id in code s
   try {
     ok(publish(s, [], { card: scorecard() }));
     const h = out(s, SHOWCASE), c = P.labels.scorecard;
-    assert.equal(body(h).match(/<table\b/g).length, 1, "one table");
+    assert.equal(scoreSection(h).match(/<table\b/g).length, 1, "one table");
     assert.deepEqual(scoreTable(h), [
       [c.columns.question, c.columns.correct, c.columns.trap_handled, c.columns.trap_recall, c.columns.critic_precision],
       ["open-vol", "2 / 2", c.no_trap, c.no_trap, c.no_trap], // no planted trap: the same words in all three trap cells
@@ -1246,11 +1246,31 @@ test("F-005: a duplicate id across the inlined diagrams fails the build", () => 
   } finally { s.done(); }
 });
 
-test("F-005: the 'With more time' section claims no results and quotes no scores", () => {
+test("F-005: the next steps in 'With more time' claim no results and quote no scores (the local-model results are their own subsection)", () => {
   const sh = P.copy.showcase;
   const text = [sh.next_intro, ...sh.next.flatMap((n) => [n.heading, n.text])].join("\n");
   assert.doesNotMatch(text, /\d+\s*%|\d+\s*\/\s*\d+|scored? \d/, "no scorecard numbers");
   assert.ok(sh.next.length >= 5);
+});
+
+test("F-005: 'With more time' ends with the local-model results: intro, a stacking table in the scroll wrapper, then the text, and the same in the Markdown twin", () => {
+  const s = site();
+  try {
+    ok(publish(s, []));
+    const lm = P.copy.showcase.local_models;
+    const sec = body(out(s, SHOWCASE)).match(/<section aria-labelledby="next-h">[\s\S]*?<\/section>/)[0];
+    const h3 = sec.indexOf(`<h3>${lm.heading}</h3>`);
+    assert.ok(h3 > sec.lastIndexOf(`<h3>${P.copy.showcase.next.at(-1).heading}</h3>`), "after the last next step");
+    assert.ok(sec.indexOf(`<div class="scroll" role="region" aria-label="${lm.heading}" tabindex="0">\n<table class="scorecard-stack" role="table">`) > h3, "the scorecard's stacking table, in the scroll wrapper");
+    const rows = [...sec.slice(h3).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => visible(c[1])));
+    assert.deepEqual(rows, [lm.columns, ...lm.rows]);
+    assert.ok(sec.includes(`<th scope="row" role="rowheader"><code>${lm.rows[0][0]}</code></th><td role="cell" data-label="${lm.columns[1]}">`), "model id in code style; each cell names its column");
+    const md = out(s, "projects/research-agent.md");
+    assert.ok(md.includes(`### ${lm.heading}\n\n${lm.intro}\n\n| ${lm.columns.join(" | ")} |`));
+    for (const [m, ...r] of lm.rows) assert.ok(md.includes(`| \`${m}\` | ${r.join(" | ")} |`), m);
+    for (const t of lm.text) assert.ok(md.includes(t));
+    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0].pop(); })).some((e) => /local_models\.rows\.0 must have one cell per column/.test(e)));
+  } finally { s.done(); }
 });
 
 test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {

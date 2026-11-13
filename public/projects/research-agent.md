@@ -182,6 +182,24 @@ The agent already fixes its test in a plan before any analysis runs, and the cri
 
 The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure.
 
+### Local models on a DGX Spark
+
+I ran the LangGraph pipeline on the same eval questions with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes.
+
+| Model | Correct | Median minutes | Main failure |
+|---|---|---|---|
+| `gpt-oss-20b` | 3 / 10 | 6 | planted traps: contract roll (3), timezone (2) |
+| `gpt-oss-120b` | 3 / 10 | 6.5 | planted traps, and malformed plans |
+| `qwen3:30b-a3b` | 2 / 10 | 12 | cut off at the token cap, and planted traps |
+| `gemma4:26b` | 0 / 10 | 10 | planner and critic stuck in repetition loops |
+| `qwen2.5:7b` | 0 / 10 | 1 | no answer in 9 of 10 runs |
+| `nemotron-3-nano:30b` | stopped after 1 run | 8 | spent the whole cap on hidden reasoning, so its replies were empty |
+| `nemotron-3-super:120b` | not run | – | did not load on the Spark (timed out twice) |
+
+Most of the local passes came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion; on the other eight questions the local models got about one in eight right. The Claude Code harness scored 0.90 on this set, but over five runs per question in a different harness, so the two are not like-for-like.
+
+Of the local models, gpt-oss-20b is the best option: it matched the 120b's score with about a fifth of the memory, and it was the only one to finish every run. The weak link is the critic: no local critic caught the timezone trap on an open-volatility run, and the contract-roll trap, raised only a few times, never stopped a wrong answer.
+
 ---
 
 Canonical: https://patrickjv.com/projects/research-agent

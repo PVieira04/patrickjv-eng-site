@@ -1047,6 +1047,7 @@ const PROJECTS_SHAPE = {
       heading: "s", lead: "s", code: "s", code_link: "s", what_heading: "s", what: ["s"],
       architecture_heading: "s", architecture_intro: ["s"], architecture: [{ heading: "s", text: ["s"] }],
       runs_heading: "s", built_heading: "s", built: ["s"], next_heading: "s", next_intro: "s", next: [keys("heading", "text")],
+      local_models: { heading: "s", intro: "s", columns: ["s"], rows: [["s"]], text: ["s"] },
     },
   },
   templates: Object.fromEntries(Object.keys(TEMPLATE_VARS).map((k) => [k, "s"])),
@@ -1083,6 +1084,8 @@ export function checkProjectsCopy(p) {
     for (const [, k] of t.matchAll(/\{([^{}]*)\}/g)) if (!TEMPLATE_VARS[name].includes(k)) errors.push(`${where(`templates.${name}`)} uses {${k}}, which isn't one of its placeholders (${TEMPLATE_VARS[name].map((x) => `{${x}}`).join(", ") || "none"})`);
     if (/[{}]/.test(t.replace(/\{([a-z_]+)\}/g, (m, k) => (TEMPLATE_VARS[name].includes(k) ? "" : m)))) errors.push(`${where(`templates.${name}`)} has a { or } left after its placeholders are filled`);
   }
+  const lm = p?.copy?.showcase?.local_models;
+  if (Array.isArray(lm?.columns) && Array.isArray(lm?.rows)) lm.rows.forEach((r, i) => { if (Array.isArray(r) && r.length !== lm.columns.length) errors.push(`${where(`copy.showcase.local_models.rows.${i}`)} must have one cell per column (${lm.columns.length})`); });
   if (p?.copy?.showcase && typeof p.copy.showcase.code === "string" && typeof p.copy.showcase.code_link === "string" && !p.copy.showcase.code.includes(p.copy.showcase.code_link)) errors.push(`${where("copy.showcase.code_link")} must be part of copy.showcase.code (it becomes the link to /book)`);
   return errors;
 }
