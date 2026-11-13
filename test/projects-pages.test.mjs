@@ -202,7 +202,7 @@ const out = (s, f) => readFileSync(join(s.root, "public", f), "utf8");
 const runPage = (s, id) => out(s, `projects/research-agent/runs/${id}/index.html`);
 const SHOWCASE = "projects/research-agent.html";
 // The visible text of a page: tags removed (style, script and the SVG title dropped), entities decoded.
-const visible = (html) => decodeEntities(html.replace(/<(style|script|title)[^>]*>[\s\S]*?<\/\1>/g, " ").replace(/<\/?(a|strong|span|em|code)\b[^>]*>/g, "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+const visible = (html) => decodeEntities(html.replace(/<(style|script|title)[^>]*>[\s\S]*?<\/\1>/g, " ").replace(/<\/?(a|strong|span|em|code|wbr)\b[^>]*>/g, "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 // The run set where the analyst fell into no trap: every trap question handled on every repeat,
 // no trapped pass (reviewed or not), no unscored pass, no null repeat, and no issue from the critic.
 const cleanTraps = (d) => { for (const q of d.questions) { q.trap_recall = { x: 0, n: 0 }; q.critic_precision = { x: 0, n: 0 }; q.unreviewed_trap_passes = 0; q.unscored_passes = 0; q.other_issues = {}; if (q.trap_handled !== null) q.trap_handled = q.n_repeats; }
@@ -1261,14 +1261,15 @@ test("F-005: 'With more time' ends with the local-model results: intro, a stacki
     const sec = body(out(s, SHOWCASE)).match(/<section aria-labelledby="next-h">[\s\S]*?<\/section>/)[0];
     const h3 = sec.indexOf(`<h3>${lm.heading}</h3>`);
     assert.ok(h3 > sec.lastIndexOf(`<h3>${P.copy.showcase.next.at(-1).heading}</h3>`), "after the last next step");
-    assert.ok(sec.indexOf(`<div class="scroll" role="region" aria-label="${lm.heading}" tabindex="0">\n<table class="scorecard-stack" role="table">`) > h3, "the scorecard's stacking table, in the scroll wrapper");
+    assert.ok(sec.indexOf(`<div class="scroll" role="region" aria-label="${lm.heading}" tabindex="0">\n<table class="scorecard-stack local-models" role="table">`) > h3, "the scorecard's stacking table, in the scroll wrapper");
     const rows = [...sec.slice(h3).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => visible(c[1])));
     const plain = (c) => c.replaceAll("`", "");
     assert.deepEqual(rows, [lm.columns, ...lm.rows.map((r) => [plain(r[0]), ...r.slice(1)])]);
     const trs = [...sec.slice(h3).matchAll(/<tr role="row">([\s\S]*?)<\/tr>/g)].map((m) => m[1]).slice(1);
     assert.equal(trs.length, lm.rows.length);
     trs.forEach((tr, j) => {
-      const m = lm.rows[j][0], head = m.includes("`") ? m.split("`").map((x, i) => (i % 2 ? `<code>${x}</code>` : x)).join("") : `<code>${m}</code>`;
+      const id = (x) => `<code>${x.split(/(?<=:)/).map((part) => `<span>${part}</span>`).join("<wbr>")}</code>`;
+      const m = lm.rows[j][0], head = m.includes("`") ? m.split("`").map((x, i) => (i % 2 ? id(x) : x)).join("") : id(m);
       assert.ok(tr.startsWith(`<th scope="row" role="rowheader">${head}</th>`), `row ${j}: model ids in code style`);
       assert.deepEqual([...tr.matchAll(/<td role="cell" data-label="([^"]*)">/g)].map((m) => m[1]), lm.columns.slice(1), `row ${j}: every cell names its column`);
     });
@@ -1276,7 +1277,7 @@ test("F-005: 'With more time' ends with the local-model results: intro, a stacki
     assert.ok(md.includes(`### ${lm.heading}\n\n${lm.intro}\n\n| ${lm.columns.join(" | ")} |`));
     for (const [m, ...r] of lm.rows) assert.ok(md.includes(`| ${m.includes("`") ? m : `\`${m}\``} | ${r.join(" | ")} |`), m);
     assert.ok(lm.rows.some((r) => r[0].includes("`")), "the hybrid row code-styles only its model ids");
-    assert.ok(sec.includes("<code>gpt-oss:20b</code> + <code>gpt-5.6-sol</code> critic</th>"));
+    assert.ok(sec.includes("<code><span>gpt-oss:</span><wbr><span>20b</span></code> + <code><span>gpt-5.6-sol</span></code> critic</th>"), "ids break only after a colon");
     for (const t of lm.text) assert.ok(md.includes(t));
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0].pop(); })).some((e) => /local_models\.rows\.0 must have one cell per column/.test(e)));
     assert.deepEqual(checkProjectsCopy(P), []);
