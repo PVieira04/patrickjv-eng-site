@@ -1270,7 +1270,7 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     assert.deepEqual(SHOWCASE_TABLES.map((t) => t.path), ["phase1.local_models", "phase2.hybrid", "phase2.harness", "phase2.results"]);
     for (const { path, model, version } of SHOWCASE_TABLES) {
       const t = path.split(".").reduce((o, k) => o[k], P.copy.showcase), sec = page.match(new RegExp(`<section aria-labelledby="${path.split(".")[0]}-h">[\\s\\S]*?</section>\\n(?=<section aria-labelledby="(phase2|next)-h">)`))[0];
-      const label = t.heading ?? P.copy.showcase.phase2.results_heading;
+      const label = t.heading ?? "Phase 2 results";
       const start = t.heading ? sec.indexOf(`<h4>${t.heading}</h4>\n<p>${t.intro}</p>\n`) : sec.indexOf(`<p>${t.intro}</p>\n`);
       assert.ok(start >= 0, `${path}: heading and intro`);
       const wrap = sec.indexOf(`<div class="scroll" role="region" aria-label="${label}" tabindex="0">\n<table class="scorecard-stack${model ? " local-models" : ""}" role="table">`, start);
@@ -1311,12 +1311,15 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     const p2 = P.copy.showcase.phase2;
     assert.match(P.copy.showcase.phase1.intro.join(" "), /v1\.0\.0 to v1\.2\.0/);
     assert.ok(lm.rows.every((r) => r[1] === "v1.1.0"), "the overnight local runs are v1.1.0");
-    assert.match(p2.intro.join(" "), /starts at research-agent v1\.3\.0/);
+    assert.match(p2.intro.join(" "), /starts with the v1\.3\.0 work/);
     assert.deepEqual(hybrid.rows.map((r) => r[1]), ["v1.3.0"]);
-    assert.match(p2.harness.intro, /at v1\.3\.0/);
+    assert.match(hybrid.intro, /on an early build of v1\.3\.0, before its review fixes/, "the hybrid run predates v1.3.0's review fixes");
+    assert.match(p2.harness.intro, /at v1\.2\.0, before per-role routing merged/);
     assert.equal(p2.scope_heading, "Scope of v1.4.0");
     assert.match(p2.scope.text.join(" "), /v1\.5\.0 would have the analysis tool report facts/);
     assert.deepEqual(p2.results.rows.map((r) => r[0]), ["v1.4.0", "v1.4.0", "v1.4.0", "v1.5.0"]);
+    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v01.4.0"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a leading zero fails");
+    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v1.4.0+dev"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a +dev build is not a release");
   } finally { s.done(); }
 });
 
@@ -1331,7 +1334,24 @@ test("F-005: the phases quote the published scorecard's score and k, so a re-rec
   const quoted = [...phases.matchAll(/(?<![\d.])\d\.\d\d(?![\d])/g)].map((m) => m[0]);
   assert.ok(quoted.length >= 3);
   for (const q of quoted) assert.equal(q, fixed2(card.aggregate.score), `a quoted score ${q}`);
+  // When the scorecard names its harness version, the hard-coded label must be that version.
+  const hv = card.fingerprint.config.harness_version;
+  if (hv !== undefined && hv !== null) assert.equal(hv, "v1.0.0", "the scorecard's harness_version matches the page's label");
   assert.match(P.copy.showcase.phase1.showed.join("\n"), new RegExp(`scored ${fixed2(card.aggregate.score).replace(".", "\\.")} at v1\\.0\\.0`));
+});
+
+test("F-005: Phase 1's results name the recorded runs' count and harness, and they come before the scorecard", () => {
+  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const published = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/published.json"), "utf8"));
+  const card = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/scorecard/scorecard.json"), "utf8"));
+  const ids = Object.keys(published.runs);
+  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[ids.length] ?? ids.length} recorded runs, also through the Claude Code harness, were made earlier that day.`), "the count word is the number of published runs");
+  for (const id of ids) {
+    const r = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8"));
+    assert.equal(r.models.harness, "claude-code", `${id}: through the Claude Code harness`);
+    assert.ok(Date.parse(r.finished_at) < Date.parse(card.created_at), `${id}: finished before the scorecard`);
+    assert.equal(r.finished_at.slice(0, 10), card.created_at.slice(0, 10), `${id}: the same day`);
+  }
 });
 
 test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {

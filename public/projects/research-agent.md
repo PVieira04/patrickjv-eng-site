@@ -84,7 +84,7 @@ Can an agent with plan approval, gated tools and a reviewing model answer quant 
 
 ### What was built
 
-v1.0.0 is the system described above: two harnesses over one MCP server, the sandbox, the eval and the publish step. By v1.1.0 I had capped local-model output, because a gpt-oss:120b planning step had run for about 85 minutes until its context filled. With the cap, the longest run took 22 minutes.
+v1.0.0 is the system described above: two harnesses over one MCP server, the sandbox, the eval and the publish step. v1.1.0 changed the analyst prompt and capped local-model output, because a gpt-oss:120b planning step had run for about 85 minutes until its context filled. With the cap, the longest run took 22 minutes. v1.2.0 fixed retries after a cut-off and the run budget, and has no runs of its own.
 
 Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.
 
@@ -96,11 +96,11 @@ Both harnesses answered the same eval questions on the seeded synthetic dataset,
 
 The open models ran through the LangGraph pipeline, served by Ollama on a DGX Spark, one run per question. Each local-model call was capped at 8,192 output tokens and each run at 30 minutes.
 
-Two questions, monday_drift and thursday_drift, have a wide absolute tolerance, sized for their traps, so a near-zero answer can pass on its conclusion.
+monday_drift and thursday_drift have a wide absolute tolerance, so a near-zero answer can pass on its conclusion.
 
 ### Results
 
-The scorecard is from research-agent v1.0.0, on 12 November 2026. The four recorded runs, also through the Claude Code harness, were made earlier that day, before the v1.0.0 tag. The open-model runs used v1.1.0.
+The scorecard is from research-agent v1.0.0, on 12 November 2026. The four recorded runs, also through the Claude Code harness, were made earlier that day. The open-model runs used v1.1.0.
 
 #### Eval scorecard
 
@@ -182,7 +182,7 @@ On 13 November 2026 I ran the LangGraph pipeline overnight with open models, one
 | `nemotron-3-nano:30b` | v1.1.0 | 0 / 1 (stopped) | 8 | spent the whole cap on hidden reasoning, so its replies were empty |
 | `nemotron-3-super:120b` | v1.1.0 | not run | – | did not load on the Spark (timed out twice) |
 
-Most of the local correct answers came from the Monday and Thursday drift questions. On the other eight questions, 2 of the 40 runs by the five local models that ran every question were correct. I first wrote this as about one in eight, which was wrong. The Claude Code harness scored 0.90 on this set (research-agent v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.
+Most of the local correct answers came from the Monday and Thursday drift questions. On the other eight questions, 2 of the 40 runs by the five local models that ran every question were correct. The Claude Code harness scored 0.90 on this set (research-agent v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.
 
 Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run.
 
@@ -190,11 +190,11 @@ Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's s
 
 Claude was strong. Through the Claude Code harness it scored 0.90 at v1.0.0. Its one miss was afternoon_vol_ratio, where all five runs computed the statistic correctly and drew the wrong conclusion.
 
-The traps beat every local model. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run.
+No local model got past the traps. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run.
 
 ## Phase 2: Diagnose and improve the harness
 
-This phase starts at research-agent v1.3.0, which can give each role a different model.
+This phase starts with the v1.3.0 work, which can give each role a different model.
 
 ### Question
 
@@ -204,7 +204,7 @@ Phase 1 left the local models far behind Claude, with the critic as the weak lin
 
 #### A hosted critic
 
-First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, at v1.3.0, one run per question. I transcribed these figures by hand too.
+First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, one run per question, on an early build of v1.3.0, before its review fixes. At that build the critic had no output cap and used OpenAI's default endpoint. I transcribed these figures by hand too.
 
 | Model | Version | Correct | Median minutes | Main failure |
 |---|---|---|---|---|
@@ -212,11 +212,11 @@ First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's g
 
 The contract roll came up in 3 runs and the critic caught it every time. The analyst fixed it in 2, return_2024 and largest_session_move, and total_return still ended wrong. The timezone trap came up in 2 runs and was never caught, even by the hosted critic. tuesday_drift had exactly the right value, but the run hit the per-pass tool-call cap before it finished.
 
-A stronger critic helps with a trap it can see in the code or the result. It can't catch one it has no facts to check against. Part of its success on the roll comes from the shared critic checklist, which states the CME roll rule in detail. With one run per question, 4 / 10 against 3 / 10 for gpt-oss:20b alone is within noise, and the two ran under different versions.
+A stronger critic helps with a trap it can see in the code or the result. It can't catch one it has no facts to check against. Part of its success on the roll comes from the shared critic checklist, which states the CME roll rule in detail. With one run per question, 4 / 10 against 3 / 10 for gpt-oss:20b alone is within noise, the two ran under different versions, and neither is like-for-like with the 0.90.
 
 #### The two harnesses side by side
 
-Then I read the two harnesses' code side by side at v1.3.0, without running anything. They share the tools, the plan schema, the critic checklist and the caps. The differences are in what surrounds the model.
+Then I read the two harnesses' code side by side at v1.2.0, before per-role routing merged, without running anything. They share the tools, the plan schema, the critic checklist and the per-pass caps. The differences are in what surrounds the model.
 
 | Gap | Claude Code harness | LangGraph pipeline |
 |---|---|---|
@@ -242,17 +242,17 @@ If that isn't enough, v1.5.0 would have the analysis tool report facts about the
 
 ### Guarding against tuning to the test
 
-The fixes have to work beyond the eval set. No prompt may name an eval question or trap, and a test already blocks eval answers in prompts. The held-out questions are never used for tuning, and their results are reported apart from the eval set's.
+The fixes have to work beyond the eval set. The model may be given facts that every dataset carries, such as its timezone, session and contract switches, but no prompt may name a trap or an eval question. A test already blocks eval answers in prompts. The held-out questions, on another instrument and session, are never used for tuning and are reported apart from the eval set's, so they test whether the fixes generalise.
 
 ### Results
 
-To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then make five runs per question for a number comparable with the 0.90.
+To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then give gpt-oss:20b with the hosted critic the same five runs per question as the 0.90.
 
 | Version | Run | Result |
 |---|---|---|
 | v1.4.0 | gpt-oss:20b alone, one run per question | to come |
 | v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, one run per question | to come |
-| v1.4.0 | five runs per question | to come |
+| v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, five runs per question | to come |
 | v1.5.0 | only if v1.4.0 needs it | to come |
 
 ## With more time
@@ -269,7 +269,7 @@ I designed an unattended verification runner for my own machine and dropped it a
 
 ### Run the full LangGraph eval with hosted models
 
-The graph is tested with fake models, and Phase 2 runs it with gpt-oss:20b, alone and with a hosted critic. The step that remains is the full eval through the graph with hosted models, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
+The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The one hosted-critic run so far ran under a token cap set for that experiment. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
 
 ### Add a canary on real market data
 
