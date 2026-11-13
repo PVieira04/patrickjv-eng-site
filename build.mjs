@@ -26,7 +26,7 @@ import { validateConfig, launchedProviders, enabledProviders, signInPhrase, PROV
 import { PROVIDERS } from "./mcp/booking-signin.js";
 import { bookingGuide } from "./lib/booking-guide.mjs";
 import { gzipSync } from "node:zlib";
-import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, parseJson, publishedData, textErrors, ENUMS, MANIFEST, PROJECT } from "./lib/projects.mjs";
+import { readExport, readProjectsTree, checkProjects, loadDenylist, serializeManifest, parseJson, publishedData, textErrors, ENUMS, MANIFEST, PROJECT, RELEASE_VERSION } from "./lib/projects.mjs";
 import { renderProjects, reportHtmlErrors, mdInline, TEMPLATE_VARS } from "./lib/project-pages.mjs";
 
 export const SITE = "https://patrickjv.com/";
@@ -1047,7 +1047,7 @@ export const SHOWCASE_TABLES = [
   { path: "phase2.harness", model: false, version: false },
   { path: "phase2.results", model: false, version: true },
 ];
-export const MODEL_CELL = /^copy\.showcase\.(phase1\.local_models|phase2\.hybrid)\.rows\.\d+\.0$/;
+export const MODEL_CELL = new RegExp(`^copy\\.showcase\\.(${SHOWCASE_TABLES.filter((t) => t.model).map((t) => t.path.replaceAll(".", "\\.")).join("|")})\\.rows\\.\\d+\\.0$`);
 const PROJECTS_SHAPE = {
   launched: "boolean",
   head: { index: keys("title", "description"), showcase: keys("title", "description") },
@@ -1111,7 +1111,7 @@ export function checkProjectsCopy(p) {
     tb.rows.forEach((r, i) => {
       if (!Array.isArray(r)) return;
       if (r.length !== tb.columns.length) errors.push(`${where(`${at}.rows.${i}`)} must have one cell per column (${tb.columns.length})`);
-      if (t.version && vi >= 0 && typeof r[vi] === "string" && !/^v\d+\.\d+\.\d+$/.test(r[vi])) errors.push(`${where(`${at}.rows.${i}.${vi}`)} must be a version like v1.2.0`);
+      if (t.version && vi >= 0 && typeof r[vi] === "string" && !RELEASE_VERSION.test(r[vi])) errors.push(`${where(`${at}.rows.${i}.${vi}`)} must be a version like v1.2.0`);
       if (t.model && typeof r[0] === "string" && (r[0].split("`").length - 1) % 2) errors.push(`${where(`${at}.rows.${i}.0`)} has an unmatched backtick`);
     });
   }

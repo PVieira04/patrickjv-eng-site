@@ -571,6 +571,22 @@ test("F-005 (D3): a report.json from the versioned harness (report schema 1.2.0:
   } finally { s.done(); }
 });
 
+test("F-005 (D3): report.json's optional harness object: version and resumed_version are public versions", () => {
+  const errs = (h) => reportErrors(edit(report(), (d) => { d.harness = h; }));
+  assert.deepEqual(errs({ version: "v1.3.0" }), []);
+  assert.deepEqual(errs({ version: "v1.3.0+dev", resumed_version: "v1.4.0" }), []);
+  assert.deepEqual(reportErrors(report()), [], "absent is fine");
+  for (const [what, h, want] of [
+    ["not an object", "v1.3.0", /harness must be an object/],
+    ["no version", {}, /harness\.version/],
+    ["a commit", { version: "abc1234" }, /harness\.version/],
+    ["a leading zero", { version: "v1.03.0" }, /harness\.version/],
+    ["a dirty flag", { version: "v1.3.0+dirty" }, /harness\.version/],
+    ["a bad resumed_version", { version: "v1.3.0", resumed_version: "1.3.0" }, /harness\.resumed_version/],
+    ["a null resumed_version", { version: "v1.3.0", resumed_version: null }, /harness\.resumed_version/],
+  ]) assert.match(errs(h).join("\n"), want, what);
+});
+
 test("F-005 (D3): patterns and limits — 20 figures, 204,800 bytes and 1,048,576 bytes per run pass; one more of each fails", () => {
   const s = sandbox();
   try {
