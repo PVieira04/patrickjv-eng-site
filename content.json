@@ -355,7 +355,7 @@
           "phase1": {
             "heading": "Phase 1: Build and baseline",
             "intro": [
-              "This phase covers research-agent v1.0.0 to v1.1.1. The measurements were made on 12 and 13 November 2026."
+              "This phase covers research-agent v1.0.0 to v1.2.0. The measurements were made on 12 and 13 November 2026."
             ],
             "question_heading": "Question",
             "question": [
@@ -404,7 +404,7 @@
           },
           "phase2": {
             "heading": "Phase 2: Diagnose and improve the harness",
-            "intro": ["This phase starts at research-agent v1.2.0, which can give each role a different model."],
+            "intro": ["This phase starts at research-agent v1.3.0, which can give each role a different model."],
             "question_heading": "Question",
             "question": [
               "Phase 1 left the local models far behind Claude, with the critic as the weak link. Is that the models, or the harness around them?"
@@ -412,10 +412,10 @@
             "diagnosis_heading": "Diagnosis",
             "hybrid": {
               "heading": "A hosted critic",
-              "intro": "First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, at v1.2.0, one run per question. I transcribed these figures by hand too.",
+              "intro": "First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, at v1.3.0, one run per question. I transcribed these figures by hand too.",
               "columns": ["Model", "Version", "Correct", "Median minutes", "Main failure"],
               "rows": [
-                ["`gpt-oss:20b` + `gpt-5.6-sol` critic", "v1.2.0", "4 / 10", "4.5", "timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2"]
+                ["`gpt-oss:20b` + `gpt-5.6-sol` critic", "v1.3.0", "4 / 10", "4.5", "timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2"]
               ],
               "text": [
                 "The contract roll came up in 3 runs and the critic caught it every time. The analyst fixed it in 2, return_2024 and largest_session_move, and total_return still ended wrong. The timezone trap came up in 2 runs and was never caught, even by the hosted critic. tuesday_drift had exactly the right value, but the run hit the per-pass tool-call cap before it finished.",
@@ -424,7 +424,7 @@
             },
             "harness": {
               "heading": "The two harnesses side by side",
-              "intro": "Then I read the two harnesses' code side by side at v1.2.0, without running anything. They share the tools, the plan schema, the critic checklist and the caps. The differences are in what surrounds the model.",
+              "intro": "Then I read the two harnesses' code side by side at v1.3.0, without running anything. They share the tools, the plan schema, the critic checklist and the caps. The differences are in what surrounds the model.",
               "columns": ["Gap", "Claude Code harness", "LangGraph pipeline"],
               "rows": [
                 ["1. What the critic knows", "the dataset description: timezone, session, contract switches", "no dataset description, though its checklist tells it to use one"],
@@ -438,16 +438,16 @@
                 "So the timezone miss is a harness gap as well as a model gap. The LangGraph critic was never told the data's timezone."
               ]
             },
-            "scope_heading": "Scope of v1.3.0",
+            "scope_heading": "Scope of v1.4.0",
             "scope": {
-              "intro": "v1.3.0 is planned and not built yet. It will:",
+              "intro": "v1.4.0 is planned and not built yet. It will:",
               "items": [
                 "close the six gaps above, so the LangGraph pipeline gives the model what the Claude Code harness already does",
                 "add held-out questions with fresh traps, on a different session and a different instrument, never used for tuning and reported separately"
               ],
               "text": [
                 "Prompt text that names a specific eval question or trap is out of scope.",
-                "If that isn't enough, v1.4.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions."
+                "If that isn't enough, v1.5.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions."
               ]
             },
             "guard_heading": "Guarding against tuning to the test",
@@ -456,13 +456,13 @@
             ],
             "results_heading": "Results",
             "results": {
-              "intro": "To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.3.0, then make five runs per question for a number comparable with the 0.90.",
+              "intro": "To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then make five runs per question for a number comparable with the 0.90.",
               "columns": ["Version", "Run", "Result"],
               "rows": [
-                ["v1.3.0", "gpt-oss:20b alone, one run per question", "to come"],
-                ["v1.3.0", "gpt-oss:20b with the gpt-5.6-sol critic, one run per question", "to come"],
-                ["v1.3.0", "five runs per question", "to come"],
-                ["v1.4.0", "only if v1.3.0 needs it", "to come"]
+                ["v1.4.0", "gpt-oss:20b alone, one run per question", "to come"],
+                ["v1.4.0", "gpt-oss:20b with the gpt-5.6-sol critic, one run per question", "to come"],
+                ["v1.4.0", "five runs per question", "to come"],
+                ["v1.5.0", "only if v1.4.0 needs it", "to come"]
               ]
             }
           },

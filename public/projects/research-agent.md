@@ -76,7 +76,7 @@ Nothing reaches this page straight from a run. A publish command checks a finish
 
 ## Phase 1: Build and baseline
 
-This phase covers research-agent v1.0.0 to v1.1.1. The measurements were made on 12 and 13 November 2026.
+This phase covers research-agent v1.0.0 to v1.2.0. The measurements were made on 12 and 13 November 2026.
 
 ### Question
 
@@ -194,7 +194,7 @@ The traps beat every local model. The best scored 0.3 at v1.1.0, mostly on the t
 
 ## Phase 2: Diagnose and improve the harness
 
-This phase starts at research-agent v1.2.0, which can give each role a different model.
+This phase starts at research-agent v1.3.0, which can give each role a different model.
 
 ### Question
 
@@ -204,11 +204,11 @@ Phase 1 left the local models far behind Claude, with the critic as the weak lin
 
 #### A hosted critic
 
-First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, at v1.2.0, one run per question. I transcribed these figures by hand too.
+First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, at v1.3.0, one run per question. I transcribed these figures by hand too.
 
 | Model | Version | Correct | Median minutes | Main failure |
 |---|---|---|---|---|
-| `gpt-oss:20b` + `gpt-5.6-sol` critic | v1.2.0 | 4 / 10 | 4.5 | timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2 |
+| `gpt-oss:20b` + `gpt-5.6-sol` critic | v1.3.0 | 4 / 10 | 4.5 | timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2 |
 
 The contract roll came up in 3 runs and the critic caught it every time. The analyst fixed it in 2, return_2024 and largest_session_move, and total_return still ended wrong. The timezone trap came up in 2 runs and was never caught, even by the hosted critic. tuesday_drift had exactly the right value, but the run hit the per-pass tool-call cap before it finished.
 
@@ -216,7 +216,7 @@ A stronger critic helps with a trap it can see in the code or the result. It can
 
 #### The two harnesses side by side
 
-Then I read the two harnesses' code side by side at v1.2.0, without running anything. They share the tools, the plan schema, the critic checklist and the caps. The differences are in what surrounds the model.
+Then I read the two harnesses' code side by side at v1.3.0, without running anything. They share the tools, the plan schema, the critic checklist and the caps. The differences are in what surrounds the model.
 
 | Gap | Claude Code harness | LangGraph pipeline |
 |---|---|---|
@@ -229,16 +229,16 @@ Then I read the two harnesses' code side by side at v1.2.0, without running anyt
 
 So the timezone miss is a harness gap as well as a model gap. The LangGraph critic was never told the data's timezone.
 
-### Scope of v1.3.0
+### Scope of v1.4.0
 
-v1.3.0 is planned and not built yet. It will:
+v1.4.0 is planned and not built yet. It will:
 
 - close the six gaps above, so the LangGraph pipeline gives the model what the Claude Code harness already does
 - add held-out questions with fresh traps, on a different session and a different instrument, never used for tuning and reported separately
 
 Prompt text that names a specific eval question or trap is out of scope.
 
-If that isn't enough, v1.4.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions.
+If that isn't enough, v1.5.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions.
 
 ### Guarding against tuning to the test
 
@@ -246,14 +246,14 @@ The fixes have to work beyond the eval set. No prompt may name an eval question 
 
 ### Results
 
-To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.3.0, then make five runs per question for a number comparable with the 0.90.
+To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then make five runs per question for a number comparable with the 0.90.
 
 | Version | Run | Result |
 |---|---|---|
-| v1.3.0 | gpt-oss:20b alone, one run per question | to come |
-| v1.3.0 | gpt-oss:20b with the gpt-5.6-sol critic, one run per question | to come |
-| v1.3.0 | five runs per question | to come |
-| v1.4.0 | only if v1.3.0 needs it | to come |
+| v1.4.0 | gpt-oss:20b alone, one run per question | to come |
+| v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, one run per question | to come |
+| v1.4.0 | five runs per question | to come |
+| v1.5.0 | only if v1.4.0 needs it | to come |
 
 ## With more time
 

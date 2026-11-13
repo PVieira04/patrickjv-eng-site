@@ -1306,6 +1306,17 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     assert.match(lm.intro, /transcribed the figures below by hand/);
     assert.match(hybrid.intro, /transcribed these figures by hand/);
     assert.ok(P.copy.showcase.phase2.results.rows.every((r) => r.at(-1) === "to come"), "Phase 2 has no results yet");
+    // The research-agent versions (renumbered 13 Nov 2026): Phase 1 is v1.0.0 to v1.2.0, the hosted
+    // critic and the harness comparison are v1.3.0, the planned parity fixes v1.4.0, the tool facts v1.5.0.
+    const p2 = P.copy.showcase.phase2;
+    assert.match(P.copy.showcase.phase1.intro.join(" "), /v1\.0\.0 to v1\.2\.0/);
+    assert.ok(lm.rows.every((r) => r[1] === "v1.1.0"), "the overnight local runs are v1.1.0");
+    assert.match(p2.intro.join(" "), /starts at research-agent v1\.3\.0/);
+    assert.deepEqual(hybrid.rows.map((r) => r[1]), ["v1.3.0"]);
+    assert.match(p2.harness.intro, /at v1\.3\.0/);
+    assert.equal(p2.scope_heading, "Scope of v1.4.0");
+    assert.match(p2.scope.text.join(" "), /v1\.5\.0 would have the analysis tool report facts/);
+    assert.deepEqual(p2.results.rows.map((r) => r[0]), ["v1.4.0", "v1.4.0", "v1.4.0", "v1.5.0"]);
   } finally { s.done(); }
 });
 
