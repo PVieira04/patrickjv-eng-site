@@ -304,6 +304,7 @@ test("F-005 (US-2, D3): the fixture scorecard passes, with and without a baselin
 test("F-005 (US-2, D3): each nullable row accepts null", () => {
   const ok = {
     "fingerprint.config.package_version": (d) => { d.fingerprint.config.package_version = null; },
+    "fingerprint.config.harness_version": (d) => { d.fingerprint.config.harness_version = null; },
     "questions[].trap_handled": (d) => { d.questions[1].trap_handled = null; },
     "aggregate.se": (d) => { d.aggregate.se = null; },
     "baseline.change": (d) => { withBaseline(d); d.baseline.change = null; },
@@ -313,6 +314,11 @@ test("F-005 (US-2, D3): each nullable row accepts null", () => {
     "a null repeat": (d) => { d.runs[0] = { run_id: null, question_id: "open-vol", status: null }; },
   };
   for (const [row, f] of Object.entries(ok)) assert.deepEqual(cardErrors(f), [], row);
+});
+
+test("F-005 (US-2, D3): fingerprint.config.harness_version is optional: absent, null, a v* tag or <tag>+dev", () => {
+  assert.ok(!Object.hasOwn(scorecard().fingerprint.config, "harness_version"), "the fixture predates it");
+  for (const v of ["v1.3.0", "v1.3.0+dev", "v0.0.0+dev", "v10.0.123", "v999999999.0.0", null]) assert.deepEqual(cardErrors((d) => { d.fingerprint.config.harness_version = v; }), [], String(v));
 });
 
 test("F-005 (US-2, D3): each row of the scorecard types table refuses a wrong type", () => {
@@ -327,6 +333,7 @@ test("F-005 (US-2, D3): each row of the scorecard types table refuses a wrong ty
     "fingerprint.config.caps": [(d) => { d.fingerprint.config.caps = { Run_tokens: 1 }; }, (d) => { d.fingerprint.config.caps = { a: true }; }, (d) => { d.fingerprint.config.caps = { a: "1" }; }, (d) => { d.fingerprint.config.caps = { a: {} }; }, (d) => { d.fingerprint.config.caps = [1]; }],
     "fingerprint.config.seed": [(d) => { d.fingerprint.config.seed = -1; }, (d) => { d.fingerprint.config.seed = "42"; }],
     "fingerprint.config.package_version": [(d) => { d.fingerprint.config.package_version = "x".repeat(65); }, (d) => { d.fingerprint.config.package_version = ""; }, (d) => { delete d.fingerprint.config.package_version; }],
+    "fingerprint.config.harness_version": ["1.3.0", "v1.3", "v1.3.0-dev", "v1.3.0+dirty", "v01.3.0", "v1.3.0+dev+dev", "v1234567890.0.0", "abc1234", ""].map((v) => (d) => { d.fingerprint.config.harness_version = v; }).concat([(d) => { d.fingerprint.config.harness_version = 1; }, (d) => { d.fingerprint.config.harness_version = { version: "v1.3.0" }; }]),
     questions: [(d) => { d.questions = []; }, (d) => { d.questions[1].id = "open-vol"; }, (d) => { d.questions = Array.from({ length: 51 }, (_, i) => ({ ...d.questions[0], id: `q${i}` })); }],
     "questions[].id": [(d) => { q(d).id = "Roll-gap"; }],
     "questions[].n_repeats": [(d) => { q(d).n_repeats = 0; }],
@@ -552,6 +559,15 @@ test("F-005 (US-4, D2): --record fails, writing nothing, on each export.json con
       const expect = make();
       try { refuses(s, { dir: s.dir, expect }, pattern); } catch (e) { e.message = `${what}: ${e.message}`; throw e; }
     }
+  } finally { s.done(); }
+});
+
+test("F-005 (D3): a report.json from the versioned harness (report schema 1.2.0: a top-level harness object, models.served) records unchanged", () => {
+  const s = sandbox();
+  try {
+    const expect = runExport(s.dir, { files: { "report.json": reportWith((d) => { d.harness = { version: "v1.3.0", resumed_version: "v1.3.0+dev" }; d.models.served = "hybrid"; }) } });
+    const r = record({ root: s.root, dir: s.dir, expect, today: TODAY });
+    assert.deepEqual(r.errors, []);
   } finally { s.done(); }
 });
 
