@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";
 import { renderReportMd, reportHtmlErrors } from "../lib/project-pages.mjs";
-import { decodeEntities } from "../build.mjs";
+import { decodeEntities, SHOWCASE_TABLES, MODEL_CELL } from "../build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -218,12 +218,19 @@ test("F-005 (US-1, US-2): /projects/ and /projects/research-agent have the secti
   const s = site();
   try {
     ok(publish(s, [run(1)], { card: scorecard() }));
-    const sh = P.copy.showcase;
-    assert.deepEqual(headings(out(s, SHOWCASE)), [
+    const sh = P.copy.showcase, p1 = sh.phase1, p2 = sh.phase2;
+    const want = [
       `h1 ${sh.heading}`, `h2 ${sh.what_heading}`, `h2 ${sh.architecture_heading}`, ...sh.architecture.map((a) => `h3 ${a.heading}`),
-      `h2 ${P.labels.scorecard.heading}`, `h2 ${sh.runs_heading}`, `h3 ${report().question}`, `h2 ${sh.built_heading}`,
-      `h2 ${sh.next_heading}`, ...sh.next.map((n) => `h3 ${n.heading}`), `h3 ${sh.local_models.heading}`,
-    ]);
+      `h2 ${p1.heading}`, `h3 ${p1.question_heading}`, `h3 ${p1.built_heading}`, `h3 ${p1.measured_heading}`, `h3 ${p1.results_heading}`,
+      `h4 ${P.labels.scorecard.heading}`, `h4 ${p1.runs_heading}`, `h5 ${report().question}`, `h4 ${p1.local_models.heading}`, `h3 ${p1.showed_heading}`,
+      `h2 ${p2.heading}`, `h3 ${p2.question_heading}`, `h3 ${p2.diagnosis_heading}`, `h4 ${p2.hybrid.heading}`, `h4 ${p2.harness.heading}`,
+      `h3 ${p2.scope_heading}`, `h3 ${p2.guard_heading}`, `h3 ${p2.results_heading}`,
+      `h2 ${sh.next_heading}`, ...sh.next.map((n) => `h3 ${n.heading}`),
+    ];
+    assert.deepEqual(headings(out(s, SHOWCASE)), want);
+    // The Markdown twin has the same outline, one # per level.
+    const mdHeads = out(s, "projects/research-agent.md").split("\n").filter((l) => /^#{1,6} /.test(l)).map((l) => `h${l.match(/^#+/)[0].length} ${l.replace(/^#+ /, "").replaceAll("`", "")}`);
+    assert.deepEqual(mdHeads, want);
     const lead = visible(body(out(s, SHOWCASE)).match(/<p class="lead">[\s\S]*?<\/p>\s*<p>([\s\S]*?)<\/p>/)[1]);
     assert.equal(lead, sh.code, "the lead, then 'The code is available on request'");
     assert.ok(body(out(s, SHOWCASE)).includes(`<a href="/book">${sh.code_link}</a>`));
@@ -232,7 +239,7 @@ test("F-005 (US-1, US-2): /projects/ and /projects/research-agent have the secti
     const ix = body(out(s, "projects/index.html"));
     assert.match(ix, new RegExp(`<a href="/projects/research-agent">${P.copy.index.entry.title}</a><p>${P.copy.index.entry.summary}</p><p>${P.copy.index.entry.stack}</p>`));
     ok(publish(s, []));
-    assert.ok(!headings(out(s, SHOWCASE)).includes(`h2 ${P.labels.scorecard.heading}`), "no scorecard section without a scorecard");
+    assert.ok(!headings(out(s, SHOWCASE)).includes(`h4 ${P.labels.scorecard.heading}`), "no scorecard section without a scorecard");
     assert.ok(visible(out(s, SHOWCASE)).includes(P.empty.runs));
   } finally { s.done(); }
 });
@@ -266,8 +273,8 @@ test("F-005 (D5): visible copy — every copy.* string must be the whole visible
     assert.deepEqual(r.errors, []);
     copyFails(s, (c) => { c.pages.projects.copy.showcase.what[0] = c.pages.projects.copy.showcase.what[0].replace(" ", "  "); }, /pages\.projects\.copy\.showcase\.what\.0 is not the whole visible text/);
     const o = r.out, f = "public/projects/research-agent.html";
-    o.html[f] = o.html[f].replace(`<h2 id="built-h">`, `<h2 id="built-h" hidden>`);
-    assert.ok(projectPageErrors(o, P, { employerMention, denylist: [] }).some((e) => /copy\.showcase\.built_heading is not the whole visible text/.test(e)));
+    o.html[f] = o.html[f].replace(`<h2 id="phase1-h">`, `<h2 id="phase1-h" hidden>`);
+    assert.ok(projectPageErrors(o, P, { employerMention, denylist: [] }).some((e) => /copy\.showcase\.phase1\.heading is not the whole visible text/.test(e)));
   } finally { s.done(); }
 });
 
@@ -366,7 +373,7 @@ test("F-005 (D5): the full fixture set — every status, outcome, tag, stop reas
     ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate.se = null; cleanTraps(d); }) }));
     take();
     const text = shown.join("\n");
-    const missing = strings(P).filter(([path, v]) => !(path.startsWith("templates.") ? v.split(/\{[a-z_]+\}/).map((x) => x.trim()).filter(Boolean) : [/^copy\.showcase\.local_models\.rows\.\d+\.0$/.test(path) ? v.replaceAll("`", "") : v]).every((lit) => text.includes(lit)));
+    const missing = strings(P).filter(([path, v]) => !(path.startsWith("templates.") ? v.split(/\{[a-z_]+\}/).map((x) => x.trim()).filter(Boolean) : [MODEL_CELL.test(path) ? v.replaceAll("`", "") : v]).every((lit) => text.includes(lit)));
     assert.deepEqual(missing, [], "every string renders in at least one page (a model cell's backticks become <code>)");
   } finally { s.done(); }
 });
@@ -528,7 +535,7 @@ test("F-005 (US-2): run cards are ordered by role, then finished_at newest first
     const order = [...body(out(s, SHOWCASE)).matchAll(/<a href="\/projects\/research-agent\/runs\/([^/]+)\/"/g)].map((m) => m[1]);
     assert.deepEqual(order, [4, 6, 3, 5, 2, 1].map(runId));
     const card = body(out(s, SHOWCASE)).match(/<ul class="cards">\s*<li>([\s\S]*?)<\/li>/)[1];
-    assert.ok(card.includes(`<h3>${report().question}</h3>`));
+    assert.ok(card.includes(`<h5>${report().question}</h5>`));
     for (const [k, v] of [["harness", P.labels.harness.langgraph], ["status", P.labels.status.completed], ["outcome", P.labels.outcome.passed], ["role", P.labels.role.trap_caught]]) assert.ok(card.includes(`<dt>${P.labels.card[k]}</dt><dd>${v}</dd>`), k);
     assert.ok(card.includes(`>${P.labels.card.link}</a>`));
   } finally { s.done(); }
@@ -909,7 +916,7 @@ test("F-005 (D4): --check reports the /projects outputs stale when a source chan
     const page = `public/projects/research-agent/runs/${runId(1)}/index.html`;
     const change = (f, fn) => { const p = join(s.root, f); writeFileSync(p, fn(readFileSync(p, "utf8"))); };
     for (const [what, fn, want] of [
-      ["copy", () => change("content.json", (t) => t.replace(`"${P.copy.showcase.built_heading}"`, '"How I built it"')), "public/projects/research-agent.html"],
+      ["copy", () => change("content.json", (t) => t.replace(`"${P.copy.showcase.phase1.built_heading}"`, '"What I built"')), "public/projects/research-agent.html"],
       ["a label", () => change("content.json", (t) => t.replace(`"${P.labels.run.finished}"`, '"Ended"')), page],
       ...DIAGRAMS.map((d) => [d.file, () => change(d.file, (t) => t.replace("</title>", " changed</title>")), "public/projects/research-agent.html"]),
       ["alt text", () => change(MANIFEST, (t) => t.replace("Synthetic chart 1.", "A changed alt text.")), page],
@@ -1230,7 +1237,7 @@ test("F-005: each diagram is inlined in its place on the showcase, ids are uniqu
     for (const a of sh.architecture) { assert.ok(md.includes(`### ${a.heading}`)); for (const t of a.text) assert.ok(md.includes(t), t); }
     assert.ok(md.includes(`## ${sh.next_heading}\n\n${sh.next_intro}`));
     for (const n of sh.next) assert.ok(md.includes(`### ${n.heading}\n\n${n.text}`), n.heading);
-    assert.ok(md.indexOf(`## ${sh.built_heading}`) < md.indexOf(`## ${sh.next_heading}`));
+    assert.ok(md.indexOf(`## ${sh.phase1.heading}`) < md.indexOf(`## ${sh.phase2.heading}`) && md.indexOf(`## ${sh.phase2.heading}`) < md.indexOf(`## ${sh.next_heading}`), "the phases, then 'With more time'");
   } finally { s.done(); }
 });
 
@@ -1246,56 +1253,74 @@ test("F-005: a duplicate id across the inlined diagrams fails the build", () => 
   } finally { s.done(); }
 });
 
-test("F-005: the next steps in 'With more time' claim no results and quote no scores (the local-model results are their own subsection)", () => {
+test("F-005: the next steps in 'With more time' claim no results and quote no scores (results belong to the phases)", () => {
   const sh = P.copy.showcase;
   const text = [sh.next_intro, ...sh.next.flatMap((n) => [n.heading, n.text])].join("\n");
   assert.doesNotMatch(text, /\d+\s*%|\d+\s*\/\s*\d+|scored? \d/, "no scorecard numbers");
   assert.ok(sh.next.length >= 5);
 });
 
-test("F-005: 'With more time' ends with the local-model results: intro, a stacking table in the scroll wrapper, then the text, and the same in the Markdown twin", () => {
+test("F-005: the phases' hand-written tables: each a stacking table in the scroll wrapper after its heading and intro, then its text, and the same in the Markdown twin", () => {
   const s = site();
   try {
     ok(publish(s, []));
-    const lm = P.copy.showcase.local_models;
-    const sec = body(out(s, SHOWCASE)).match(/<section aria-labelledby="next-h">[\s\S]*?<\/section>/)[0];
-    const h3 = sec.indexOf(`<h3>${lm.heading}</h3>`);
-    assert.ok(h3 > sec.lastIndexOf(`<h3>${P.copy.showcase.next.at(-1).heading}</h3>`), "after the last next step");
-    assert.ok(sec.indexOf(`<div class="scroll" role="region" aria-label="${lm.heading}" tabindex="0">\n<table class="scorecard-stack local-models" role="table">`) > h3, "the scorecard's stacking table, in the scroll wrapper");
-    const rows = [...sec.slice(h3).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => visible(c[1])));
+    const page = body(out(s, SHOWCASE)), md = out(s, "projects/research-agent.md");
     const plain = (c) => c.replaceAll("`", "");
-    assert.deepEqual(rows, [lm.columns, ...lm.rows.map((r) => [plain(r[0]), ...r.slice(1)])]);
-    const trs = [...sec.slice(h3).matchAll(/<tr role="row">([\s\S]*?)<\/tr>/g)].map((m) => m[1]).slice(1);
-    assert.equal(trs.length, lm.rows.length);
-    trs.forEach((tr, j) => {
-      const id = (x) => `<code>${x.split(/(?<=:)/).map((part) => `<span>${part}</span>`).join("<wbr>")}</code>`;
-      const m = lm.rows[j][0], head = m.includes("`") ? m.split("`").map((x, i) => (i % 2 ? id(x) : x)).join("") : id(m);
-      assert.ok(tr.startsWith(`<th scope="row" role="rowheader">${head}</th>`), `row ${j}: model ids in code style`);
-      assert.deepEqual([...tr.matchAll(/<td role="cell" data-label="([^"]*)">/g)].map((m) => m[1]), lm.columns.slice(1), `row ${j}: every cell names its column`);
-    });
-    const md = out(s, "projects/research-agent.md");
-    assert.ok(md.includes(`### ${lm.heading}\n\n${lm.intro}\n\n| ${lm.columns.join(" | ")} |`));
-    for (const [m, ...r] of lm.rows) assert.ok(md.includes(`| ${m.includes("`") ? m : `\`${m}\``} | ${r.join(" | ")} |`), m);
-    assert.ok(lm.rows.some((r) => r[0].includes("`")), "the hybrid row code-styles only its model ids");
-    assert.ok(sec.includes("<code><span>gpt-oss:</span><wbr><span>20b</span></code> + <code><span>gpt-5.6-sol</span></code> critic</th>"), "ids break only after a colon");
-    for (const t of lm.text) assert.ok(md.includes(t));
-    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0].pop(); })).some((e) => /local_models\.rows\.0 must have one cell per column/.test(e)));
+    const id = (x) => `<code>${x.split(/(?<=:)/).map((part) => `<span>${part}</span>`).join("<wbr>")}</code>`;
+    assert.deepEqual(SHOWCASE_TABLES.map((t) => t.path), ["phase1.local_models", "phase2.hybrid", "phase2.harness", "phase2.results"]);
+    for (const { path, model, version } of SHOWCASE_TABLES) {
+      const t = path.split(".").reduce((o, k) => o[k], P.copy.showcase), sec = page.match(new RegExp(`<section aria-labelledby="${path.split(".")[0]}-h">[\\s\\S]*?</section>\\n(?=<section aria-labelledby="(phase2|next)-h">)`))[0];
+      const label = t.heading ?? P.copy.showcase.phase2.results_heading;
+      const start = t.heading ? sec.indexOf(`<h4>${t.heading}</h4>\n<p>${t.intro}</p>\n`) : sec.indexOf(`<p>${t.intro}</p>\n`);
+      assert.ok(start >= 0, `${path}: heading and intro`);
+      const wrap = sec.indexOf(`<div class="scroll" role="region" aria-label="${label}" tabindex="0">\n<table class="scorecard-stack${model ? " local-models" : ""}" role="table">`, start);
+      assert.ok(wrap > start, `${path}: the scorecard's stacking table, in the scroll wrapper`);
+      const tableHtml = sec.slice(wrap, sec.indexOf("</table>", wrap));
+      const rows = [...tableHtml.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => visible(c[1])));
+      assert.deepEqual(rows, [t.columns, ...t.rows.map((r) => [model ? plain(r[0]) : r[0], ...r.slice(1)])], path);
+      const trs = [...tableHtml.matchAll(/<tr role="row">([\s\S]*?)<\/tr>/g)].map((m) => m[1]).slice(1);
+      trs.forEach((tr, j) => {
+        const m = t.rows[j][0], head = !model ? m : m.includes("`") ? m.split("`").map((x, i) => (i % 2 ? id(x) : x)).join("") : id(m);
+        assert.ok(tr.startsWith(`<th scope="row" role="rowheader">${head}</th>`), `${path} row ${j}: first cell`);
+        assert.deepEqual([...tr.matchAll(/<td role="cell" data-label="([^"]*)">/g)].map((x) => x[1]), t.columns.slice(1), `${path} row ${j}: every cell names its column`);
+      });
+      for (const x of t.text ?? []) assert.ok(sec.indexOf(`<p>${x}</p>`) > wrap, `${path}: its text after the table`);
+      assert.ok(md.includes(`${t.heading ? `#### ${t.heading}\n\n` : ""}${t.intro}\n\n| ${t.columns.join(" | ")} |`), `${path}: Markdown`);
+      for (const [m, ...r] of t.rows) assert.ok(md.includes(`| ${model ? (m.includes("`") ? m : `\`${m}\``) : m} | ${r.join(" | ")} |`), `${path}: ${m}`);
+      for (const x of t.text ?? []) assert.ok(md.includes(x));
+      const vi = t.columns.indexOf("Version");
+      if (version) {
+        assert.ok(vi >= 0, `${path}: a Version column`);
+        assert.ok(checkProjectsCopy(edit(P, (x) => { path.split(".").reduce((o, k) => o[k], x.copy.showcase).rows[0][vi] = "1.1"; })).some((e) => e.includes(`${path}.rows.0.${vi} must be a version`)), `${path}: semver`);
+        assert.ok(checkProjectsCopy(edit(P, (x) => { path.split(".").reduce((o, k) => o[k], x.copy.showcase).columns[vi] = "Harness"; })).some((e) => e.includes(`${path}.columns must include "Version"`)), `${path}: Version required`);
+      }
+      if (model) assert.ok(checkProjectsCopy(edit(P, (x) => { path.split(".").reduce((o, k) => o[k], x.copy.showcase).rows[0][0] = "`gpt-oss:20b"; })).some((e) => e.includes(`${path}.rows.0.0 has an unmatched backtick`)), `${path}: backticks`);
+      assert.ok(checkProjectsCopy(edit(P, (x) => { path.split(".").reduce((o, k) => o[k], x.copy.showcase).rows[0].pop(); })).some((e) => e.includes(`${path}.rows.0 must have one cell per column`)), `${path}: cell count`);
+    }
     assert.deepEqual(checkProjectsCopy(P), []);
-    const vi = lm.columns.indexOf("Version");
-    assert.ok(vi > 0, "a Version column");
-    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0][vi] = "1.1"; })).some((e) => /local_models\.rows\.0\.\d+ must be a version/.test(e)));
-    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.columns[vi] = "Harness"; })).some((e) => /local_models\.columns must include "Version"/.test(e)));
-    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0][0] = "`gpt-oss:20b"; })).some((e) => /local_models\.rows\.0\.0 has an unmatched backtick/.test(e)));
+    const { local_models: lm } = P.copy.showcase.phase1, { hybrid } = P.copy.showcase.phase2;
+    assert.ok(lm.rows.every((r) => !r[0].includes("`")), "Phase 1's table has no hybrid row");
+    assert.ok(hybrid.rows.some((r) => r[0].includes("`")), "the hybrid row code-styles only its model ids");
+    assert.ok(page.includes("<code><span>gpt-oss:</span><wbr><span>20b</span></code> + <code><span>gpt-5.6-sol</span></code> critic</th>"), "ids break only after a colon");
     assert.match(lm.intro, /not directly comparable across versions/);
+    assert.match(lm.intro, /transcribed the figures below by hand/);
+    assert.match(hybrid.intro, /transcribed these figures by hand/);
+    assert.ok(P.copy.showcase.phase2.results.rows.every((r) => r.at(-1) === "to come"), "Phase 2 has no results yet");
   } finally { s.done(); }
 });
 
-test("F-005: the local-model text quotes the published scorecard's score and k, so a re-recorded scorecard fails until the text is updated", () => {
+test("F-005: the phases quote the published scorecard's score and k, so a re-recorded scorecard fails until the text is updated", () => {
   const card = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/scorecard/scorecard.json"), "utf8"));
   const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-  const text = P.copy.showcase.local_models.text.join("\n");
+  const text = P.copy.showcase.phase1.local_models.text.join("\n");
   // "research-agent v1.0.0" is hard-coded: if the scorecard is re-recorded under a new version, update the label here and in content.json.
   assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set (research-agent v1.0.0), but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
+  // Every two-decimal score the phases quote is the scorecard's.
+  const phases = strings({ copy: { p1: P.copy.showcase.phase1, p2: P.copy.showcase.phase2 } }).map(([, v]) => v).join("\n");
+  const quoted = [...phases.matchAll(/(?<![\d.])\d\.\d\d(?![\d])/g)].map((m) => m[0]);
+  assert.ok(quoted.length >= 3);
+  for (const q of quoted) assert.equal(q, fixed2(card.aggregate.score), `a quoted score ${q}`);
+  assert.match(P.copy.showcase.phase1.showed.join("\n"), new RegExp(`scored ${fixed2(card.aggregate.score).replace(".", "\\.")} at v1\\.0\\.0`));
 });
 
 test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {

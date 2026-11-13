@@ -68,6 +68,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line);
 main { overflow-wrap: anywhere; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
 h3 { font-size: 1.0625rem; margin: 1.5em 0 0.4em; font-weight: 600; }
+h4, h5 { font-size: 1rem; margin: 1.25em 0 0.4em; font-weight: 600; }
 .lead { font-size: 1.125rem; }
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 0 0 16px; }
 .facts dt { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); padding-top: 0.15em; }
@@ -87,7 +88,7 @@ th, td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-ali
 thead th { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
 .cards { list-style: none; padding: 0; }
 .cards > li { margin: 0; padding: 16px 0; border-top: 1px solid var(--line); }
-.cards h3 { margin: 0 0 8px; }
+.cards h5 { margin: 0 0 8px; }
 .issues li { margin: 0.5em 0; }
 .tag { font-weight: 600; }
 figure { margin: 0 0 24px; }
@@ -218,8 +219,23 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <h3>Publishing</h3>
 <p>Nothing reaches this page straight from a run. A publish command checks a finished run or a scorecard and writes an export folder. It reads each file once without following links, validates report.json against its schema and refuses anything not on the synthetic dataset. It scans every string for secrets, host paths and a denylist, and strips metadata chunks from figures. This site then records a person's check of each export, with a hash of every file, before the build will use it.</p>
 </section>
+<section aria-labelledby="phase1-h">
+<h2 id="phase1-h">Phase 1: Build and baseline</h2>
+<p>This phase covers research-agent v1.0.0 to v1.1.1. The measurements were made on 12 and 13 November 2026.</p>
+<h3>Question</h3>
+<p>Can an agent with plan approval, gated tools and a reviewing model answer quant research questions correctly?</p>
+<h3>What was built</h3>
+<p>v1.0.0 is the system described above: two harnesses over one MCP server, the sandbox, the eval and the publish step. By v1.1.0 I had capped local-model output, because a gpt-oss:120b planning step had run for about 85 minutes until its context filled. With the cap, the longest run took 22 minutes.</p>
+<p>Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.</p>
+<p>A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code.</p>
+<h3>How it was measured</h3>
+<p>Both harnesses answered the same eval questions on the seeded synthetic dataset, and the repo's own scorer marked each answer against the reference implementation. Claude ran through the Claude Code harness five times per question, with Sonnet 5.5 as planner and analyst and Opus 5.5 as critic.</p>
+<p>The open models ran through the LangGraph pipeline, served by Ollama on a DGX Spark, one run per question. Each local-model call was capped at 8,192 output tokens and each run at 30 minutes.</p>
+<p>Two questions, monday_drift and thursday_drift, have a wide absolute tolerance, sized for their traps, so a near-zero answer can pass on its conclusion.</p>
+<h3>Results</h3>
+<p>The scorecard is from research-agent v1.0.0, on 12 November 2026. The four recorded runs, also through the Claude Code harness, were made earlier that day, before the v1.0.0 tag. The open-model runs used v1.1.0.</p>
 <section aria-labelledby="scorecard-h">
-<h2 id="scorecard-h">Eval scorecard</h2>
+<h4 id="scorecard-h">Eval scorecard</h4>
 <dl class="facts">
 <dt>Date</dt><dd>2026-11-12</dd>
 <dt>Runs</dt><dd>50 runs: 10 questions × 5</dd>
@@ -248,10 +264,10 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <p class="scorecard-note">In these 50 eval runs no pass fell into a planted trap, so no trap reached the critic, and it raised no trap issue. That is why trap recall and critic precision are not defined here. The recorded runs on this page are separate runs.</p>
 </section>
 <section aria-labelledby="runs-h">
-<h2 id="runs-h">Recorded runs</h2>
+<h4 id="runs-h">Recorded runs</h4>
 <ul class="cards">
 <li>
-<h3>On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.</h3>
+<h5>On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.</h5>
 <dl class="facts">
 <dt>Harness</dt><dd>Claude Code harness</dd>
 <dt>Status</dt><dd>Completed</dd>
@@ -261,7 +277,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <a href="/projects/research-agent/runs/20261112T165943Z-8eb45f/" aria-label="Read the run: On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.">Read the run</a>
 </li>
 <li>
-<h3>On synth-1m, do Monday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Mondays as the statistic `monday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.</h3>
+<h5>On synth-1m, do Monday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Mondays as the statistic `monday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.</h5>
 <dl class="facts">
 <dt>Harness</dt><dd>Claude Code harness</dd>
 <dt>Status</dt><dd>Rejected</dd>
@@ -271,7 +287,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <a href="/projects/research-agent/runs/20261112T165719Z-a93bec/" aria-label="Read the run: On synth-1m, do Monday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Mondays as the statistic `monday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.">Read the run</a>
 </li>
 <li>
-<h3>On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).</h3>
+<h5>On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).</h5>
 <dl class="facts">
 <dt>Harness</dt><dd>Claude Code harness</dd>
 <dt>Status</dt><dd>Completed</dd>
@@ -281,7 +297,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <a href="/projects/research-agent/runs/20261112T165438Z-76a84d/" aria-label="Read the run: On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).">Read the run</a>
 </li>
 <li>
-<h3>On synth-1m, is realised 1-minute volatility higher in the first 30 minutes after the 09:30 New York cash open than in the rest of the same session? Report the mean over sessions of the ratio of realised volatility in that window to realised volatility in the rest of the session as the statistic `open_vol_ratio`, and test the hypothesis that the window is more volatile at the 5% level.</h3>
+<h5>On synth-1m, is realised 1-minute volatility higher in the first 30 minutes after the 09:30 New York cash open than in the rest of the same session? Report the mean over sessions of the ratio of realised volatility in that window to realised volatility in the rest of the session as the statistic `open_vol_ratio`, and test the hypothesis that the window is more volatile at the 5% level.</h5>
 <dl class="facts">
 <dt>Harness</dt><dd>Claude Code harness</dd>
 <dt>Status</dt><dd>Completed</dd>
@@ -292,33 +308,9 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 </li>
 </ul>
 </section>
-<section aria-labelledby="built-h">
-<h2 id="built-h">How it was built</h2>
-<p>Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.</p>
-<p>A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code.</p>
-</section>
-<section aria-labelledby="next-h">
-<h2 id="next-h">With more time</h2>
-<p>In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes. The last subsection is not a step. It reports a finished experiment with local and hybrid models.</p>
-<h3>Run the red-team probes on every push</h3>
-<p>The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. So far the probe catalogue has only been run on my WSL2 machine, not yet on the CI runner.</p>
-<h3>Finish the simpler verification plan</h3>
-<p>I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch.</p>
-<h3>Run the full LangGraph eval with hosted models</h3>
-<p>The graph is tested with fake models. It has had one set of trials with local open models and one with a hosted critic (gpt-5.6-sol through OpenAI's API), both reported at the end of this section. The Claude Code harness runs on a subscription. The step that remains is running the full eval, five runs per question, through the graph with hosted models, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.</p>
-<h3>Add a canary on real market data</h3>
-<p>Real futures data stays on my machine. The vendor's licence doesn't allow showing anything derived from it without a redistribution plan, which is why everything here is synthetic. A weekly canary is specified that fetches one fixed week, checks the bar count and the contract roll, and deletes the data. It stays off until the vendor confirms in writing that processing on a hosted CI runner is allowed.</p>
-<h3>Give the Claude Code harness a token budget and resume</h3>
-<p>The graph caps tokens and resumes from its checkpoint. The Claude Code harness does neither yet. A subscription gives it no per-call token counts it can rely on, and an interrupted run is closed rather than resumed. Closing both gaps would bring the harness level with the graph.</p>
-<h3>Let formatting back into reports</h3>
-<p>Model-written text goes into a report as plain text, with every punctuation character escaped. That came after several rounds of trying to contain Markdown inside it by tracking its block structure, and plain text was the safer choice. Formatting could come back through a renderer with an explicit allow-list, checked against more than one Markdown parser, the way this site renders the reports it shows.</p>
-<h3>Add overfitting checks from López de Prado</h3>
-<p>The agent already fixes its test in a plan before any analysis runs, and the critic already checks that multiple comparisons are corrected for (Bonferroni, Holm or a joint test) or at least disclosed. Unlike the other steps, this one isn't in the specs yet. It would take the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and both the checklist and the analyst's guidance would call for purged and embargoed cross-validation, so overlapping labels can't leak across folds.</p>
-<h3>Widen CI</h3>
-<p>The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure.</p>
-<h3>Open and hybrid models on a DGX Spark</h3>
-<p>On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each local-model call capped at 8,192 output tokens and each run at 30 minutes. In the last row, gpt-oss:20b on the Spark was the planner and analyst and OpenAI's gpt-5.6-sol was the critic. The Version column gives the research-agent version each run used, and results are not directly comparable across versions. These were one-off runs, and I transcribed the figures below by hand rather than from a checked export.</p>
-<div class="scroll" role="region" aria-label="Open and hybrid models on a DGX Spark" tabindex="0">
+<h4>Open models on a DGX Spark</h4>
+<p>On 13 November 2026 I ran the LangGraph pipeline overnight with open models, one run per question. The Version column gives the research-agent version each run used, and results are not directly comparable across versions. These were one-off runs, and I transcribed the figures below by hand rather than from a checked export.</p>
+<div class="scroll" role="region" aria-label="Open models on a DGX Spark" tabindex="0">
 <table class="scorecard-stack local-models" role="table">
 <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Model</th><th scope="col" role="columnheader">Version</th><th scope="col" role="columnheader">Correct</th><th scope="col" role="columnheader">Median minutes</th><th scope="col" role="columnheader">Main failure</th></tr></thead>
 <tbody role="rowgroup">
@@ -329,13 +321,92 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <tr role="row"><th scope="row" role="rowheader"><code><span>qwen2.5:</span><wbr><span>7b</span></code></th><td role="cell" data-label="Version">v1.1.0</td><td role="cell" data-label="Correct">0 / 10</td><td role="cell" data-label="Median minutes">1</td><td role="cell" data-label="Main failure">no answer in 9 of 10 runs</td></tr>
 <tr role="row"><th scope="row" role="rowheader"><code><span>nemotron-3-nano:</span><wbr><span>30b</span></code></th><td role="cell" data-label="Version">v1.1.0</td><td role="cell" data-label="Correct">0 / 1 (stopped)</td><td role="cell" data-label="Median minutes">8</td><td role="cell" data-label="Main failure">spent the whole cap on hidden reasoning, so its replies were empty</td></tr>
 <tr role="row"><th scope="row" role="rowheader"><code><span>nemotron-3-super:</span><wbr><span>120b</span></code></th><td role="cell" data-label="Version">v1.1.0</td><td role="cell" data-label="Correct">not run</td><td role="cell" data-label="Median minutes">–</td><td role="cell" data-label="Main failure">did not load on the Spark (timed out twice)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Most of the local correct answers came from the Monday and Thursday drift questions. On the other eight questions, 2 of the 40 runs by the five local models that ran every question were correct. I first wrote this as about one in eight, which was wrong. The Claude Code harness scored 0.90 on this set (research-agent v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.</p>
+<p>Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run.</p>
+<h3>What it showed</h3>
+<p>Claude was strong. Through the Claude Code harness it scored 0.90 at v1.0.0. Its one miss was afternoon_vol_ratio, where all five runs computed the statistic correctly and drew the wrong conclusion.</p>
+<p>The traps beat every local model. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run.</p>
+</section>
+<section aria-labelledby="phase2-h">
+<h2 id="phase2-h">Phase 2: Diagnose and improve the harness</h2>
+<p>This phase starts at research-agent v1.2.0, which can give each role a different model.</p>
+<h3>Question</h3>
+<p>Phase 1 left the local models far behind Claude, with the critic as the weak link. Is that the models, or the harness around them?</p>
+<h3>Diagnosis</h3>
+<h4>A hosted critic</h4>
+<p>First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, at v1.2.0, one run per question. I transcribed these figures by hand too.</p>
+<div class="scroll" role="region" aria-label="A hosted critic" tabindex="0">
+<table class="scorecard-stack local-models" role="table">
+<thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Model</th><th scope="col" role="columnheader">Version</th><th scope="col" role="columnheader">Correct</th><th scope="col" role="columnheader">Median minutes</th><th scope="col" role="columnheader">Main failure</th></tr></thead>
+<tbody role="rowgroup">
 <tr role="row"><th scope="row" role="rowheader"><code><span>gpt-oss:</span><wbr><span>20b</span></code> + <code><span>gpt-5.6-sol</span></code> critic</th><td role="cell" data-label="Version">v1.2.0</td><td role="cell" data-label="Correct">4 / 10</td><td role="cell" data-label="Median minutes">4.5</td><td role="cell" data-label="Main failure">timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2</td></tr>
 </tbody>
 </table>
 </div>
-<p>Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five local models that ran every question were correct. The Claude Code harness scored 0.90 on this set (research-agent v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.</p>
-<p>Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. In these runs the critic is the role that most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.</p>
-<p>On these runs, with gpt-5.6-sol as the critic, gpt-oss:20b got 2 of the other eight questions right. In both, the critic caught the contract roll and the analyst fixed it. The timezone trap was still missed every time, so a stronger critic alone doesn't close the gap. On its own under v1.1.0, gpt-oss:20b got 1 of those eight, but the versions differ and there was one run per question, so neither that nor 4 / 10 against 3 / 10 is a direct comparison.</p>
+<p>The contract roll came up in 3 runs and the critic caught it every time. The analyst fixed it in 2, return_2024 and largest_session_move, and total_return still ended wrong. The timezone trap came up in 2 runs and was never caught, even by the hosted critic. tuesday_drift had exactly the right value, but the run hit the per-pass tool-call cap before it finished.</p>
+<p>A stronger critic helps with a trap it can see in the code or the result. It can't catch one it has no facts to check against. Part of its success on the roll comes from the shared critic checklist, which states the CME roll rule in detail. With one run per question, 4 / 10 against 3 / 10 for gpt-oss:20b alone is within noise, and the two ran under different versions.</p>
+<h4>The two harnesses side by side</h4>
+<p>Then I read the two harnesses' code side by side at v1.2.0, without running anything. They share the tools, the plan schema, the critic checklist and the caps. The differences are in what surrounds the model.</p>
+<div class="scroll" role="region" aria-label="The two harnesses side by side" tabindex="0">
+<table class="scorecard-stack" role="table">
+<thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Gap</th><th scope="col" role="columnheader">Claude Code harness</th><th scope="col" role="columnheader">LangGraph pipeline</th></tr></thead>
+<tbody role="rowgroup">
+<tr role="row"><th scope="row" role="rowheader">1. What the critic knows</th><td role="cell" data-label="Claude Code harness">the dataset description: timezone, session, contract switches</td><td role="cell" data-label="LangGraph pipeline">no dataset description, though its checklist tells it to use one</td></tr>
+<tr role="row"><th scope="row" role="rowheader">2. The analyst's first step</th><td role="cell" data-label="Claude Code harness">told to read the dataset description</td><td role="cell" data-label="LangGraph pipeline">not told</td></tr>
+<tr role="row"><th scope="row" role="rowheader">3. What the critic sees</th><td role="cell" data-label="Claude Code harness">the full result, and it can read the files</td><td role="cell" data-label="LangGraph pipeline">the result cut to 8,000 characters, the analyst's own summary, and no tools</td></tr>
+<tr role="row"><th scope="row" role="rowheader">4. The plan</th><td role="cell" data-label="Claude Code harness">must state its session and timezone handling</td><td role="cell" data-label="LangGraph pipeline">not asked to</td></tr>
+<tr role="row"><th scope="row" role="rowheader">5. Revisions</th><td role="cell" data-label="Claude Code harness">a fresh analyst for each revision, given only the plan and the issues</td><td role="cell" data-label="LangGraph pipeline">the feedback appended to the same long conversation</td></tr>
+<tr role="row"><th scope="row" role="rowheader">6. Ending a run</th><td role="cell" data-label="Claude Code harness">no run token cap</td><td role="cell" data-label="LangGraph pipeline">a run token cap, and the run ends at the tool-call cap even when it already holds a valid answer</td></tr>
+</tbody>
+</table>
+</div>
+<p>So the timezone miss is a harness gap as well as a model gap. The LangGraph critic was never told the data's timezone.</p>
+<h3>Scope of v1.3.0</h3>
+<p>v1.3.0 is planned and not built yet. It will:</p>
+<ul>
+<li>close the six gaps above, so the LangGraph pipeline gives the model what the Claude Code harness already does</li>
+<li>add held-out questions with fresh traps, on a different session and a different instrument, never used for tuning and reported separately</li>
+</ul>
+<p>Prompt text that names a specific eval question or trap is out of scope.</p>
+<p>If that isn't enough, v1.4.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions.</p>
+<h3>Guarding against tuning to the test</h3>
+<p>The fixes have to work beyond the eval set. No prompt may name an eval question or trap, and a test already blocks eval answers in prompts. The held-out questions are never used for tuning, and their results are reported apart from the eval set's.</p>
+<h3>Results</h3>
+<p>To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.3.0, then make five runs per question for a number comparable with the 0.90.</p>
+<div class="scroll" role="region" aria-label="Results" tabindex="0">
+<table class="scorecard-stack" role="table">
+<thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Version</th><th scope="col" role="columnheader">Run</th><th scope="col" role="columnheader">Result</th></tr></thead>
+<tbody role="rowgroup">
+<tr role="row"><th scope="row" role="rowheader">v1.3.0</th><td role="cell" data-label="Run">gpt-oss:20b alone, one run per question</td><td role="cell" data-label="Result">to come</td></tr>
+<tr role="row"><th scope="row" role="rowheader">v1.3.0</th><td role="cell" data-label="Run">gpt-oss:20b with the gpt-5.6-sol critic, one run per question</td><td role="cell" data-label="Result">to come</td></tr>
+<tr role="row"><th scope="row" role="rowheader">v1.3.0</th><td role="cell" data-label="Run">five runs per question</td><td role="cell" data-label="Result">to come</td></tr>
+<tr role="row"><th scope="row" role="rowheader">v1.4.0</th><td role="cell" data-label="Run">only if v1.3.0 needs it</td><td role="cell" data-label="Result">to come</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+<section aria-labelledby="next-h">
+<h2 id="next-h">With more time</h2>
+<p>In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes.</p>
+<h3>Run the red-team probes on every push</h3>
+<p>The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. So far the probe catalogue has only been run on my WSL2 machine, not yet on the CI runner.</p>
+<h3>Finish the simpler verification plan</h3>
+<p>I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch.</p>
+<h3>Run the full LangGraph eval with hosted models</h3>
+<p>The graph is tested with fake models, and Phase 2 runs it with gpt-oss:20b, alone and with a hosted critic. The step that remains is the full eval through the graph with hosted models, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.</p>
+<h3>Add a canary on real market data</h3>
+<p>Real futures data stays on my machine. The vendor's licence doesn't allow showing anything derived from it without a redistribution plan, which is why everything here is synthetic. A weekly canary is specified that fetches one fixed week, checks the bar count and the contract roll, and deletes the data. It stays off until the vendor confirms in writing that processing on a hosted CI runner is allowed.</p>
+<h3>Give the Claude Code harness a token budget and resume</h3>
+<p>The graph caps tokens and resumes from its checkpoint. The Claude Code harness does neither yet. A subscription gives it no per-call token counts it can rely on, and an interrupted run is closed rather than resumed. Closing both gaps would bring the harness level with the graph.</p>
+<h3>Let formatting back into reports</h3>
+<p>Model-written text goes into a report as plain text, with every punctuation character escaped. That came after several rounds of trying to contain Markdown inside it by tracking its block structure, and plain text was the safer choice. Formatting could come back through a renderer with an explicit allow-list, checked against more than one Markdown parser, the way this site renders the reports it shows.</p>
+<h3>Add overfitting checks from López de Prado</h3>
+<p>The agent already fixes its test in a plan before any analysis runs, and the critic already checks that multiple comparisons are corrected for (Bonferroni, Holm or a joint test) or at least disclosed. Unlike the other steps, this one isn't in the specs yet. It would take the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and both the checklist and the analyst's guidance would call for purged and embargoed cross-validation, so overlapping labels can't leak across folds.</p>
+<h3>Widen CI</h3>
+<p>The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure.</p>
 </section>
 </main>
 <footer>Patrick Vieira · <a href="/">patrickjv.com</a> · <a href="/cv">CV</a> · <a href="/privacy">Privacy</a></footer>

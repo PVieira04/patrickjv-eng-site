@@ -150,6 +150,13 @@ test("Chromium /projects: at 400 px the scorecard stacks, each value labelled wi
     assert.equal(await cell.count(), 1, "a cell named by its value, without the generated label");
     assert.equal(await page.getByRole("cell", { name: /^Trap handled/ }).count(), 0, "no cell's name starts with its column label");
     assert.ok(await overflow(page) <= 0, `no horizontal scroll (${await sticking(page)})`);
+    // The phases' hand-written tables stack the same way, and none overflows its wrapper.
+    const tables = await page.evaluate(() => [...document.querySelectorAll("table.scorecard-stack")].slice(1).map((t) => {
+      const cells = [...t.querySelectorAll("tbody td")], wrap = t.closest(".scroll");
+      return { label: wrap.getAttribute("aria-label"), stacked: cells.every((td) => getComputedStyle(td).display !== "table-cell"), labelled: cells.every((td) => getComputedStyle(td, "::before").display !== "none"), fits: wrap.scrollWidth <= wrap.clientWidth };
+    }));
+    assert.equal(tables.length, 4, "Phase 1's open models, Phase 2's hosted critic, harnesses and results");
+    for (const t of tables) assert.deepEqual([t.stacked, t.labelled, t.fits], [true, true, true], t.label);
   } finally { await done(); }
   const wide = await open("/projects/research-agent", { width: 1000 });
   try {

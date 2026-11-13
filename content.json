@@ -352,14 +352,122 @@
               ]
             }
           ],
-          "runs_heading": "Recorded runs",
-          "built_heading": "How it was built",
-          "built": [
-            "Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.",
-            "A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code."
-          ],
+          "phase1": {
+            "heading": "Phase 1: Build and baseline",
+            "intro": [
+              "This phase covers research-agent v1.0.0 to v1.1.1. The measurements were made on 12 and 13 November 2026."
+            ],
+            "question_heading": "Question",
+            "question": [
+              "Can an agent with plan approval, gated tools and a reviewing model answer quant research questions correctly?"
+            ],
+            "built_heading": "What was built",
+            "built": [
+              "v1.0.0 is the system described above: two harnesses over one MCP server, the sandbox, the eval and the publish step. By v1.1.0 I had capped local-model output, because a gpt-oss:120b planning step had run for about 85 minutes until its context filled. With the cap, the longest run took 22 minutes.",
+              "Every part had a written spec with testable acceptance criteria before any code was written, and the sandbox's threat model was written before the sandbox.",
+              "A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code."
+            ],
+            "measured_heading": "How it was measured",
+            "measured": [
+              "Both harnesses answered the same eval questions on the seeded synthetic dataset, and the repo's own scorer marked each answer against the reference implementation. Claude ran through the Claude Code harness five times per question, with Sonnet 5.5 as planner and analyst and Opus 5.5 as critic.",
+              "The open models ran through the LangGraph pipeline, served by Ollama on a DGX Spark, one run per question. Each local-model call was capped at 8,192 output tokens and each run at 30 minutes.",
+              "Two questions, monday_drift and thursday_drift, have a wide absolute tolerance, sized for their traps, so a near-zero answer can pass on its conclusion."
+            ],
+            "results_heading": "Results",
+            "results": [
+              "The scorecard is from research-agent v1.0.0, on 12 November 2026. The four recorded runs, also through the Claude Code harness, were made earlier that day, before the v1.0.0 tag. The open-model runs used v1.1.0."
+            ],
+            "runs_heading": "Recorded runs",
+            "local_models": {
+              "heading": "Open models on a DGX Spark",
+              "intro": "On 13 November 2026 I ran the LangGraph pipeline overnight with open models, one run per question. The Version column gives the research-agent version each run used, and results are not directly comparable across versions. These were one-off runs, and I transcribed the figures below by hand rather than from a checked export.",
+              "columns": ["Model", "Version", "Correct", "Median minutes", "Main failure"],
+              "rows": [
+                ["gpt-oss:20b", "v1.1.0", "3 / 10", "6", "planted traps: contract roll (3), timezone (2)"],
+                ["gpt-oss:120b", "v1.1.0", "3 / 10", "6.5", "planted traps and malformed plans"],
+                ["qwen3:30b-a3b", "v1.1.0", "2 / 10", "12", "cut-offs at the token cap and planted traps"],
+                ["gemma4:26b", "v1.1.0", "0 / 10", "10", "planner and critic stuck in repetition loops"],
+                ["qwen2.5:7b", "v1.1.0", "0 / 10", "1", "no answer in 9 of 10 runs"],
+                ["nemotron-3-nano:30b", "v1.1.0", "0 / 1 (stopped)", "8", "spent the whole cap on hidden reasoning, so its replies were empty"],
+                ["nemotron-3-super:120b", "v1.1.0", "not run", "–", "did not load on the Spark (timed out twice)"]
+              ],
+              "text": [
+                "Most of the local correct answers came from the Monday and Thursday drift questions. On the other eight questions, 2 of the 40 runs by the five local models that ran every question were correct. I first wrote this as about one in eight, which was wrong. The Claude Code harness scored 0.90 on this set (research-agent v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.",
+                "Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run."
+              ]
+            },
+            "showed_heading": "What it showed",
+            "showed": [
+              "Claude was strong. Through the Claude Code harness it scored 0.90 at v1.0.0. Its one miss was afternoon_vol_ratio, where all five runs computed the statistic correctly and drew the wrong conclusion.",
+              "The traps beat every local model. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run."
+            ]
+          },
+          "phase2": {
+            "heading": "Phase 2: Diagnose and improve the harness",
+            "intro": ["This phase starts at research-agent v1.2.0, which can give each role a different model."],
+            "question_heading": "Question",
+            "question": [
+              "Phase 1 left the local models far behind Claude, with the critic as the weak link. Is that the models, or the harness around them?"
+            ],
+            "diagnosis_heading": "Diagnosis",
+            "hybrid": {
+              "heading": "A hosted critic",
+              "intro": "First I kept gpt-oss:20b on the Spark as planner and analyst and made OpenAI's gpt-5.6-sol the critic, at v1.2.0, one run per question. I transcribed these figures by hand too.",
+              "columns": ["Model", "Version", "Correct", "Median minutes", "Main failure"],
+              "rows": [
+                ["`gpt-oss:20b` + `gpt-5.6-sol` critic", "v1.2.0", "4 / 10", "4.5", "timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2"]
+              ],
+              "text": [
+                "The contract roll came up in 3 runs and the critic caught it every time. The analyst fixed it in 2, return_2024 and largest_session_move, and total_return still ended wrong. The timezone trap came up in 2 runs and was never caught, even by the hosted critic. tuesday_drift had exactly the right value, but the run hit the per-pass tool-call cap before it finished.",
+                "A stronger critic helps with a trap it can see in the code or the result. It can't catch one it has no facts to check against. Part of its success on the roll comes from the shared critic checklist, which states the CME roll rule in detail. With one run per question, 4 / 10 against 3 / 10 for gpt-oss:20b alone is within noise, and the two ran under different versions."
+              ]
+            },
+            "harness": {
+              "heading": "The two harnesses side by side",
+              "intro": "Then I read the two harnesses' code side by side at v1.2.0, without running anything. They share the tools, the plan schema, the critic checklist and the caps. The differences are in what surrounds the model.",
+              "columns": ["Gap", "Claude Code harness", "LangGraph pipeline"],
+              "rows": [
+                ["1. What the critic knows", "the dataset description: timezone, session, contract switches", "no dataset description, though its checklist tells it to use one"],
+                ["2. The analyst's first step", "told to read the dataset description", "not told"],
+                ["3. What the critic sees", "the full result, and it can read the files", "the result cut to 8,000 characters, the analyst's own summary, and no tools"],
+                ["4. The plan", "must state its session and timezone handling", "not asked to"],
+                ["5. Revisions", "a fresh analyst for each revision, given only the plan and the issues", "the feedback appended to the same long conversation"],
+                ["6. Ending a run", "no run token cap", "a run token cap, and the run ends at the tool-call cap even when it already holds a valid answer"]
+              ],
+              "text": [
+                "So the timezone miss is a harness gap as well as a model gap. The LangGraph critic was never told the data's timezone."
+              ]
+            },
+            "scope_heading": "Scope of v1.3.0",
+            "scope": {
+              "intro": "v1.3.0 is planned and not built yet. It will:",
+              "items": [
+                "close the six gaps above, so the LangGraph pipeline gives the model what the Claude Code harness already does",
+                "add held-out questions with fresh traps, on a different session and a different instrument, never used for tuning and reported separately"
+              ],
+              "text": [
+                "Prompt text that names a specific eval question or trap is out of scope.",
+                "If that isn't enough, v1.4.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions."
+              ]
+            },
+            "guard_heading": "Guarding against tuning to the test",
+            "guard": [
+              "The fixes have to work beyond the eval set. No prompt may name an eval question or trap, and a test already blocks eval answers in prompts. The held-out questions are never used for tuning, and their results are reported apart from the eval set's."
+            ],
+            "results_heading": "Results",
+            "results": {
+              "intro": "To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.3.0, then make five runs per question for a number comparable with the 0.90.",
+              "columns": ["Version", "Run", "Result"],
+              "rows": [
+                ["v1.3.0", "gpt-oss:20b alone, one run per question", "to come"],
+                ["v1.3.0", "gpt-oss:20b with the gpt-5.6-sol critic, one run per question", "to come"],
+                ["v1.3.0", "five runs per question", "to come"],
+                ["v1.4.0", "only if v1.3.0 needs it", "to come"]
+              ]
+            }
+          },
           "next_heading": "With more time",
-          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes. The last subsection is not a step. It reports a finished experiment with local and hybrid models.",
+          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes.",
           "next": [
             {
               "heading": "Run the red-team probes on every push",
@@ -371,7 +479,7 @@
             },
             {
               "heading": "Run the full LangGraph eval with hosted models",
-              "text": "The graph is tested with fake models. It has had one set of trials with local open models and one with a hosted critic (gpt-5.6-sol through OpenAI's API), both reported at the end of this section. The Claude Code harness runs on a subscription. The step that remains is running the full eval, five runs per question, through the graph with hosted models, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
+              "text": "The graph is tested with fake models, and Phase 2 runs it with gpt-oss:20b, alone and with a hosted critic. The step that remains is the full eval through the graph with hosted models, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
             },
             {
               "heading": "Add a canary on real market data",
@@ -393,27 +501,7 @@
               "heading": "Widen CI",
               "text": "The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure."
             }
-          ],
-          "local_models": {
-            "heading": "Open and hybrid models on a DGX Spark",
-            "intro": "On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each local-model call capped at 8,192 output tokens and each run at 30 minutes. In the last row, gpt-oss:20b on the Spark was the planner and analyst and OpenAI's gpt-5.6-sol was the critic. The Version column gives the research-agent version each run used, and results are not directly comparable across versions. These were one-off runs, and I transcribed the figures below by hand rather than from a checked export.",
-            "columns": ["Model", "Version", "Correct", "Median minutes", "Main failure"],
-            "rows": [
-              ["gpt-oss:20b", "v1.1.0", "3 / 10", "6", "planted traps: contract roll (3), timezone (2)"],
-              ["gpt-oss:120b", "v1.1.0", "3 / 10", "6.5", "planted traps and malformed plans"],
-              ["qwen3:30b-a3b", "v1.1.0", "2 / 10", "12", "cut-offs at the token cap and planted traps"],
-              ["gemma4:26b", "v1.1.0", "0 / 10", "10", "planner and critic stuck in repetition loops"],
-              ["qwen2.5:7b", "v1.1.0", "0 / 10", "1", "no answer in 9 of 10 runs"],
-              ["nemotron-3-nano:30b", "v1.1.0", "0 / 1 (stopped)", "8", "spent the whole cap on hidden reasoning, so its replies were empty"],
-              ["nemotron-3-super:120b", "v1.1.0", "not run", "–", "did not load on the Spark (timed out twice)"],
-              ["`gpt-oss:20b` + `gpt-5.6-sol` critic", "v1.2.0", "4 / 10", "4.5", "timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2"]
-            ],
-            "text": [
-              "Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five local models that ran every question were correct. The Claude Code harness scored 0.90 on this set (research-agent v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.",
-              "Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. In these runs the critic is the role that most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.",
-              "On these runs, with gpt-5.6-sol as the critic, gpt-oss:20b got 2 of the other eight questions right. In both, the critic caught the contract roll and the analyst fixed it. The timezone trap was still missed every time, so a stronger critic alone doesn't close the gap. On its own under v1.1.0, gpt-oss:20b got 1 of those eight, but the versions differ and there was one run per question, so neither that nor 4 / 10 against 3 / 10 is a direct comparison."
-            ]
-          }
+          ]
         }
       },
       "templates": {

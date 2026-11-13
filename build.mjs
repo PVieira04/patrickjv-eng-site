@@ -1037,6 +1037,17 @@ export function checkSvg(svg, name = ARCHITECTURE_SVG) {
 // "s" is a string, ["s"] a non-empty list of strings, [{…}] a non-empty list of that shape.
 const enumMap = (list) => Object.fromEntries(list.map((k) => [k, "s"]));
 const keys = (...ks) => Object.fromEntries(ks.map((k) => [k, "s"]));
+// A hand-written table on the showcase: a heading, an intro, columns, rows and paragraphs after it.
+const TABLE = { heading: "s", intro: "s", columns: ["s"], rows: [["s"]], text: ["s"] };
+// The showcase's hand-written tables. A model table's first cell is a model id (or backticked ids);
+// a table with versions must have a "Version" column whose every cell is a semver tag.
+export const SHOWCASE_TABLES = [
+  { path: "phase1.local_models", model: true, version: true },
+  { path: "phase2.hybrid", model: true, version: true },
+  { path: "phase2.harness", model: false, version: false },
+  { path: "phase2.results", model: false, version: true },
+];
+export const MODEL_CELL = /^copy\.showcase\.(phase1\.local_models|phase2\.hybrid)\.rows\.\d+\.0$/;
 const PROJECTS_SHAPE = {
   launched: "boolean",
   head: { index: keys("title", "description"), showcase: keys("title", "description") },
@@ -1046,8 +1057,16 @@ const PROJECTS_SHAPE = {
     showcase: {
       heading: "s", lead: "s", code: "s", code_link: "s", what_heading: "s", what: ["s"],
       architecture_heading: "s", architecture_intro: ["s"], architecture: [{ heading: "s", text: ["s"] }],
-      runs_heading: "s", built_heading: "s", built: ["s"], next_heading: "s", next_intro: "s", next: [keys("heading", "text")],
-      local_models: { heading: "s", intro: "s", columns: ["s"], rows: [["s"]], text: ["s"] },
+      phase1: {
+        heading: "s", intro: ["s"], question_heading: "s", question: ["s"], built_heading: "s", built: ["s"], measured_heading: "s", measured: ["s"],
+        results_heading: "s", results: ["s"], runs_heading: "s", local_models: TABLE, showed_heading: "s", showed: ["s"],
+      },
+      phase2: {
+        heading: "s", intro: ["s"], question_heading: "s", question: ["s"], diagnosis_heading: "s", hybrid: TABLE, harness: TABLE,
+        scope_heading: "s", scope: { intro: "s", items: ["s"], text: ["s"] }, guard_heading: "s", guard: ["s"],
+        results_heading: "s", results: { intro: "s", columns: ["s"], rows: [["s"]] },
+      },
+      next_heading: "s", next_intro: "s", next: [keys("heading", "text")],
     },
   },
   templates: Object.fromEntries(Object.keys(TEMPLATE_VARS).map((k) => [k, "s"])),
@@ -1084,15 +1103,16 @@ export function checkProjectsCopy(p) {
     for (const [, k] of t.matchAll(/\{([^{}]*)\}/g)) if (!TEMPLATE_VARS[name].includes(k)) errors.push(`${where(`templates.${name}`)} uses {${k}}, which isn't one of its placeholders (${TEMPLATE_VARS[name].map((x) => `{${x}}`).join(", ") || "none"})`);
     if (/[{}]/.test(t.replace(/\{([a-z_]+)\}/g, (m, k) => (TEMPLATE_VARS[name].includes(k) ? "" : m)))) errors.push(`${where(`templates.${name}`)} has a { or } left after its placeholders are filled`);
   }
-  const lm = p?.copy?.showcase?.local_models;
-  if (Array.isArray(lm?.columns) && Array.isArray(lm?.rows)) lm.rows.forEach((r, i) => { if (Array.isArray(r) && r.length !== lm.columns.length) errors.push(`${where(`copy.showcase.local_models.rows.${i}`)} must have one cell per column (${lm.columns.length})`); });
-  if (Array.isArray(lm?.columns) && Array.isArray(lm?.rows)) {
-    const vi = lm.columns.indexOf("Version");
-    if (vi < 0) errors.push(`${where("copy.showcase.local_models.columns")} must include "Version"`);
-    lm.rows.forEach((r, i) => {
+  for (const t of SHOWCASE_TABLES) {
+    const tb = t.path.split(".").reduce((o, k) => o?.[k], p?.copy?.showcase), at = `copy.showcase.${t.path}`;
+    if (!Array.isArray(tb?.columns) || !Array.isArray(tb?.rows)) continue;
+    const vi = tb.columns.indexOf("Version");
+    if (t.version && vi < 0) errors.push(`${where(`${at}.columns`)} must include "Version"`);
+    tb.rows.forEach((r, i) => {
       if (!Array.isArray(r)) return;
-      if (vi >= 0 && typeof r[vi] === "string" && !/^v\d+\.\d+\.\d+$/.test(r[vi])) errors.push(`${where(`copy.showcase.local_models.rows.${i}.${vi}`)} must be a version like v1.2.0`);
-      if (typeof r[0] === "string" && (r[0].split("`").length - 1) % 2) errors.push(`${where(`copy.showcase.local_models.rows.${i}.0`)} has an unmatched backtick`);
+      if (r.length !== tb.columns.length) errors.push(`${where(`${at}.rows.${i}`)} must have one cell per column (${tb.columns.length})`);
+      if (t.version && vi >= 0 && typeof r[vi] === "string" && !/^v\d+\.\d+\.\d+$/.test(r[vi])) errors.push(`${where(`${at}.rows.${i}.${vi}`)} must be a version like v1.2.0`);
+      if (t.model && typeof r[0] === "string" && (r[0].split("`").length - 1) % 2) errors.push(`${where(`${at}.rows.${i}.0`)} has an unmatched backtick`);
     });
   }
   if (p?.copy?.showcase && typeof p.copy.showcase.code === "string" && typeof p.copy.showcase.code_link === "string" && !p.copy.showcase.code.includes(p.copy.showcase.code_link)) errors.push(`${where("copy.showcase.code_link")} must be part of copy.showcase.code (it becomes the link to /book)`);
@@ -1123,7 +1143,7 @@ export function projectPageErrors(out, p, ctx) {
   }
   const allText = new Set(Object.values(docs).flatMap((d) => elements(d).map(textOf)));
   (function walk(v, path) {
-    if (typeof v === "string") { if (!allText.has(/^copy\.showcase\.local_models\.rows\.\d+\.0$/.test(path) ? v.replaceAll("`", "") : v)) errors.push(`content.json pages.projects.${path} is not the whole visible text of any element on the /projects pages`); }
+    if (typeof v === "string") { if (!allText.has(MODEL_CELL.test(path) ? v.replaceAll("`", "") : v)) errors.push(`content.json pages.projects.${path} is not the whole visible text of any element on the /projects pages`); }
     else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (!k.startsWith("_")) walk(x, `${path}.${k}`);
   })(p.copy, "copy");
   const head = (f) => {
