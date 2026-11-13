@@ -1282,7 +1282,7 @@ test("F-005: the local-model text quotes the published scorecard's score and k, 
   const card = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/scorecard/scorecard.json"), "utf8"));
   const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
   const text = P.copy.showcase.local_models.text.join("\n");
-  assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set, but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
+  assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set (harness v1.0.0), but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
 });
 
 test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {

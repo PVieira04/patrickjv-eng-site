@@ -182,23 +182,26 @@ The agent already fixes its test in a plan before any analysis runs, and the cri
 
 The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure.
 
-### Local models on a DGX Spark
+### Open and hybrid models on a DGX Spark
 
-On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.
+On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes. In the last row, gpt-oss:20b on the Spark was the planner and analyst and OpenAI's gpt-5.6-sol was the critic. The harness column gives the research-agent harness version each run used, and results are only comparable within a harness version. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.
 
-| Model | Correct | Median minutes | Main failure |
-|---|---|---|---|
-| `gpt-oss:20b` | 3 / 10 | 6 | planted traps: contract roll (3), timezone (2) |
-| `gpt-oss:120b` | 3 / 10 | 6.5 | planted traps and malformed plans |
-| `qwen3:30b-a3b` | 2 / 10 | 12 | cut-offs at the token cap and planted traps |
-| `gemma4:26b` | 0 / 10 | 10 | planner and critic stuck in repetition loops |
-| `qwen2.5:7b` | 0 / 10 | 1 | no answer in 9 of 10 runs |
-| `nemotron-3-nano:30b` | 0 / 1 (stopped) | 8 | spent the whole cap on hidden reasoning, so its replies were empty |
-| `nemotron-3-super:120b` | not run | – | did not load on the Spark (timed out twice) |
+| Model | Harness | Correct | Median minutes | Main failure |
+|---|---|---|---|---|
+| `gpt-oss:20b` | v1.1.0 | 3 / 10 | 6 | planted traps: contract roll (3), timezone (2) |
+| `gpt-oss:120b` | v1.1.0 | 3 / 10 | 6.5 | planted traps and malformed plans |
+| `qwen3:30b-a3b` | v1.1.0 | 2 / 10 | 12 | cut-offs at the token cap and planted traps |
+| `gemma4:26b` | v1.1.0 | 0 / 10 | 10 | planner and critic stuck in repetition loops |
+| `qwen2.5:7b` | v1.1.0 | 0 / 10 | 1 | no answer in 9 of 10 runs |
+| `nemotron-3-nano:30b` | v1.1.0 | 0 / 1 (stopped) | 8 | spent the whole cap on hidden reasoning, so its replies were empty |
+| `nemotron-3-super:120b` | v1.1.0 | not run | – | did not load on the Spark (timed out twice) |
+| `gpt-oss:20b + gpt-5.6-sol critic` | v1.2.0 | 4 / 10 | 4.5 | timezone trap not caught; the critic caught the contract roll in all 3 runs where it appeared |
 
-Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five models that ran every question were correct. The Claude Code harness scored 0.90 on this set, but with five runs per question and different models and prompts, so the two are not like-for-like.
+Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five models that ran every question were correct. The Claude Code harness scored 0.90 on this set (harness v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.
 
 Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. In these runs the critic is the role that most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.
+
+With gpt-5.6-sol as the critic, gpt-oss:20b got 2 of the other eight questions right, against 1 on its own. In both, the critic caught the contract roll and the analyst fixed it. The timezone trap was still missed every time, so a stronger critic alone doesn't close the gap. With one run per question and a different harness version, 4 / 10 against 3 / 10 is within noise.
 
 ---
 
