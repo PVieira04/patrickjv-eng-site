@@ -1086,6 +1086,15 @@ export function checkProjectsCopy(p) {
   }
   const lm = p?.copy?.showcase?.local_models;
   if (Array.isArray(lm?.columns) && Array.isArray(lm?.rows)) lm.rows.forEach((r, i) => { if (Array.isArray(r) && r.length !== lm.columns.length) errors.push(`${where(`copy.showcase.local_models.rows.${i}`)} must have one cell per column (${lm.columns.length})`); });
+  if (Array.isArray(lm?.columns) && Array.isArray(lm?.rows)) {
+    const vi = lm.columns.indexOf("Version");
+    if (vi < 0) errors.push(`${where("copy.showcase.local_models.columns")} must include "Version"`);
+    lm.rows.forEach((r, i) => {
+      if (!Array.isArray(r)) return;
+      if (vi >= 0 && typeof r[vi] === "string" && !/^v\d+\.\d+\.\d+$/.test(r[vi])) errors.push(`${where(`copy.showcase.local_models.rows.${i}.${vi}`)} must be a version like v1.2.0`);
+      if (typeof r[0] === "string" && (r[0].split("`").length - 1) % 2) errors.push(`${where(`copy.showcase.local_models.rows.${i}.0`)} has an unmatched backtick`);
+    });
+  }
   if (p?.copy?.showcase && typeof p.copy.showcase.code === "string" && typeof p.copy.showcase.code_link === "string" && !p.copy.showcase.code.includes(p.copy.showcase.code_link)) errors.push(`${where("copy.showcase.code_link")} must be part of copy.showcase.code (it becomes the link to /book)`);
   return errors;
 }
@@ -1114,7 +1123,7 @@ export function projectPageErrors(out, p, ctx) {
   }
   const allText = new Set(Object.values(docs).flatMap((d) => elements(d).map(textOf)));
   (function walk(v, path) {
-    if (typeof v === "string") { if (!allText.has(v)) errors.push(`content.json pages.projects.${path} is not the whole visible text of any element on the /projects pages`); }
+    if (typeof v === "string") { if (!allText.has(/^copy\.showcase\.local_models\.rows\.\d+\.0$/.test(path) ? v.replaceAll("`", "") : v)) errors.push(`content.json pages.projects.${path} is not the whole visible text of any element on the /projects pages`); }
     else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (!k.startsWith("_")) walk(x, `${path}.${k}`);
   })(p.copy, "copy");
   const head = (f) => {

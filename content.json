@@ -359,7 +359,7 @@
             "A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code."
           ],
           "next_heading": "With more time",
-          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes. The last subsection is not a step. It reports a finished experiment with local models.",
+          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes. The last subsection is not a step. It reports a finished experiment with local and hybrid models.",
           "next": [
             {
               "heading": "Run the red-team probes on every push",
@@ -370,8 +370,8 @@
               "text": "I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch."
             },
             {
-              "heading": "Run the LangGraph eval with paid models",
-              "text": "During development the project uses no paid model API. The graph is tested with fake models and has had one trial with local open models, reported at the end of this section. The Claude Code harness runs on a subscription. Running the eval through the graph with paid models is a deliberate later step, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
+              "heading": "Run the full LangGraph eval with hosted models",
+              "text": "The graph is tested with fake models. It has had one set of trials with local open models and one with a hosted critic (gpt-5.6-sol through OpenAI's API), both reported at the end of this section. The Claude Code harness runs on a subscription. The step that remains is running the full eval, five runs per question, through the graph with hosted models, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
             },
             {
               "heading": "Add a canary on real market data",
@@ -396,8 +396,8 @@
           ],
           "local_models": {
             "heading": "Open and hybrid models on a DGX Spark",
-            "intro": "On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each local-model call capped at 8,192 output tokens and each run at 30 minutes. In the last row, gpt-oss:20b on the Spark was the planner and analyst and OpenAI's gpt-5.6-sol was the critic. The harness column gives the research-agent harness version each run used, and results are only comparable within a harness version. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.",
-            "columns": ["Model", "Harness", "Correct", "Median minutes", "Main failure"],
+            "intro": "On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each local-model call capped at 8,192 output tokens and each run at 30 minutes. In the last row, gpt-oss:20b on the Spark was the planner and analyst and OpenAI's gpt-5.6-sol was the critic. The Version column gives the research-agent version each run used, and results are not directly comparable across versions. These were one-off runs, and I transcribed the figures below by hand rather than from a checked export.",
+            "columns": ["Model", "Version", "Correct", "Median minutes", "Main failure"],
             "rows": [
               ["gpt-oss:20b", "v1.1.0", "3 / 10", "6", "planted traps: contract roll (3), timezone (2)"],
               ["gpt-oss:120b", "v1.1.0", "3 / 10", "6.5", "planted traps and malformed plans"],
@@ -406,12 +406,12 @@
               ["qwen2.5:7b", "v1.1.0", "0 / 10", "1", "no answer in 9 of 10 runs"],
               ["nemotron-3-nano:30b", "v1.1.0", "0 / 1 (stopped)", "8", "spent the whole cap on hidden reasoning, so its replies were empty"],
               ["nemotron-3-super:120b", "v1.1.0", "not run", "–", "did not load on the Spark (timed out twice)"],
-              ["gpt-oss:20b + gpt-5.6-sol critic", "v1.2.0", "4 / 10", "4.5", "timezone trap not caught; the critic caught the contract roll in all 3 runs where it appeared"]
+              ["`gpt-oss:20b` + `gpt-5.6-sol` critic", "v1.2.0", "4 / 10", "4.5", "timezone trap not caught (2 runs); contract roll caught 3 of 3, fixed in 2"]
             ],
             "text": [
-              "Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five models that ran every question were correct. The Claude Code harness scored 0.90 on this set (harness v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.",
+              "Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five local models that ran every question were correct. The Claude Code harness scored 0.90 on this set (research-agent v1.0.0), but with five runs per question and different models and prompts, so the two are not like-for-like.",
               "Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. In these runs the critic is the role that most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.",
-              "With gpt-5.6-sol as the critic, gpt-oss:20b got 2 of the other eight questions right, against 1 on its own. In both, the critic caught the contract roll and the analyst fixed it. The timezone trap was still missed every time, so a stronger critic alone doesn't close the gap. With one run per question and a different harness version, 4 / 10 against 3 / 10 is within noise."
+              "On these runs, with gpt-5.6-sol as the critic, gpt-oss:20b got 2 of the other eight questions right. In both, the critic caught the contract roll and the analyst fixed it. The timezone trap was still missed every time, so a stronger critic alone doesn't close the gap. On its own under v1.1.0, gpt-oss:20b got 1 of those eight, but the versions differ and there was one run per question, so neither that nor 4 / 10 against 3 / 10 is a direct comparison."
             ]
           }
         }

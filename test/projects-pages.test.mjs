@@ -366,8 +366,8 @@ test("F-005 (D5): the full fixture set — every status, outcome, tag, stop reas
     ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate.se = null; cleanTraps(d); }) }));
     take();
     const text = shown.join("\n");
-    const missing = strings(P).filter(([path, v]) => !(path.startsWith("templates.") ? v.split(/\{[a-z_]+\}/).map((x) => x.trim()).filter(Boolean) : [v]).every((lit) => text.includes(lit)));
-    assert.deepEqual(missing, [], "every string renders in at least one page");
+    const missing = strings(P).filter(([path, v]) => !(path.startsWith("templates.") ? v.split(/\{[a-z_]+\}/).map((x) => x.trim()).filter(Boolean) : [/^copy\.showcase\.local_models\.rows\.\d+\.0$/.test(path) ? v.replaceAll("`", "") : v]).every((lit) => text.includes(lit)));
+    assert.deepEqual(missing, [], "every string renders in at least one page (a model cell's backticks become <code>)");
   } finally { s.done(); }
 });
 
@@ -1263,18 +1263,29 @@ test("F-005: 'With more time' ends with the local-model results: intro, a stacki
     assert.ok(h3 > sec.lastIndexOf(`<h3>${P.copy.showcase.next.at(-1).heading}</h3>`), "after the last next step");
     assert.ok(sec.indexOf(`<div class="scroll" role="region" aria-label="${lm.heading}" tabindex="0">\n<table class="scorecard-stack" role="table">`) > h3, "the scorecard's stacking table, in the scroll wrapper");
     const rows = [...sec.slice(h3).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => [...m[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => visible(c[1])));
-    assert.deepEqual(rows, [lm.columns, ...lm.rows]);
+    const plain = (c) => c.replaceAll("`", "");
+    assert.deepEqual(rows, [lm.columns, ...lm.rows.map((r) => [plain(r[0]), ...r.slice(1)])]);
     const trs = [...sec.slice(h3).matchAll(/<tr role="row">([\s\S]*?)<\/tr>/g)].map((m) => m[1]).slice(1);
     assert.equal(trs.length, lm.rows.length);
     trs.forEach((tr, j) => {
-      assert.ok(tr.startsWith(`<th scope="row" role="rowheader"><code>${lm.rows[j][0]}</code></th>`), `row ${j}: model id in code style`);
+      const m = lm.rows[j][0], head = m.includes("`") ? m.split("`").map((x, i) => (i % 2 ? `<code>${x}</code>` : x)).join("") : `<code>${m}</code>`;
+      assert.ok(tr.startsWith(`<th scope="row" role="rowheader">${head}</th>`), `row ${j}: model ids in code style`);
       assert.deepEqual([...tr.matchAll(/<td role="cell" data-label="([^"]*)">/g)].map((m) => m[1]), lm.columns.slice(1), `row ${j}: every cell names its column`);
     });
     const md = out(s, "projects/research-agent.md");
     assert.ok(md.includes(`### ${lm.heading}\n\n${lm.intro}\n\n| ${lm.columns.join(" | ")} |`));
-    for (const [m, ...r] of lm.rows) assert.ok(md.includes(`| \`${m}\` | ${r.join(" | ")} |`), m);
+    for (const [m, ...r] of lm.rows) assert.ok(md.includes(`| ${m.includes("`") ? m : `\`${m}\``} | ${r.join(" | ")} |`), m);
+    assert.ok(lm.rows.some((r) => r[0].includes("`")), "the hybrid row code-styles only its model ids");
+    assert.ok(sec.includes("<code>gpt-oss:20b</code> + <code>gpt-5.6-sol</code> critic</th>"));
     for (const t of lm.text) assert.ok(md.includes(t));
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0].pop(); })).some((e) => /local_models\.rows\.0 must have one cell per column/.test(e)));
+    assert.deepEqual(checkProjectsCopy(P), []);
+    const vi = lm.columns.indexOf("Version");
+    assert.ok(vi > 0, "a Version column");
+    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0][vi] = "1.1"; })).some((e) => /local_models\.rows\.0\.\d+ must be a version/.test(e)));
+    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.columns[vi] = "Harness"; })).some((e) => /local_models\.columns must include "Version"/.test(e)));
+    assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.local_models.rows[0][0] = "`gpt-oss:20b"; })).some((e) => /local_models\.rows\.0\.0 has an unmatched backtick/.test(e)));
+    assert.match(lm.intro, /not directly comparable across versions/);
   } finally { s.done(); }
 });
 
@@ -1282,7 +1293,8 @@ test("F-005: the local-model text quotes the published scorecard's score and k, 
   const card = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/scorecard/scorecard.json"), "utf8"));
   const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
   const text = P.copy.showcase.local_models.text.join("\n");
-  assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set (harness v1.0.0), but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
+  // "research-agent v1.0.0" is hard-coded: if the scorecard is re-recorded under a new version, update the label here and in content.json.
+  assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set (research-agent v1.0.0), but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
 });
 
 test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {
