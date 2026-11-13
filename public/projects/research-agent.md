@@ -184,7 +184,7 @@ The verification plan is sized to fit the free CI minutes. It uses one job inste
 
 ### Open and hybrid models on a DGX Spark
 
-On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes. In the last row, gpt-oss:20b on the Spark was the planner and analyst and OpenAI's gpt-5.6-sol was the critic. The harness column gives the research-agent harness version each run used, and results are only comparable within a harness version. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.
+On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and synthetic dataset, with open models served by Ollama on a DGX Spark, one run per question, with each local-model call capped at 8,192 output tokens and each run at 30 minutes. In the last row, gpt-oss:20b on the Spark was the planner and analyst and OpenAI's gpt-5.6-sol was the critic. The harness column gives the research-agent harness version each run used, and results are only comparable within a harness version. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.
 
 | Model | Harness | Correct | Median minutes | Main failure |
 |---|---|---|---|---|
