@@ -138,7 +138,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, existsSync, read
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
 import { build } from "../build.mjs";
-import { report, scorecard, dump, sha, png, RUN_ID, runFiles, writeExport, clearRecorded } from "./projects-helpers.mjs";
+import { report, scorecard, dump, sha, png, RUN_ID, runFiles, writeExport, clearRecorded, unlaunch, unlaunchHtml } from "./projects-helpers.mjs";
 import { record } from "../build.mjs";
 import { deflateSync } from "node:zlib";
 import { createHash } from "node:crypto";
@@ -194,8 +194,8 @@ function publish(s, runs, { card = null, copy, html } = {}) {
     m.scorecard = { eval_id: card.eval_id, checked: TODAY, export_digest: "b".repeat(64), tool_version: "0.1.0", exported_at: "2026-11-11T16:00:00Z", files: { "scorecard.json": sha(b) } };
   }
   write(s.root, MANIFEST, JSON.stringify(m, null, 2) + "\n");
-  if (copy) { const c = content(); copy(c); writeFileSync(join(s.root, "content.json"), JSON.stringify(c, null, 2) + "\n"); }
-  if (html) writeFileSync(join(s.root, "public/index.html"), html(readFileSync(join(ROOT, "public/index.html"), "utf8")));
+  if (copy) { const c = unlaunch(content()); copy(c); writeFileSync(join(s.root, "content.json"), JSON.stringify(c, null, 2) + "\n"); }
+  if (html) writeFileSync(join(s.root, "public/index.html"), html(unlaunchHtml(readFileSync(join(ROOT, "public/index.html"), "utf8"))));
   return build({ root: s.root, today: TODAY, now: NOW });
 }
 const out = (s, f) => readFileSync(join(s.root, "public", f), "utf8");
@@ -378,15 +378,16 @@ test("F-005 (D5): the full fixture set — every status, outcome, tag, stop reas
   } finally { s.done(); }
 });
 
-test("F-005 (D5, D9): with no runs and no scorecard and launched false (main before the first export), the build and --check pass", () => {
+test("F-005 (D5, D9): with no runs and no scorecard and launched false (main before the first export), the build and --check pass; the committed copy is launched and passes --check", () => {
   const s = site();
   try {
     rmSync(join(s.root, MANIFEST), { force: true });
     ok(build({ root: s.root, today: TODAY, now: NOW }));
     ok(build({ root: s.root, check: true, now: NOW }));
-    // The launch PR must update this test (and the build.test.mjs D4 tests using unpublishedScratch,
-    // which build with no run and so assume launched is false): see 06-operations, Launch.
-    assert.equal(P.launched, false, "the committed copy is not launched");
+    // Launched since the launch PR (06-operations, Launch); the scratch copy above starts unlaunched,
+    // since clearRecorded removes the runs that launched needs.
+    assert.equal(P.launched, true, "the committed copy is launched");
+    assert.ok(!Object.hasOwn(P, "_status"), "the draft note is gone");
     ok(build({ root: ROOT, check: true, now: NOW }));
   } finally { s.done(); }
 });
@@ -1123,8 +1124,7 @@ test("F-005 (US-2): run cards compare finished_at as instants, fractional second
 test("F-005 (D9): launched true fails while pages.projects still carries its _status draft note", () => {
   const s = site();
   try {
-    assert.ok(Object.hasOwn(P, "_status"));
-    const r = launched(s, [run(1)], { copy: (c) => { launch()(c); c.pages.projects._status = P._status; } });
+    const r = launched(s, [run(1)], { copy: (c) => { launch()(c); c.pages.projects._status = "Draft copy, to be approved before launch."; } });
     assert.ok(r.errors.some((e) => /launched is true, but pages\.projects\._status is still there/.test(e)), r.errors.join("\n"));
     ok(launched(s, [run(1)]));
   } finally { s.done(); }

@@ -144,9 +144,6 @@
   Content-Type: text/markdown; charset=utf-8
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
-/projects/*
-  X-Robots-Tag: noindex
-
 /cv.pdf
   Content-Type: application/pdf
   Cache-Control: public, max-age=3600

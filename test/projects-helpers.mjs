@@ -1,7 +1,7 @@
 // Helpers for the F-005 tests: build PNGs chunk by chunk and write synthetic export folders in the
 // shape research-agent's `research publish` writes them (export.json with sorted keys, 2-space
 // indent, trailing newline). Every fixture is hand-made synthetic data, never a real export.
-import { mkdirSync, writeFileSync, readFileSync, cpSync, readdirSync, lstatSync, rmSync, readlinkSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, cpSync, readdirSync, lstatSync, rmSync, readlinkSync, existsSync } from "node:fs";
 import { join, dirname, resolve, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -118,4 +118,17 @@ export function clearRecorded(root) {
   const r = resolve(root), rel = relative(resolve(tmpdir()), r);
   if (!rel || rel.startsWith("..") || isAbsolute(rel) || r === resolve(CHECKOUT)) throw new Error(`clearRecorded: ${JSON.stringify(root)} is not a scratch copy inside ${tmpdir()}`);
   for (const f of ["projects/research-agent/runs", "projects/research-agent/scorecard", "projects/research-agent/published.json", "public/projects/research-agent"]) rmSync(join(root, f), { recursive: true, force: true });
+  // With no run the showcase can't be launched (F-005 D9), so the copy starts unlaunched too.
+  const c = join(root, "content.json"), h = join(root, "public/index.html");
+  if (existsSync(c)) writeFileSync(c, JSON.stringify(unlaunch(JSON.parse(readFileSync(c, "utf8"))), null, 2) + "\n");
+  if (existsSync(h)) writeFileSync(h, unlaunchHtml(readFileSync(h, "utf8")));
 }
+
+// The launch PR's edits undone: launched false, and the showcase's side-projects entry and its
+// homepage card removed (F-005, Launch). No-ops on a copy that isn't launched.
+export function unlaunch(c) {
+  c.pages.projects.launched = false;
+  c.side_projects = c.side_projects.filter((p) => p.url !== "/projects/research-agent");
+  return c;
+}
+export const unlaunchHtml = (html) => html.replace(/\n {10}<li>\n {12}<article aria-labelledby="s-\d+-h">(?:(?!<\/li>)[\s\S])*?href="\/projects\/research-agent"[\s\S]*?<\/li>(?=\n)/, "");

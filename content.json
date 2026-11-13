@@ -91,6 +91,11 @@
       "title": "Marine-weather agent",
       "summary": "An agent that emails forecasts to a sailing yacht at sea.",
       "url": null
+    },
+    {
+      "title": "Research agent",
+      "summary": "An agent that answers a plain-English question about time-series data with a plan, sandboxed analysis, a critic and a report.",
+      "url": "/projects/research-agent"
     }
   ],
   "background": [
@@ -262,8 +267,7 @@
       }
     },
     "projects": {
-      "_status": "Draft copy for F-005 (docs/specs/F-005-research-agent-showcase.md), to be approved by Patrick as public copy before launch.",
-      "launched": false,
+      "launched": true,
       "head": {
         "index": {
           "title": "Projects — Patrick Vieira",
