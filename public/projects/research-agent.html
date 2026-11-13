@@ -328,7 +328,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <p>Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run.</p>
 <h3>What it showed</h3>
 <p>Claude was strong. Through the Claude Code harness it scored 0.90 at v1.0.0. Its one miss was afternoon_vol_ratio, where all five runs computed the statistic correctly and drew the wrong conclusion.</p>
-<p>No local model got past the traps. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run.</p>
+<p>No local model handled the traps reliably. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run.</p>
 </section>
 <section aria-labelledby="phase2-h">
 <h2 id="phase2-h">Phase 2: Diagnose and improve the harness</h2>
@@ -373,7 +373,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <p>Prompt text that names a specific eval question or trap is out of scope.</p>
 <p>If that isn't enough, v1.5.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions.</p>
 <h3>Guarding against tuning to the test</h3>
-<p>The fixes have to work beyond the eval set. The model may be given facts that every dataset carries, such as its timezone, session and contract switches, but no prompt may name a trap or an eval question. A test already blocks eval answers in prompts. The held-out questions, on another instrument and session, are never used for tuning and are reported apart from the eval set's, so they test whether the fixes generalise.</p>
+<p>The fixes have to work beyond the eval set. The model may be given facts that every dataset carries, such as its timezone, session and contract switches. The critic checklist names trap categories, which is shared domain knowledge given to both harnesses. No prompt may name a specific eval question or trap, and a test already blocks eval answers in prompts. The held-out questions, on another instrument and session, will never be used for tuning and will be reported apart from the eval set's, so they will test whether the fixes generalise.</p>
 <h3>Results</h3>
 <p>To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then give gpt-oss:20b with the hosted critic the same five runs per question as the 0.90.</p>
 <div class="scroll" role="region" aria-label="Phase 2 results" tabindex="0">
@@ -383,7 +383,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <tr role="row"><th scope="row" role="rowheader">v1.4.0</th><td role="cell" data-label="Run">gpt-oss:20b alone, one run per question</td><td role="cell" data-label="Result">to come</td></tr>
 <tr role="row"><th scope="row" role="rowheader">v1.4.0</th><td role="cell" data-label="Run">gpt-oss:20b with the gpt-5.6-sol critic, one run per question</td><td role="cell" data-label="Result">to come</td></tr>
 <tr role="row"><th scope="row" role="rowheader">v1.4.0</th><td role="cell" data-label="Run">gpt-oss:20b with the gpt-5.6-sol critic, five runs per question</td><td role="cell" data-label="Result">to come</td></tr>
-<tr role="row"><th scope="row" role="rowheader">v1.5.0</th><td role="cell" data-label="Run">only if v1.4.0 needs it</td><td role="cell" data-label="Result">to come</td></tr>
+<tr role="row"><th scope="row" role="rowheader">v1.5.0</th><td role="cell" data-label="Run">the analysis tool reports facts about the data it used</td><td role="cell" data-label="Result">only if needed</td></tr>
 </tbody>
 </table>
 </div>
@@ -396,7 +396,7 @@ img { display: block; max-width: 100%; height: auto; border: 1px solid var(--lin
 <h3>Finish the simpler verification plan</h3>
 <p>I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch.</p>
 <h3>Run the full LangGraph eval with hosted models</h3>
-<p>The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The one hosted-critic run so far ran under a token cap set for that experiment. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.</p>
+<p>The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The ten hosted-critic runs so far had a spend guard that would have stopped the experiment if OpenAI usage passed 3 million input or 300,000 output tokens. They used about 68,000 input and 38,000 output tokens. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.</p>
 <h3>Add a canary on real market data</h3>
 <p>Real futures data stays on my machine. The vendor's licence doesn't allow showing anything derived from it without a redistribution plan, which is why everything here is synthetic. A weekly canary is specified that fetches one fixed week, checks the bar count and the contract roll, and deletes the data. It stays off until the vendor confirms in writing that processing on a hosted CI runner is allowed.</p>
 <h3>Give the Claude Code harness a token budget and resume</h3>

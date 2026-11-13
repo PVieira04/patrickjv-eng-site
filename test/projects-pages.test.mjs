@@ -1299,15 +1299,16 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     }
     assert.deepEqual(checkProjectsCopy(P), []);
     const { local_models: lm } = P.copy.showcase.phase1, { hybrid } = P.copy.showcase.phase2;
-    assert.ok(lm.rows.every((r) => !r[0].includes("`")), "Phase 1's table has no hybrid row");
+    assert.ok(lm.rows.every((r) => !r[0].includes("`") && !/\+|critic/.test(r[0])), "Phase 1's table has no hybrid row");
     assert.ok(hybrid.rows.some((r) => r[0].includes("`")), "the hybrid row code-styles only its model ids");
     assert.ok(page.includes("<code><span>gpt-oss:</span><wbr><span>20b</span></code> + <code><span>gpt-5.6-sol</span></code> critic</th>"), "ids break only after a colon");
     assert.match(lm.intro, /not directly comparable across versions/);
     assert.match(lm.intro, /transcribed the figures below by hand/);
     assert.match(hybrid.intro, /transcribed these figures by hand/);
-    assert.ok(P.copy.showcase.phase2.results.rows.every((r) => r.at(-1) === "to come"), "Phase 2 has no results yet");
+    assert.deepEqual(P.copy.showcase.phase2.results.rows.map((r) => r.at(-1)), ["to come", "to come", "to come", "only if needed"], "Phase 2 has no results yet");
     // The research-agent versions (renumbered 13 Nov 2026): Phase 1 is v1.0.0 to v1.2.0, the hosted
-    // critic and the harness comparison are v1.3.0, the planned parity fixes v1.4.0, the tool facts v1.5.0.
+    // critic ran on an early build of v1.3.0, the harness comparison read v1.2.0, the planned parity
+    // fixes are v1.4.0 and the tool facts v1.5.0.
     const p2 = P.copy.showcase.phase2;
     assert.match(P.copy.showcase.phase1.intro.join(" "), /v1\.0\.0 to v1\.2\.0/);
     assert.ok(lm.rows.every((r) => r[1] === "v1.1.0"), "the overnight local runs are v1.1.0");
@@ -1336,6 +1337,7 @@ test("F-005: the phases quote the published scorecard's score and k, so a re-rec
   for (const q of quoted) assert.equal(q, fixed2(card.aggregate.score), `a quoted score ${q}`);
   // When the scorecard names its harness version, the hard-coded label must be that version.
   const hv = card.fingerprint.config.harness_version;
+  // Inactive until scorecards carry the field (the published one predates harness versioning).
   if (hv !== undefined && hv !== null) assert.equal(hv, "v1.0.0", "the scorecard's harness_version matches the page's label");
   assert.match(P.copy.showcase.phase1.showed.join("\n"), new RegExp(`scored ${fixed2(card.aggregate.score).replace(".", "\\.")} at v1\\.0\\.0`));
 });
@@ -1345,6 +1347,8 @@ test("F-005: Phase 1's results name the recorded runs' count and harness, and th
   const published = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/published.json"), "utf8"));
   const card = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/scorecard/scorecard.json"), "utf8"));
   const ids = Object.keys(published.runs);
+  const day = new Date(card.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The scorecard is from research-agent v1.0.0, on ${day}.`), "the scorecard's date");
   assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[ids.length] ?? ids.length} recorded runs, also through the Claude Code harness, were made earlier that day.`), "the count word is the number of published runs");
   for (const id of ids) {
     const r = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8"));

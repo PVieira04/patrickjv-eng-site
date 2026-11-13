@@ -190,7 +190,7 @@ Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's s
 
 Claude was strong. Through the Claude Code harness it scored 0.90 at v1.0.0. Its one miss was afternoon_vol_ratio, where all five runs computed the statistic correctly and drew the wrong conclusion.
 
-No local model got past the traps. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run.
+No local model handled the traps reliably. The best scored 0.3 at v1.1.0, mostly on the two wide-tolerance questions. Their weak link was the critic. No local critic caught the timezone trap on any open-volatility run, and the few times one raised the contract roll, it never stopped a wrong answer. gemma4:26b's analyst even reached the afternoon_vol_ratio statistic (0.9917 against a reference of 0.9915) before its own critic fell into a repetition loop and ended the run.
 
 ## Phase 2: Diagnose and improve the harness
 
@@ -242,7 +242,7 @@ If that isn't enough, v1.5.0 would have the analysis tool report facts about the
 
 ### Guarding against tuning to the test
 
-The fixes have to work beyond the eval set. The model may be given facts that every dataset carries, such as its timezone, session and contract switches, but no prompt may name a trap or an eval question. A test already blocks eval answers in prompts. The held-out questions, on another instrument and session, are never used for tuning and are reported apart from the eval set's, so they test whether the fixes generalise.
+The fixes have to work beyond the eval set. The model may be given facts that every dataset carries, such as its timezone, session and contract switches. The critic checklist names trap categories, which is shared domain knowledge given to both harnesses. No prompt may name a specific eval question or trap, and a test already blocks eval answers in prompts. The held-out questions, on another instrument and session, will never be used for tuning and will be reported apart from the eval set's, so they will test whether the fixes generalise.
 
 ### Results
 
@@ -253,7 +253,7 @@ To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then
 | v1.4.0 | gpt-oss:20b alone, one run per question | to come |
 | v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, one run per question | to come |
 | v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, five runs per question | to come |
-| v1.5.0 | only if v1.4.0 needs it | to come |
+| v1.5.0 | the analysis tool reports facts about the data it used | only if needed |
 
 ## With more time
 
@@ -269,7 +269,7 @@ I designed an unattended verification runner for my own machine and dropped it a
 
 ### Run the full LangGraph eval with hosted models
 
-The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The one hosted-critic run so far ran under a token cap set for that experiment. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
+The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The ten hosted-critic runs so far had a spend guard that would have stopped the experiment if OpenAI usage passed 3 million input or 300,000 output tokens. They used about 68,000 input and 38,000 output tokens. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
 
 ### Add a canary on real market data
 
