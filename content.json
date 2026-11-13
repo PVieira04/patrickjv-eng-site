@@ -359,7 +359,7 @@
             "A second model reviewed the specs and the code adversarially over several rounds. I fixed or recorded each finding, and wrote the tests before the code."
           ],
           "next_heading": "With more time",
-          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes.",
+          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes. The last subsection is not a step. It reports a finished experiment with local models.",
           "next": [
             {
               "heading": "Run the red-team probes on every push",
@@ -370,8 +370,8 @@
               "text": "I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch."
             },
             {
-              "heading": "Run the LangGraph eval with real models",
-              "text": "During development the project uses no paid model API. The graph is tested with fake models, and the Claude Code harness runs on a subscription. Running the eval through the graph with real models is a deliberate later step, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
+              "heading": "Run the LangGraph eval with paid models",
+              "text": "During development the project uses no paid model API. The graph is tested with fake models and has had one pass with local open models, reported at the end of this section. The Claude Code harness runs on a subscription. Running the eval through the graph with paid models is a deliberate later step, and it needs a spend ceiling first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
             },
             {
               "heading": "Add a canary on real market data",
@@ -396,20 +396,20 @@
           ],
           "local_models": {
             "heading": "Local models on a DGX Spark",
-            "intro": "I ran the LangGraph pipeline on the same eval questions with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes.",
+            "intro": "On 13 November 2026 I ran the LangGraph pipeline on the same eval questions with open models served by Ollama on a DGX Spark, one run per question, with each call capped at 8,192 output tokens and each run at 30 minutes. It was a one-off run, and I transcribed the figures below by hand rather than from a checked export.",
             "columns": ["Model", "Correct", "Median minutes", "Main failure"],
             "rows": [
-              ["gpt-oss-20b", "3 / 10", "6", "planted traps: contract roll (3), timezone (2)"],
-              ["gpt-oss-120b", "3 / 10", "6.5", "planted traps, and malformed plans"],
-              ["qwen3:30b-a3b", "2 / 10", "12", "cut off at the token cap, and planted traps"],
+              ["gpt-oss:20b", "3 / 10", "6", "planted traps: contract roll (3), timezone (2)"],
+              ["gpt-oss:120b", "3 / 10", "6.5", "planted traps and malformed plans"],
+              ["qwen3:30b-a3b", "2 / 10", "12", "cut-offs at the token cap and planted traps"],
               ["gemma4:26b", "0 / 10", "10", "planner and critic stuck in repetition loops"],
               ["qwen2.5:7b", "0 / 10", "1", "no answer in 9 of 10 runs"],
-              ["nemotron-3-nano:30b", "stopped after 1 run", "8", "spent the whole cap on hidden reasoning, so its replies were empty"],
+              ["nemotron-3-nano:30b", "0 / 1 (stopped)", "8", "spent the whole cap on hidden reasoning, so its replies were empty"],
               ["nemotron-3-super:120b", "not run", "–", "did not load on the Spark (timed out twice)"]
             ],
             "text": [
-              "Most of the local passes came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion; on the other eight questions the local models got about one in eight right. The Claude Code harness scored 0.90 on this set, but over five runs per question in a different harness, so the two are not like-for-like.",
-              "Of the local models, gpt-oss-20b is the best option: it matched the 120b's score with about a fifth of the memory, and it was the only one to finish every run. The weak link is the critic: no local critic caught the timezone trap on an open-volatility run, and the contract-roll trap, raised only a few times, never stopped a wrong answer."
+              "Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five models that ran every question were correct. The Claude Code harness scored 0.90 on this set, but with five runs per question and different models and prompts, so the two are not like-for-like.",
+              "Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. The critic is what most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer."
             ]
           }
         }
