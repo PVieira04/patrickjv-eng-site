@@ -58,6 +58,7 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line);
 main { overflow-wrap: anywhere; }
 :focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
 h3 { font-size: 1.0625rem; margin: 1.5em 0 0.4em; font-weight: 600; }
+h4, h5 { font-size: 1rem; margin: 1.25em 0 0.4em; font-weight: 600; }
 .lead { font-size: 1.125rem; }
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 0 0 16px; }
 .facts dt { font-family: var(--mono); font-size: 0.875rem; color: var(--muted); padding-top: 0.15em; }
@@ -67,6 +68,7 @@ h3 { font-size: 1.0625rem; margin: 1.5em 0 0.4em; font-weight: 600; }
 .scroll pre { margin: 0; overflow: visible; }
 .scroll table { overflow-wrap: normal; }
 .scorecard-id > span { white-space: nowrap; }
+.local-models code > span { white-space: nowrap; }
 .scorecard-note { font-size: 0.9375rem; color: var(--muted); }
 @media (max-width: 560px) { .scorecard-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .scorecard-stack, .scorecard-stack tbody, .scorecard-stack tr, .scorecard-stack th, .scorecard-stack td { display: block; } .scorecard-stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); } .scorecard-stack th, .scorecard-stack td { border: 0; padding: 2px 0; } .scorecard-stack td { display: flex; gap: 12px; } }
 .scorecard-stack td::before { content: attr(data-label) / ""; display: none; }
@@ -76,7 +78,7 @@ th, td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-ali
 thead th { font-family: var(--mono); font-size: 0.8125rem; font-weight: 400; color: var(--muted); }
 .cards { list-style: none; padding: 0; }
 .cards > li { margin: 0; padding: 16px 0; border-top: 1px solid var(--line); }
-.cards h3 { margin: 0 0 8px; }
+.cards h5 { margin: 0 0 8px; }
 .issues li { margin: 0.5em 0; }
 .tag { font-weight: 600; }
 figure { margin: 0 0 24px; }
