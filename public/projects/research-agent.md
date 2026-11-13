@@ -198,7 +198,7 @@ On 13 November 2026 I ran the LangGraph pipeline on the same eval questions and 
 
 Most of the local correct answers came from the Monday and Thursday drift questions, whose tolerance is wide enough for a near-zero answer to pass on its conclusion. On the other eight questions, 2 of the 40 runs by the five models that ran every question were correct. The Claude Code harness scored 0.90 on this set, but with five runs per question and different models and prompts, so the two are not like-for-like.
 
-Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. Among the local models, the critic is what most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.
+Of the local models, gpt-oss:20b is the best option. It matched gpt-oss:120b's score with about a fifth of the memory and was the only one to finish every run. In these runs the critic is the role that most needs improving. The local critic never caught the timezone trap on any open-volatility run, and it raised the contract-roll trap only a few times without that ever stopping a wrong answer.
 
 ---
 

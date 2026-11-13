@@ -1278,6 +1278,13 @@ test("F-005: 'With more time' ends with the local-model results: intro, a stacki
   } finally { s.done(); }
 });
 
+test("F-005: the local-model text quotes the published scorecard's score and k, so a re-recorded scorecard fails until the text is updated", () => {
+  const card = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/scorecard/scorecard.json"), "utf8"));
+  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const text = P.copy.showcase.local_models.text.join("\n");
+  assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set, but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
+});
+
 test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {
   const svg = readFileSync(join(ROOT, "projects/research-agent/sandbox.svg"), "utf8");
   const x = svg.replace("</title>", '<meta http-equiv="refresh" content="0;url=https://example.com"></title>');
