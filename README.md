@@ -80,7 +80,7 @@ docs/                     Full documentation (start below)
 | [05 — Quality and audits](docs/05-quality-and-audits.md) | Lighthouse, accessibility, security headers, CSP, caching, privacy, responsive and print checks, how to re-run audits |
 | [06 — Operations](docs/06-operations.md) | Deploying, CI, monitoring, rollback, keys and secrets, incidents, renewals, open follow-ups |
 | [07 — History and decisions](docs/07-history-and-decisions.md) | How the site was made on 6 Oct 2026: design competition, reviews, decisions and lessons |
-| [Specs](docs/specs/) | F-001 booking (shipped), F-002 confirm by signing in (P1 shipped), F-003 calendar picker (shipped), F-004 Microsoft and Altimist ID sign-in (built, not launched), F-005 research-agent showcase at `/projects` (built, not launched) |
+| [Specs](docs/specs/) | F-001 booking (shipped), F-002 confirm by signing in (P1 shipped), F-003 calendar picker (shipped), F-004 Microsoft and Altimist ID sign-in (built, not launched), F-005 research-agent showcase at `/projects` (launched 2026-11-14) |
 | [Review (6–7 Oct 2026)](docs/reviews/2026-10-06-merged-review.md) | Merged adversarial review findings (rounds 1–3), with the status of each |
 
 ## Rules that must not be broken

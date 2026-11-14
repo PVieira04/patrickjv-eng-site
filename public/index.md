@@ -63,6 +63,10 @@ An adaptive maths learning platform, started after seeing in the classroom how f
 
 An agent that emails forecasts to a sailing yacht at sea.
 
+### Research agent
+
+An agent that answers a plain-English question about time-series data with a plan, sandboxed analysis, a critic and a report.
+
 ## Background
 
 I studied Electrical and Electronic Engineering (BEng), then trained as a maths teacher (PGCE, UCL) and taught secondary mathematics for two years. In 2021 I taught myself full-stack development and moved into software, and I have worked in platform engineering since 2023.
@@ -108,6 +112,14 @@ By email at hello@patrickjv.com, or through LinkedIn or GitHub.
 
 - [Holding agent-written code to the same standard as anyone's](https://patrickjv.com/writing/gating-agent-written-code.md) (2026-10-08): The golden path I use so that code drafted by AI agents meets the same bar as code written by people, enforced by the system rather than by attention.
 - [Rehearse the restore, time the rollback](https://patrickjv.com/writing/rehearse-the-restore.md) (2026-10-08): Why I time database restores and rollbacks before a release needs them, with a four-minute incident on this site and a Postgres restore drill as worked examples.
+
+## Projects
+
+- [Research agent](https://patrickjv.com/projects/research-agent.md): A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data from its Claude Code harness.
+- [On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.](https://patrickjv.com/projects/research-agent/runs/20261112T165943Z-8eb45f/report.md) (checked 2026-11-12)
+- [On synth-1m, do Monday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Mondays as the statistic `monday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.](https://patrickjv.com/projects/research-agent/runs/20261112T165719Z-a93bec/report.md) (checked 2026-11-12)
+- [On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).](https://patrickjv.com/projects/research-agent/runs/20261112T165438Z-76a84d/report.md) (checked 2026-11-12)
+- [On synth-1m, is realised 1-minute volatility higher in the first 30 minutes after the 09:30 New York cash open than in the rest of the same session? Report the mean over sessions of the ratio of realised volatility in that window to realised volatility in the rest of the session as the statistic `open_vol_ratio`, and test the hypothesis that the window is more volatile at the 5% level.](https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/report.md) (checked 2026-11-12)
 
 ## How to book a call
 

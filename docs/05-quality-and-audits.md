@@ -78,7 +78,23 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 
 **Lighthouse and axe budget** for the index, the showcase and one run page, mobile and desktop, measured on the dark deploy before launch and again after it: Performance, Accessibility and Best Practices 100; every SEO audit passes except `robots-txt` (as on `/writing/`) and, before launch only, `is-crawlable` (the pages are `noindex` on purpose); LCP (mobile) at most 1.5 s; CLS at most 0.02; axe 0 violations in dark and light. The headless-Chromium test (`test/projects-browser.test.mjs`) already checks the real CSP, same-origin requests and no sideways scroll at 360 px and at 320 px with 200 % text.
 
-**Results: not run yet.** The pre-launch run (dark deploy) and the post-launch SEO re-run are recorded here when they happen ([runbook](06-operations.md#projects-runbooks)).
+**Pre-launch checks on the dark deploy, 2026-11-14** (production, `launched: false`; [runbook](06-operations.md#projects-runbooks)):
+
+- **Smoke (check 2): passed.** `node smoke.mjs https://patrickjv.com --strict-https` from `e2573aa`: 43 passed, 0 warned, 0 failed, including deployed = repo for every run file and `X-Robots-Tag: noindex` on the showcase and its Markdown (no run has a figure yet, so there is no figure check).
+- **URLs in production (check 3): passed.** `/projects/research-agent` returns the showcase with 200 (no redirect), checked at `e2573aa`; `/projects/research-agent/runs/20261112T163326Z-468489/` returns its run page with 200 and the slash form as canonical; without the slash it redirects to the slash form with a **307** (the asset server's choice; left as is).
+- **Lighthouse and axe (check 4): passed on 2026-11-14**, on production after the fix deployed (`f4aa358`, PR #38). Headless Chromium via Playwright + Lighthouse (mobile / desktop), axe in dark and light mode:
+
+  | Page | Perf | A11y | Best practices | SEO | LCP | CLS |
+  |---|---|---|---|---|---|---|
+  | `/projects/` | 100 / 100 | 100 / 100 | 100 / 100 | 58 / 58 | 0.8 s / 0.3 s | 0.0005 / 0.0001 |
+  | `/projects/research-agent` | 100 / 100 | 100 / 100 | 100 / 100 | 58 / 58 | 1.0 s / 0.3 s | 0 / 0.00001 |
+  | `/projects/research-agent/runs/20261112T163326Z-468489/` | 100 / 100 | 100 / 100 | 100 / 100 | 58 / 58 | 0.8 s / 0.2 s | 0 / 0.0005 |
+
+  axe-core: **0 violations on all three pages**, dark and light. SEO fails only `is-crawlable` and `robots-txt`, both excluded before launch. Smoke with `--strict-https` re-run the same day against `f4aa358`: 43 passed, 0 warned, 0 failed.
+
+  Earlier the same day, check 4 failed on production (showcase mobile Performance 90 with CLS 0.21 and the run page's mobile CLS 0.03, both from the body font's late swap without a preload; axe `landmark-unique` from the scorecard's region sharing its section's name); fixed in PR #38.
+
+The post-launch SEO re-run is recorded here when it happens.
 
 ## Privacy
 
