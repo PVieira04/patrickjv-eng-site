@@ -275,7 +275,7 @@
         },
         "showcase": {
           "title": "Research agent: LangGraph and LangChain on MCP — Patrick Vieira",
-          "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data."
+          "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data from its Claude Code harness."
         }
       },
       "copy": {

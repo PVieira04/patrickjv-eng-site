@@ -78,7 +78,13 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 
 **Lighthouse and axe budget** for the index, the showcase and one run page, mobile and desktop, measured on the dark deploy before launch and again after it: Performance, Accessibility and Best Practices 100; every SEO audit passes except `robots-txt` (as on `/writing/`) and, before launch only, `is-crawlable` (the pages are `noindex` on purpose); LCP (mobile) at most 1.5 s; CLS at most 0.02; axe 0 violations in dark and light. The headless-Chromium test (`test/projects-browser.test.mjs`) already checks the real CSP, same-origin requests and no sideways scroll at 360 px and at 320 px with 200 % text.
 
-**Results: not run yet.** The pre-launch run (dark deploy) and the post-launch SEO re-run are recorded here when they happen ([runbook](06-operations.md#projects-runbooks)).
+**Pre-launch checks on the dark deploy, 2026-11-14** (production at `e2573aa`, `launched: false`; [runbook](06-operations.md#projects-runbooks)):
+
+- **Smoke (check 2): passed.** `node smoke.mjs https://patrickjv.com --strict-https` from that commit: 43 passed, 0 warned, 0 failed, including deployed = repo for every run file and `X-Robots-Tag: noindex` on the showcase and its Markdown (no run has a figure yet, so there is no figure check).
+- **URLs in production (check 3): passed.** `/projects/research-agent` returns the showcase with 200 (no redirect); `/projects/research-agent/runs/20261112T163326Z-468489/` returns its run page with 200 and the slash form as canonical; without the slash it redirects to the slash form with a **307** (the asset server's choice; left as is).
+- **Lighthouse and axe (check 4): failed on 2026-11-14, fixed in `fix/showcase-audit`, to be re-run on production after that merges.** On production: the showcase scored mobile Performance 90 with CLS 0.21 (the body font was not preloaded, and its late swap reflowed the text above the first section); the run page had mobile CLS 0.03 (the same swap, on `dl.facts`); and axe found `landmark-unique` on the showcase in dark and light (the scorecard's scroll region had the same name, "Eval scorecard", as its section). The index passed: 100 / 100 / 100, CLS under 0.001, axe 0 violations. SEO was 58 on all three pages, failing only `is-crawlable` and `robots-txt`, both excluded before launch.
+
+The post-launch SEO re-run is recorded here when it happens.
 
 ## Privacy
 

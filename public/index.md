@@ -115,7 +115,7 @@ By email at hello@patrickjv.com, or through LinkedIn or GitHub.
 
 ## Projects
 
-- [Research agent](https://patrickjv.com/projects/research-agent.md): A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data.
+- [Research agent](https://patrickjv.com/projects/research-agent.md): A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data from its Claude Code harness.
 - [On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.](https://patrickjv.com/projects/research-agent/runs/20261112T165943Z-8eb45f/report.md) (checked 2026-11-12)
 - [On synth-1m, do Monday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Mondays as the statistic `monday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.](https://patrickjv.com/projects/research-agent/runs/20261112T165719Z-a93bec/report.md) (checked 2026-11-12)
 - [On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).](https://patrickjv.com/projects/research-agent/runs/20261112T165438Z-76a84d/report.md) (checked 2026-11-12)
