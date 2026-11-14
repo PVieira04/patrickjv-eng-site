@@ -427,7 +427,7 @@ test("F-005 (US-2): the scorecard is one table, a row per question (id in code s
     ]);
     assert.ok(scoreSection(h).includes('<th scope="row" role="rowheader"><code>open-vol</code></th>'), "the question id in code style");
     assert.equal(scoreHead(h)[c.aggregate], "0.75 (standard error 0.13)", "0.125 rounds half away from zero");
-    assert.match(body(h), /<div class="scroll" role="region" aria-label="Eval scorecard" tabindex="0">\s*<table class="scorecard-stack" role="table">/, "in the same focusable scroll wrapper as report tables");
+    assert.match(body(h), /<div class="scroll" role="region" aria-label="Eval scorecard table" tabindex="0">\s*<table class="scorecard-stack" role="table">/, "in the same focusable scroll wrapper as report tables");
     ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate = { score: 0.135, se: null }; d.questions[1].critic_precision = { x: 0, n: 0 }; }) }));
     const h2 = out(s, SHOWCASE);
     assert.equal(scoreHead(h2)[c.aggregate], `0.14 ${c.se_na}`);
@@ -758,6 +758,8 @@ test("F-005 (US-3): each page links its Markdown copy; report.md, report.json an
     ok(publish(s, [r]));
     for (const [f, md] of [["projects/index.html", "/projects/index.md"], [SHOWCASE, "/projects/research-agent.md"], [`projects/research-agent/runs/${r.id}/index.html`, `/projects/research-agent/runs/${r.id}/report.md`]]) {
       assert.ok(out(s, f).includes(`<link rel="alternate" type="text/markdown" href="${md}">`), f);
+      // The body font is preloaded, as on the homepage: discovered late, its swap reflowed the text above the first section (CLS 0.21 on mobile).
+      assert.ok(out(s, f).includes('<link rel="preload" href="/fonts/ibm-plex-sans-latin-var.woff2" as="font" type="font/woff2" crossorigin>'), `${f}: preloads the body font`);
       assert.ok(existsSync(join(s.root, "public", md)), md);
     }
     const src = join(s.root, "projects/research-agent/runs", r.id), pub = join(s.root, "public/projects/research-agent/runs", r.id);
