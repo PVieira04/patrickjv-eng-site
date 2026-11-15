@@ -368,7 +368,7 @@ test("F-005 (D5): the full fixture set — every status, outcome, tag, stop reas
     take();
     ok(publish(s, stops.slice(5, 13).map((stop, i) => run(10 + i, { edit: i % 2 ? failedNoPlan(stop) : capped(stop), figures: {} }))));
     take();
-    ok(publish(s, [run(20, { edit: capped(stops[13]) })]));
+    ok(publish(s, [run(20, { edit: capped(stops[13]) }), run(21, { edit: (d) => { d.models.served = "local"; d.usage.cap_terminated = "run_tokens"; } }), run(22, { edit: (d) => { d.models.served = "hybrid"; } })]));
     take();
     ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate.se = null; cleanTraps(d); }) }));
     take();
@@ -539,6 +539,56 @@ test("F-005 (US-2): run cards are ordered by role, then finished_at newest first
     assert.ok(card.includes(`<h5>${report().question}</h5>`));
     for (const [k, v] of [["harness", P.labels.harness.langgraph], ["status", P.labels.status.completed], ["outcome", P.labels.outcome.passed], ["role", P.labels.role.trap_caught]]) assert.ok(card.includes(`<dt>${P.labels.card[k]}</dt><dd>${v}</dd>`), k);
     assert.ok(card.includes(`>${P.labels.card.link}</a>`));
+  } finally { s.done(); }
+});
+
+// ---- LangGraph run pages (Amendment A): the header names the harness and where the models ran ----
+import { GRAPH_RUN_ID, graphReport, graphRunFiles } from "./projects-helpers.mjs";
+const graphRun = (fn, role = "clean_pass") => ({ id: GRAPH_RUN_ID, doc: edit(graphReport(), fn), md: graphRunFiles()["report.md"].toString(), figures: {}, alt: {}, role, checked: TODAY });
+const headerOf = (h) => Object.fromEntries([...body(h).match(/<dl class="facts">[\s\S]*?<\/dl>/)[0].matchAll(/<dt>([\s\S]*?)<\/dt><dd>([\s\S]*?)<\/dd>/g)].map((m) => [plain(m[1]), plain(m[2])]));
+
+test("F-005 (Amendment A): a local LangGraph run's page names the LangGraph agent and its models served on a DGX Spark, by name, and never Claude Code", () => {
+  const s = site();
+  try {
+    ok(publish(s, [graphRun()]));
+    const h = runPage(s, GRAPH_RUN_ID), L = P.labels, head = headerOf(h);
+    assert.equal(head[L.run.harness], L.harness.langgraph);
+    assert.equal(head[L.run.models], "planner gpt-oss-20b, analyst gpt-oss-20b, critic gpt-oss-20b, all served on a DGX Spark");
+    assert.equal(head[L.run.dataset], "synth-1m (synthetic)");
+    assert.ok(!/Claude Code|claude-code/i.test(visible(h)), "no Claude Code on a LangGraph run's page");
+    assert.ok(!visible(h).includes("openai:"), "a locally served model is not shown as a provider's");
+    assert.ok(!visible(h).includes(P.templates.cap_terminated), "no cap sentence");
+    const card = body(out(s, SHOWCASE)).match(/<li>\n<h5>[\s\S]*?<\/li>/)[0];
+    assert.ok(card.includes(`<dt>${L.card.harness}</dt><dd>${L.harness.langgraph}</dd>`), "the card names the harness");
+  } finally { s.done(); }
+});
+
+test("F-005 (Amendment A): a hybrid LangGraph run's page names the planner and analyst on the DGX Spark and the critic by its full id, on its provider's API", () => {
+  const s = site();
+  try {
+    ok(publish(s, [graphRun((d) => { d.models.served = "hybrid"; d.models.critic = "openai:gpt-5.6-sol"; })]));
+    const h = runPage(s, GRAPH_RUN_ID), L = P.labels;
+    assert.equal(headerOf(h)[L.run.models], "planner gpt-oss-20b and analyst gpt-oss-20b served on a DGX Spark, critic openai:gpt-5.6-sol through its provider's API");
+    assert.equal(headerOf(h)[L.run.harness], L.harness.langgraph);
+    assert.ok(!/Claude Code|claude-code/i.test(visible(h)));
+  } finally { s.done(); }
+});
+
+test("F-005 (Amendment A): a LangGraph run with no models.served (the providers' APIs) shows the full model ids", () => {
+  const s = site();
+  try {
+    ok(publish(s, [graphRun((d) => { delete d.models.served; d.models.critic = "anthropic:critic-model"; })]));
+    assert.equal(headerOf(runPage(s, GRAPH_RUN_ID))[P.labels.run.models], "planner openai:gpt-oss-20b, analyst openai:gpt-oss-20b, critic anthropic:critic-model");
+  } finally { s.done(); }
+});
+
+test("F-005 (Amendment A): a completed run that ended at its token cap says so, after the plan", () => {
+  const s = site();
+  try {
+    ok(publish(s, [graphRun((d) => { d.usage.cap_terminated = "run_tokens"; })]));
+    const v = visible(runPage(s, GRAPH_RUN_ID));
+    assert.ok(v.includes(P.templates.cap_terminated));
+    assert.ok(v.indexOf(P.templates.cap_terminated) > v.indexOf(P.labels.plan.significance) && v.indexOf(P.templates.cap_terminated) < v.indexOf(P.labels.section.critic), "between the plan and the critic");
   } finally { s.done(); }
 });
 
@@ -1351,10 +1401,11 @@ test("F-005: Phase 1's results name the recorded runs' count and harness, and th
   const ids = Object.keys(published.runs);
   const day = new Date(card.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
   assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The scorecard is from research-agent v1.0.0, on ${day}.`), "the scorecard's date");
-  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[ids.length] ?? ids.length} recorded runs, also through the Claude Code harness, were made earlier that day.`), "the count word is the number of published runs");
-  for (const id of ids) {
+  // The sentence counts the Claude Code harness runs only; LangGraph runs (Amendment A) are not in it.
+  const cc = ids.filter((id) => JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8")).models.harness === "claude-code");
+  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[cc.length] ?? cc.length} recorded runs, also through the Claude Code harness, were made earlier that day.`), "the count word is the number of published Claude Code harness runs");
+  for (const id of cc) {
     const r = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8"));
-    assert.equal(r.models.harness, "claude-code", `${id}: through the Claude Code harness`);
     assert.ok(Date.parse(r.finished_at) < Date.parse(card.created_at), `${id}: finished before the scorecard`);
     assert.equal(r.finished_at.slice(0, 10), card.created_at.slice(0, 10), `${id}: the same day`);
   }

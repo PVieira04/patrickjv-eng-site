@@ -11,7 +11,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | F-005 |
-| Status | Launched 2026-11-14 (the launch PR). Built in PRs 1 to 4 (smoke and docs in PR 4). Revised in PR 4 to match the build (see "Decisions made in the build") |
+| Status | Launched 2026-11-14 (the launch PR). Built in PRs 1 to 4 (smoke and docs in PR 4). Revised in PR 4 to match the build (see "Decisions made in the build"). Amendment A (LangGraph run pages) 2026-11-15 |
 | Owner | @PVieira04 |
 | Created | 2026-11-11 |
 | Depends on | (1) **research-agent F-001e, `research publish`** (research-agent PR #14, at `74d5d82`), which produces the export this spec consumes. It already keeps figures run-relative, uses a PNG chunk allow-list, states the full source regex, refuses `summary.author: human` and image links in `report.md`, and defines the scorecard's "Scorecard types" table and the scan rules (`SCAN_RULES`), both normative for this spec. Both specs cap figure dimensions at 4,096 × 4,096. (2) **F-001d schema change (`models.harness`)**: merged on research-agent `main` (`schemas/report.v1.json`); listed so a later schema change is checked against this spec. (3) **F-001c's eval** (built; only Amendment A, `--score-runs`, is not): its build (branch `feat/f001c-eval`) adds `fingerprint.config.harness`, `questions[].other_issues` and `questions[].unreviewed_trap_passes` (recorded in its "Decisions made in the build"), which the scorecard export keeps, and should adopt the `eval-YYYYMMDDTHHMMSSZ` directory name. The launch scorecard comes from `research eval --score-runs` (F-001c Amendment A, being built), which scores recorded Claude Code harness runs without paid API keys; launch does not wait for the paid LangGraph eval, which the showcase lists under "With more time". (4) At least one published synthetic run and one published scorecard before launch. |
@@ -141,6 +141,8 @@ The report schema is private, so the values the site accepts are listed here. A 
 | `review.open_issues[].tag`, keys of `questions[].other_issues` | `look_ahead`, `overlap_autocorrelation`, `sample_size`, `return_definition`, `contract_roll`, `timezone_session`, `multiple_comparisons` |
 | `stop_reason` | `pass_tool_calls`, `run_tool_calls`, `run_tokens`, `sandbox_unavailable`, `dataset_unavailable`, `access_denied`, `run_not_owned`, `invalid_model_output`, `model_error`, `internal_error`, `abandoned`, `unsanctioned_call`, `run_mismatch`, `missing_critique` |
 | `models.harness`, `fingerprint.config.harness`, `runs[].models.harness` | `langgraph`, `claude-code` |
+| `models.served` (report, optional; Amendment A) | `local`, `hybrid` |
+| `usage.cap_terminated` (report, optional; Amendment A) | `run_tokens` |
 | `summary.author` | `model`, `system` (F-001e refuses `human`) |
 | manifest `role` | `trap_caught`, `rejected_plan`, `clean_pass` |
 
@@ -162,7 +164,7 @@ The site adds only these rules of its own:
 - At least one `runs[]` entry is non-null. A null repeat (`run_id: null`, `status: null`, no `dataset` or `models`) is skipped by the gate and by the harness count, as publish skips it.
 - Enum values are as in "Enumerations".
 - `fingerprint.config.harness_version` (added by research-agent's harness versioning, ahead of F-001e's table) is optional: absent, null, or a public version string matching `^v(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(\+dev)?$`, never a commit or a dirty flag. It is type-checked but not shown.
-- `report.json` from report schema 1.2.0 may carry a top-level `harness` object (`version`, optional `resumed_version`, in the same form) and `models.served`. When `harness` is present, the site checks it is an object and that each version matches the pattern above; the page shows neither.
+- `report.json` from report schema 1.2.0 may carry a top-level `harness` object (`version`, optional `resumed_version`, in the same form) and `models.served`. When `harness` is present, the site checks it is an object and that each version matches the pattern above; the page doesn't show it. `models.served` and report schema 1.3.0's `usage.cap_terminated` are checked and shown as Amendment A says.
 
 **What the page shows** (one table, one row per question, plus a header and an optional note):
 
@@ -291,9 +293,9 @@ Sections, in order (headings are working titles; final copy is approved by the o
 
 All `report.json` strings below are escaped plain text (D7b).
 
-- **Header:** the question, `finished_at` as `YYYY-MM-DD`, harness, models, status, review outcome, the dataset name marked "synthetic".
+- **Header:** the question, `finished_at` as `YYYY-MM-DD`, harness, models (by `models.served`, Amendment A), status, review outcome, the dataset name marked "synthetic".
 - **Plan:** `hypothesis`, `dataset`, `start`–`end`, `method`, `statistic`, `significance`. If `plan` is null (a failed or capped run that ended before planning; `plan` may be null only for a `failed` or `capped` run, and the build refuses a null plan on any other status): "No plan was written: the run stopped before planning (<stop_reason in words>)."
-- **By status:** `rejected`: the plan, then `templates.rejected` ("Plan rejected at approval") and `rejection.reason`; no analysis, so no "Figures" section and no "stopped" sentence. The critic section stays (open issues are always shown, and `empty.issues` says when there are none), and so does the report, because `report.md` is published and linked anyway. A rejected run may not name figures: `--record` and the build refuse a rejected `report.json` whose `figures` is not empty. `capped` or `failed`: `templates.stopped`, naming `stop_reason` in words.
+- **By status:** `rejected`: the plan, then `templates.rejected` ("Plan rejected at approval") and `rejection.reason`; no analysis, so no "Figures" section and no "stopped" sentence. The critic section stays (open issues are always shown, and `empty.issues` says when there are none), and so does the report, because `report.md` is published and linked anyway. A rejected run may not name figures: `--record` and the build refuse a rejected `report.json` whose `figures` is not empty. `capped` or `failed`: `templates.stopped`, naming `stop_reason` in words. `completed` with `usage.cap_terminated: run_tokens`: `templates.cap_terminated`, after the plan (Amendment A).
 - **Section headings** come from `labels.section.*`; every state-specific sentence on this page is a `templates.*` or `labels.*` string (D5).
 - **Critic:** `review.outcome` and every `review.open_issues` entry as its `tag` in words (from `labels`, e.g. `contract_roll` → "Contract roll") and `explanation`. Unresolved issues are always shown.
 - **Report:** an `<h2>` "Report", then `report.md` rendered per D7a. Tables and code blocks scroll inside their focusable wrappers; long unbroken strings wrap (`overflow-wrap: anywhere`); nothing scrolls the page at 360 px.
@@ -307,7 +309,7 @@ Every named field under `content.json` → `pages.projects`, as built. Each is c
 | Group | Fields |
 |---|---|
 | Head | `head.index.title`, `head.index.description`, `head.showcase.title`, `head.showcase.description` |
-| Templates | `templates.run_title`, `templates.rejected`, `templates.no_plan`, `templates.stopped`, and, beyond the examples above: `templates.dataset` ("{name} (synthetic)"), `templates.window` ("{start} to {end}"), `templates.run_models`, `templates.scorecard_models`, `templates.harness_count` ("{harness} ({count})"), `templates.checked` (the "Read and published … on {date}" line), and the scorecard's `templates.scorecard_runs`, `templates.scorecard_score` and `templates.scorecard_trap_note` |
+| Templates | `templates.run_title`, `templates.rejected`, `templates.no_plan`, `templates.stopped`, and, beyond the examples above: `templates.dataset` ("{name} (synthetic)"), `templates.window` ("{start} to {end}"), `templates.run_models`, `templates.run_models_local`, `templates.run_models_hybrid`, `templates.cap_terminated` (Amendment A), `templates.scorecard_models`, `templates.harness_count` ("{harness} ({count})"), `templates.checked` (the "Read and published … on {date}" line), and the scorecard's `templates.scorecard_runs`, `templates.scorecard_score` and `templates.scorecard_trap_note` |
 | Enum labels | `labels.status`, `labels.outcome`, `labels.tag`, `labels.stop_reason`, `labels.harness`, `labels.role` (there is no label map for `summary.author`: it is never shown) |
 | Run-page sections | `labels.section`: `labels.section.plan`, `labels.section.critic`, `labels.section.report`, `labels.section.figures`, `labels.section.links` |
 | Run-page header | `labels.run`: `labels.run.finished`, `labels.run.harness`, `labels.run.models`, `labels.run.status`, `labels.run.outcome`, `labels.run.dataset` |
@@ -536,12 +538,37 @@ private_key        -----BEGIN [A-Z ]*PRIVATE KEY-----
 ## Edge cases
 
 - **No runs yet.** Before launch the showcase builds with the `empty.runs` message and no scorecard section; after launch this can't happen (D9).
-- **Only Claude Code harness runs.** Every run and the scorecard show their harness, so nothing implies a LangGraph run that wasn't one. Whether launch waits is open question 2.
+- **Only Claude Code harness runs.** Every run and the scorecard show their harness, so nothing implies a LangGraph run that wasn't one. Whether launch waits is open question 2. LangGraph runs may be published since Amendment A.
 - **Question text with Markdown or HTML.** Escaped plain text everywhere (body, titles, cards, JSON-LD, meta), never markup (D7b).
 - **Very long reports.** No truncation; the 30 KB gzip cap fails the build (and `--record`), and the owner decides whether to publish.
 - **An export pushed by mistake.** It is public from the push (D2). Unpublishing removes it from the site; removing it from git history would need a force-push and is out of scope; a leaked key is rotated, not scrubbed.
 - **Clock and dates.** Displayed dates come from the files (`finished_at`, `created_at`, the manifest's checked date), never the build clock, so `--check` stays deterministic.
 - **Schema minor versions.** A `report.json` with a newer 1.x minor version and extra optional fields is accepted; only the fields listed are read. A new enum value fails until "Enumerations" adds it.
+
+---
+
+## Amendment A: LangGraph run pages (2026-11-15)
+
+**Why.** At launch every checked run came from the Claude Code harness. The owner wants to publish two or three checked runs of the LangGraph agent with gpt-oss-20b on a DGX Spark, served locally or with a hosted critic (hybrid), after research-agent v1.5.1's final measurement. `research publish` already exports such runs (report schema 1.3.0, `models.harness: langgraph`) with the same checks as any other, and the site already accepted them; but its run page showed a locally served model as `openai:gpt-oss-20b`, which reads as OpenAI's API, said nothing about where the models ran, and said nothing when a completed run had ended at its token cap.
+
+**What changes.**
+
+- **Checks.** `models.served`, when present, is one of `local`, `hybrid` and only on a `langgraph` run. `usage.cap_terminated`, when present, is `run_tokens` and only on a `completed` run (report schema 1.3.0). Both are in "Enumerations"; anything else fails `--record` and the build.
+- **Models line.** `models.served` absent: `templates.run_models` with the full ids, as before (the providers' APIs, or the Claude Code harness). `local`: `templates.run_models_local` ("planner {planner}, analyst {analyst}, critic {critic}, all served on a DGX Spark"). `hybrid`: `templates.run_models_hybrid` ("planner {planner} and analyst {analyst} served on a DGX Spark, critic {critic} through its provider's API"). A locally served model is shown by its name alone, without the `provider:` prefix, because that prefix names the OpenAI-compatible client and not where the model ran; a hybrid run's critic keeps its full id.
+- **Token cap.** A `completed` run with `usage.cap_terminated: run_tokens` shows `templates.cap_terminated` after the plan.
+- **Where it ran.** The report records `served` but not the host (report schema: "the host is not recorded"). "on a DGX Spark" is the owner's statement in the templates, true of every local and hybrid run to date; if the host changes, the templates change with it.
+- **Phase 1's results sentence** ("The four recorded runs, also through the Claude Code harness, …") and its test count the Claude Code harness runs only. When LangGraph runs are published, the content PR that records them also revises that sentence and `head.showcase.description` ("With recorded runs … from its Claude Code harness") so neither reads as covering every run.
+
+**Unchanged.** Every other check applies to a LangGraph run as to any other: the D6 synthetic-only gate, the export contract and hashes, the output scan, the employer denylist and `.denylist.local`, the page-level checks, the 8-run cap, and the smoke check that the deployed files equal the repository's.
+
+**Acceptance criteria.**
+
+- [x] **(A, D3)** A LangGraph run's export (report schema 1.3.0, from a synthetic local run cut down to short strings: `test/fixtures/projects/graph-run/`) records byte for byte when served locally, hybrid, and with `usage.cap_terminated`. Test.
+- [x] **(A, D3)** An unknown `models.served`, `models.served` on a `claude-code` run, an unknown `usage.cap_terminated`, and `usage.cap_terminated` on a run that isn't `completed` each fail. Tests.
+- [x] **(A, D6)** The gate refuses a LangGraph run on a private dataset, a non-synthetic source or another licence, writing nothing. Test.
+- [x] **(A, US-2)** A local LangGraph run's page shows the harness as `labels.harness.langgraph` and the models as "planner gpt-oss-20b, analyst gpt-oss-20b, critic gpt-oss-20b, all served on a DGX Spark", with no "Claude Code" and no `openai:` in its visible text; its card names the harness. A hybrid run's page shows "planner gpt-oss-20b and analyst gpt-oss-20b served on a DGX Spark, critic openai:gpt-5.6-sol through its provider's API". A LangGraph run with no `models.served` shows the full ids. Tests.
+- [x] **(A, US-2)** A `completed` run with `usage.cap_terminated` shows `templates.cap_terminated` between the plan and the critic section; one without it doesn't. Tests.
+- [x] **(A, D5)** The full fixture set renders the three new templates. Test.
 
 ---
 
@@ -560,7 +587,7 @@ Launch is a fifth, small PR after the pre-launch checks (see "Launch").
 
 ## Tests
 
-- `test/projects.test.mjs`: manifest, contract, PNG check, enumerations, `report.json` fields, scorecard types, gate, scan, `.denylist.local`, `--record`, and the docs and spec-drift checks. Fixtures under `test/fixtures/projects/` are hand-written synthetic examples, not real exports.
+- `test/projects.test.mjs`: manifest, contract, PNG check, enumerations, `report.json` fields, scorecard types, gate, scan, `.denylist.local`, `--record`, and the docs and spec-drift checks. Fixtures under `test/fixtures/projects/` are hand-written synthetic examples, not real exports; `graph-run/` (Amendment A) is a synthetic local LangGraph run's report cut down to a few short strings, and is not published.
 - `test/projects-pages.test.mjs`: pages, `pages.projects` checks (both kinds, notes), templates, truncation, scorecard, statuses, D7a (with the report allow-list) and D7b, copies, launch, JSON-LD, the SVG guard and its allow-list, CSP rules, the gzip cap and the page-level checks in `--record`. Built in PR 3 as a file of its own, because the pages need a scratch site the contract tests don't.
 - `test/build.test.mjs`: ownership and deletion, symlinks and non-regular files, rollback with deletions and directories, Buffers, `.gitattributes`, `_headers` rules, rule cap, wildcard rules, run cap, drift.
 - `test/projects-browser.test.mjs`: headless Chromium with the real CSP.
