@@ -567,7 +567,7 @@ test("F-005 (US-4, D2): --record fails, writing nothing, on each export.json con
 test("F-005 (D3): a report.json from the versioned harness (report schema 1.2.0: a top-level harness object, models.served) records unchanged", () => {
   const s = sandbox();
   try {
-    const expect = runExport(s.dir, { files: { "report.json": reportWith((d) => { d.harness = { version: "v1.3.0", resumed_version: "v1.3.0+dev" }; d.models.served = "hybrid"; }) } });
+    const expect = runExport(s.dir, { files: { "report.json": reportWith((d) => { d.harness = { version: "v1.3.0", resumed_version: "v1.3.0+dev" }; d.models.served = "hybrid"; d.models.planner = d.models.analyst = "openai:analyst-model"; }) } });
     const r = record({ root: s.root, dir: s.dir, expect, today: TODAY });
     assert.deepEqual(r.errors, []);
   } finally { s.done(); }
@@ -604,7 +604,16 @@ test("F-005 (Amendment A): models.served and usage.cap_terminated are checked: t
     ["served on a Claude Code run", (d) => { d.models.harness = "claude-code"; }, /models\.served must be absent unless models\.harness is langgraph/],
     ["an unknown cap_terminated value", (d) => { d.usage.cap_terminated = "run_tool_calls"; }, /usage\.cap_terminated must be one of run_tokens/],
     ["cap_terminated on a capped run", (d) => { capTerminated(d); d.status = "capped"; d.stop_reason = "run_tokens"; }, /usage\.cap_terminated must be absent unless the run completed/],
+    ["cap_terminated on a failed run", (d) => { capTerminated(d); d.status = "failed"; d.stop_reason = "model_error"; }, /usage\.cap_terminated must be absent unless the run completed/],
+    ["cap_terminated on a rejected run", (d) => { capTerminated(d); d.status = "rejected"; d.rejection = { reason: "Too short." }; }, /usage\.cap_terminated must be absent unless the run completed/],
+    ["cap_terminated on a Claude Code run", (d) => { capTerminated(d); delete d.models.served; d.models.harness = "claude-code"; }, /usage\.cap_terminated must be absent unless models\.harness is langgraph/],
+    ["served null", (d) => { d.models.served = null; }, /models\.served must be one of local, hybrid/],
+    ["served not a string", (d) => { d.models.served = 1; }, /models\.served must be one of local, hybrid/],
+    ["a local planner not openai:", (d) => { d.models.planner = "anthropic:planner-model"; }, /models\.planner must be an openai: model id when models\.served is local/],
+    ["a local critic not openai:", (d) => { d.models.critic = "ollama:gpt-oss-20b"; }, /models\.critic must be an openai: model id when models\.served is local/],
+    ["a hybrid analyst not openai:", (d) => { hybrid(d); d.models.analyst = "anthropic:analyst-model"; }, /models\.analyst must be an openai: model id when models\.served is hybrid/],
   ]) assert.ok(reportErrors(edit(graphReport(), f)).some((e) => want.test(e)), what);
+  assert.deepEqual(reportErrors(edit(graphReport(), (d) => { hybrid(d); d.models.critic = "anthropic:critic-model"; })), [], "a hybrid critic is on its provider's API: any provider");
 });
 
 test("F-005 (Amendment A, D6): the synthetic-only gate holds for a LangGraph run: a non-synthetic dataset is refused by --record, writing nothing", () => {

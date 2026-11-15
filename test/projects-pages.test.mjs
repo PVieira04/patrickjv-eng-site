@@ -368,7 +368,7 @@ test("F-005 (D5): the full fixture set — every status, outcome, tag, stop reas
     take();
     ok(publish(s, stops.slice(5, 13).map((stop, i) => run(10 + i, { edit: i % 2 ? failedNoPlan(stop) : capped(stop), figures: {} }))));
     take();
-    ok(publish(s, [run(20, { edit: capped(stops[13]) }), run(21, { edit: (d) => { d.models.served = "local"; d.usage.cap_terminated = "run_tokens"; } }), run(22, { edit: (d) => { d.models.served = "hybrid"; } })]));
+    ok(publish(s, [run(20, { edit: capped(stops[13]) }), run(21, { edit: (d) => { Object.assign(d.models, { served: "local", planner: "openai:gpt-oss-20b", analyst: "openai:gpt-oss-20b", critic: "openai:gpt-oss-20b" }); d.usage.cap_terminated = "run_tokens"; } }), run(22, { edit: (d) => { Object.assign(d.models, { served: "hybrid", planner: "openai:analyst-model", analyst: "openai:analyst-model" }); } })]));
     take();
     ok(publish(s, [], { card: edit(scorecard(), (d) => { d.aggregate.se = null; cleanTraps(d); }) }));
     take();
@@ -553,8 +553,8 @@ test("F-005 (Amendment A): a local LangGraph run's page names the LangGraph agen
     ok(publish(s, [graphRun()]));
     const h = runPage(s, GRAPH_RUN_ID), L = P.labels, head = headerOf(h);
     assert.equal(head[L.run.harness], L.harness.langgraph);
-    assert.equal(head[L.run.models], "planner gpt-oss-20b, analyst gpt-oss-20b, critic gpt-oss-20b, all served on a DGX Spark");
-    assert.equal(head[L.run.dataset], "synth-1m (synthetic)");
+    assert.equal(head[L.run.models], "planner gpt-oss:20b, analyst gpt-oss:20b, critic gpt-oss:20b, all served on a DGX Spark");
+    assert.equal(head[L.run.dataset], "synth-futures-1m (synthetic)");
     assert.ok(!/Claude Code|claude-code/i.test(visible(h)), "no Claude Code on a LangGraph run's page");
     assert.ok(!visible(h).includes("openai:"), "a locally served model is not shown as a provider's");
     assert.ok(!visible(h).includes(P.templates.cap_terminated), "no cap sentence");
@@ -568,7 +568,7 @@ test("F-005 (Amendment A): a hybrid LangGraph run's page names the planner and a
   try {
     ok(publish(s, [graphRun((d) => { d.models.served = "hybrid"; d.models.critic = "openai:gpt-5.6-sol"; })]));
     const h = runPage(s, GRAPH_RUN_ID), L = P.labels;
-    assert.equal(headerOf(h)[L.run.models], "planner gpt-oss-20b and analyst gpt-oss-20b served on a DGX Spark, critic openai:gpt-5.6-sol through its provider's API");
+    assert.equal(headerOf(h)[L.run.models], "planner gpt-oss:20b and analyst gpt-oss:20b served on a DGX Spark, critic openai:gpt-5.6-sol through its provider's API");
     assert.equal(headerOf(h)[L.run.harness], L.harness.langgraph);
     assert.ok(!/Claude Code|claude-code/i.test(visible(h)));
   } finally { s.done(); }
@@ -580,6 +580,16 @@ test("F-005 (Amendment A): a LangGraph run with no models.served (the providers'
     ok(publish(s, [graphRun((d) => { delete d.models.served; d.models.critic = "anthropic:critic-model"; })]));
     assert.equal(headerOf(runPage(s, GRAPH_RUN_ID))[P.labels.run.models], "planner openai:gpt-oss-20b, analyst openai:gpt-oss-20b, critic anthropic:critic-model");
   } finally { s.done(); }
+});
+
+test("F-005 (Amendment A): a local model is shown by the tables' name when model_aliases maps it, else as recorded without openai:; a bad alias map fails the copy check", () => {
+  const s = site();
+  try {
+    ok(publish(s, [graphRun((d) => { d.models.critic = "openai:qwen3-8b"; })]));
+    assert.equal(headerOf(runPage(s, GRAPH_RUN_ID))[P.labels.run.models], "planner gpt-oss:20b, analyst gpt-oss:20b, critic qwen3-8b, all served on a DGX Spark");
+  } finally { s.done(); }
+  assert.deepEqual(P.model_aliases, { "gpt-oss-20b": "gpt-oss:20b" });
+  for (const bad of [{ "gpt-oss-20b": "" }, { "gpt oss": "x" }, { "gpt-oss-20b": "a b" }, ["gpt-oss:20b"]]) assert.ok(checkProjectsCopy(edit(P, (x) => { x.model_aliases = bad; })).some((e) => /model_aliases/.test(e)), JSON.stringify(bad));
 });
 
 test("F-005 (Amendment A): a completed run that ended at its token cap says so, after the plan", () => {
@@ -1401,14 +1411,39 @@ test("F-005: Phase 1's results name the recorded runs' count and harness, and th
   const ids = Object.keys(published.runs);
   const day = new Date(card.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
   assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The scorecard is from research-agent v1.0.0, on ${day}.`), "the scorecard's date");
-  // The sentence counts the Claude Code harness runs only; LangGraph runs (Amendment A) are not in it.
-  const cc = ids.filter((id) => JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8")).models.harness === "claude-code");
-  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[cc.length] ?? cc.length} recorded runs, also through the Claude Code harness, were made earlier that day.`), "the count word is the number of published Claude Code harness runs");
-  for (const id of cc) {
+  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[ids.length] ?? ids.length} recorded runs, also through the Claude Code harness, were made earlier that day.`), "the count word is the number of published runs");
+  for (const id of ids) {
     const r = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8"));
+    assert.equal(r.models.harness, "claude-code", `${id}: through the Claude Code harness`);
     assert.ok(Date.parse(r.finished_at) < Date.parse(card.created_at), `${id}: finished before the scorecard`);
     assert.equal(r.finished_at.slice(0, 10), card.created_at.slice(0, 10), `${id}: the same day`);
   }
+});
+
+// F-005 Amendment A: the copy that says every recorded run is a Claude Code harness run. Errors when
+// any published run (in `root`) is not one while `p` (pages.projects) still says so.
+const CLAUDE_CODE_ONLY = /recorded runs[^.]*Claude Code harness/;
+function claudeCodeOnlyCopyErrors(root, p) {
+  const runs = join(root, "projects/research-agent/runs");
+  const other = existsSync(runs) ? readdirSync(runs).filter((id) => JSON.parse(readFileSync(join(runs, id, "report.json"), "utf8")).models.harness !== "claude-code") : [];
+  if (!other.length) return [];
+  return [["copy.showcase.phase1.results", p.copy.showcase.phase1.results.join(" ")], ["head.showcase.description", p.head.showcase.description]]
+    .filter(([, text]) => CLAUDE_CODE_ONLY.test(text)).map(([path]) => `pages.projects.${path} says the recorded runs are Claude Code harness runs, but ${other.join(", ")} is not`);
+}
+
+test("F-005 (Amendment A): the copy may not say every recorded run is a Claude Code harness run once a LangGraph run is published", () => {
+  assert.deepEqual(claudeCodeOnlyCopyErrors(ROOT, P), [], "the committed site");
+  assert.ok(CLAUDE_CODE_ONLY.test(P.copy.showcase.phase1.results.join(" ")) && CLAUDE_CODE_ONLY.test(P.head.showcase.description), "both claims are there today, so the check has something to catch");
+  const s = site();
+  try {
+    ok(publish(s, [graphRun()]));
+    const errs = claudeCodeOnlyCopyErrors(s.root, P);
+    assert.deepEqual(errs.map((x) => x.split(" ")[0]), ["pages.projects.copy.showcase.phase1.results", "pages.projects.head.showcase.description"], errs.join("\n"));
+    const revised = edit(P, (x) => { x.copy.showcase.phase1.results = ["The four Claude Code harness runs were made that day; the LangGraph runs later."]; x.head.showcase.description = "A LangGraph and LangChain research agent, with recorded runs on synthetic data."; });
+    assert.deepEqual(claudeCodeOnlyCopyErrors(s.root, revised), [], "revised copy passes");
+    ok(publish(s, [run(1, { edit: (d) => { d.models.harness = "claude-code"; } })]));
+    assert.deepEqual(claudeCodeOnlyCopyErrors(s.root, P), [], "only Claude Code runs: the claim holds");
+  } finally { s.done(); }
 });
 
 test("F-005: the SVG guard refuses markup inside a <title>, which browsers parse as HTML there", () => {

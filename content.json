@@ -631,6 +631,9 @@
       "empty": {
         "runs": "No published runs yet.",
         "issues": "The critic left no open issues."
+      },
+      "model_aliases": {
+        "gpt-oss-20b": "gpt-oss:20b"
       }
     }
   },
