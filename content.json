@@ -275,7 +275,7 @@
         },
         "showcase": {
           "title": "Research agent: LangGraph and LangChain on MCP — Patrick Vieira",
-          "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs on synthetic data from its Claude Code harness."
+          "description": "A LangGraph and LangChain research agent that plans, waits for approval, runs Python in a sandbox and has a critic check its work. With recorded runs and eval results on synthetic data."
         }
       },
       "copy": {
@@ -379,7 +379,7 @@
             ],
             "results_heading": "Results",
             "results": [
-              "The scorecard is from research-agent v1.0.0, on 12 November 2026. The four recorded runs, also through the Claude Code harness, were made earlier that day. The open-model runs used v1.1.0."
+              "The scorecard is from research-agent v1.0.0, on 12 November 2026. The four Claude Code harness runs below were made earlier that day. The open-model runs used v1.1.0, and Phase 2 has its own results and runs."
             ],
             "runs_heading": "Recorded runs",
             "local_models": {
@@ -444,14 +444,14 @@
             },
             "scope_heading": "Scope of v1.4.0",
             "scope": {
-              "intro": "v1.4.0 is planned and not built yet. It will:",
+              "intro": "v1.4.0 set out to:",
               "items": [
                 "close the six gaps above, so the LangGraph pipeline gives the model what the Claude Code harness already does",
                 "add held-out questions with fresh traps, on a different session and a different instrument, never used for tuning and reported separately"
               ],
               "text": [
                 "Prompt text that names a specific eval question or trap is out of scope.",
-                "If that isn't enough, v1.5.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions."
+                "v1.4.0 delivered both: it closed the six gaps, and the held-out set was written and is kept outside the repo. v1.5.0 added data-access gates and v1.5.1 fixed how hosted models' connections are reused between runs; neither was intended to change a score. A further step, having the analysis tool report facts about the data it used (the window's bounds and timezone, bar counts, and price gaps between sessions), has not been built."
               ]
             },
             "guard_heading": "Guarding against tuning to the test",
@@ -460,50 +460,41 @@
             ],
             "results_heading": "Results",
             "results": {
-              "intro": "To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then give gpt-oss:20b with the hosted critic the same five runs per question as the 0.90.",
-              "columns": ["Version", "Run", "Result"],
+              "intro": "Each row is research-agent answering the eval questions on the seeded synthetic dataset, synth-1m, with gpt-oss:20b on the DGX Spark as planner and analyst. In the local rows gpt-oss:20b is also the critic, so no hosted model was used. In the hybrid row the critic is gpt-5.6-sol through its provider's API. The five-run row gives the mean score across the repeats with its standard error. I transcribed these figures by hand from local scorecards that aren't published here.",
+              "columns": ["Version", "Run", "Score"],
               "rows": [
-                ["v1.4.0", "gpt-oss:20b alone, one run per question", "to come"],
-                ["v1.4.0", "gpt-oss:20b with the gpt-5.6-sol critic, one run per question", "to come"],
-                ["v1.4.0", "gpt-oss:20b with the gpt-5.6-sol critic, five runs per question", "to come"],
-                ["v1.5.0", "the analysis tool reporting facts about the data it used", "only if needed"]
+                ["v1.1.0", "gpt-oss:20b analyst and critic, one run per question", "3 / 10"],
+                ["v1.4.0", "gpt-oss:20b analyst and critic, one run per question", "3 / 10"],
+                ["v1.4.0", "gpt-oss:20b analyst with the gpt-5.6-sol critic through its provider's API: the first round of a planned five-run hybrid measurement, one run per question, not a five-run result", "3 / 10"],
+                ["v1.5.1", "gpt-oss:20b analyst and critic, five runs per question", "0.40 (standard error 0.07)"]
+              ],
+              "text": [
+                "At v1.5.1, with five runs per question and no hosted model, gpt-oss:20b scored 0.40 (standard error 0.07): 20 of 50 answers were correct. 49 of the 50 runs completed, and one failed when a model returned output that could not be used. That is within run-to-run noise of the 3 / 10 measured at v1.1.0 and again at v1.4.0, each with one run per question, since a single run per question carries about ±0.15 of noise on its own. The drift questions held up: tuesday_drift and monday_drift were 5 / 5, and thursday_drift 4 / 5. Neither role handled the contract roll reliably. Across the five questions with a roll trap, the gpt-oss:20b critic raised the roll on 16 of the 29 reviewed passes that had fallen into it: 7 of 8 on return_2024, but 2 of 8 on total_return. Its advice was sometimes wrong-headed: in each of the 3 return_2024 runs whose final answer fell into the roll, one of its reviews told the analyst the series was already adjusted for the roll and steered it away from its own roll handling. When the flag was right, the 20b analyst often didn't act on it. total_return and return_2024 got 2 / 5 each, and largest_session_move 1 / 5. The critic mostly missed the timezone trap, raising it on 1 of the 18 reviewed passes that had fallen into it, across open_vol_uplift and open_vol_uplift_15m. The volatility questions were the weakest: open_vol_uplift got 1 / 5, and open_vol_uplift_15m, open_vol_uplift_pct_change and afternoon_vol_ratio 0 / 5 each, with one open_vol_uplift_pct_change run computing a different statistic from the one asked.",
+                "At v1.4.0 gpt-oss:20b alone, as analyst and critic, got 3 / 10 with one run per question, the same as at v1.1.0. The hybrid row is the first round of a planned five-run hybrid measurement; every run after the first three of its second round failed, first on a connection bug since fixed in v1.5.1, then when the hosted API's prepaid credit ran out, so only this round is counted. In that round 1 of the 10 runs failed with model output that could not be used and 1 stopped at the tool-call cap, and it also got 3 / 10. The gpt-5.6-sol critic raised the contract roll on all 5 reviewed passes that had fallen into it, but the 20b analyst fixed it only on largest_session_move. Of its two timezone-trap runs, open_vol_uplift failed without an answer and open_vol_uplift_15m avoided the trap. With one run per question, none of these differences can be told apart from run-to-run noise.",
+                "On a small held-out set of questions written after the main set (author-known, not enforced: I wrote those questions and know their traps, and nothing in the code stops them being used for tuning), v1.5.1 scored 12 / 35 (seven questions, five runs each), close to its 20 / 50 on the main set; the gap is within run-to-run noise, and there is no earlier held-out score to compare against.",
+                "The three LangGraph agent runs below come from the five-run measurement at v1.5.1 on 16 November 2026, with gpt-oss:20b as planner, analyst and critic, all served locally.",
+                "The largest_session_move run shows the critic raising the contract roll and the analyst dropping the sessions that span a roll. The critic's other flag on that run, a look-ahead in the session mask, was mistaken, and the run's summary overstates a fix to that mask; the roll catch stands. The return_2024 run is an honest failure: the critic raised the roll on every pass, but one of its reviews told the analyst the series was already adjusted, and the final answer fell into the roll."
               ]
             }
           },
-          "next_heading": "With more time",
-          "next_intro": "In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes.",
+          "next_heading": "Phase 3: next",
+          "next_intro": "Phase 3 starts with the planner and analyst model. None of it has been run yet.",
           "next": [
             {
-              "heading": "Run the red-team probes on every push",
-              "text": "The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. So far the probe catalogue has only been run on my WSL2 machine, not yet on the CI runner."
+              "heading": "A stronger local planner and analyst",
+              "text": "In the Phase 2 runs neither role handled the contract roll reliably: the gpt-oss:20b critic's roll flags were mixed and sometimes wrong-headed, and the 20b analyst often didn't act on a correct one. Phase 3 changes the planner and analyst model first because it is the cheapest single change to test, and holds the critic fixed so that change can be measured. That is not a finding that the critic is fine. The first step is an Ollama upgrade and a fresh baseline. The candidates, in order, are qwen3.6:35b-a3b-q4_K_M, qwen3.8:27b-q4_K_M and flint:40b, screened with one run per question and then five. nemotron-3.5-super:120b-a12b-q4_K_M is the larger option."
             },
             {
-              "heading": "Finish the simpler verification plan",
-              "text": "I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch."
+              "heading": "Targeted revisions",
+              "text": "When the critic flags a specific defect, such as a futures contract roll handled wrongly, the analyst would get a short pass focused on fixing that defect."
             },
             {
-              "heading": "Run the full LangGraph eval with hosted models",
-              "text": "The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The ten hosted-critic runs so far had a one-off spend guard set for that experiment, a guard on the whole experiment rather than a cap on each critic call: it would have stopped the experiment if OpenAI usage passed 3 million input or 300,000 output tokens. They used about 68,000 input and 38,000 output OpenAI tokens. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling built into the harness first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it."
+              "heading": "Budget tuning",
+              "text": "The caps on tool calls and tokens will be tuned for the new analyst, so a run has room for a fix-up pass and a stuck run still stops."
             },
             {
-              "heading": "Add a canary on real market data",
-              "text": "Real futures data stays on my machine. The vendor's licence doesn't allow showing anything derived from it without a redistribution plan, which is why everything here is synthetic. A weekly canary is specified that fetches one fixed week, checks the bar count and the contract roll, and deletes the data. It stays off until the vendor confirms in writing that processing on a hosted CI runner is allowed."
-            },
-            {
-              "heading": "Give the Claude Code harness a token budget and resume",
-              "text": "The graph caps tokens and resumes from its checkpoint. The Claude Code harness does neither yet. A subscription gives it no per-call token counts it can rely on, and an interrupted run is closed rather than resumed. Closing both gaps would bring the harness level with the graph."
-            },
-            {
-              "heading": "Let formatting back into reports",
-              "text": "Model-written text goes into a report as plain text, with every punctuation character escaped. That came after several rounds of trying to contain Markdown inside it by tracking its block structure, and plain text was the safer choice. Formatting could come back through a renderer with an explicit allow-list, checked against more than one Markdown parser, the way this site renders the reports it shows."
-            },
-            {
-              "heading": "Add overfitting checks from López de Prado",
-              "text": "The agent already fixes its test in a plan before any analysis runs, and the critic already checks that multiple comparisons are corrected for (Bonferroni, Holm or a joint test) or at least disclosed. Unlike the other steps, this one isn't in the specs yet. It would take the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and both the checklist and the analyst's guidance would call for purged and embargoed cross-validation, so overlapping labels can't leak across folds."
-            },
-            {
-              "heading": "Widen CI",
-              "text": "The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure."
+              "heading": "Tracking the held-out questions",
+              "text": "The held-out questions stay out of tuning, and I'll report them separately at each step, to see whether a change helps beyond the eval set."
             }
           ]
         }

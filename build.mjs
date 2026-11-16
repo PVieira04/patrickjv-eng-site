@@ -1064,7 +1064,7 @@ const PROJECTS_SHAPE = {
       phase2: {
         heading: "s", intro: ["s"], question_heading: "s", question: ["s"], diagnosis_heading: "s", hybrid: TABLE, harness: TABLE,
         scope_heading: "s", scope: { intro: "s", items: ["s"], text: ["s"] }, guard_heading: "s", guard: ["s"],
-        results_heading: "s", results: { intro: "s", columns: ["s"], rows: [["s"]] },
+        results_heading: "s", results: { intro: "s", columns: ["s"], rows: [["s"]], text: ["s"] },
       },
       next_heading: "s", next_intro: "s", next: [keys("heading", "text")],
     },
@@ -1083,6 +1083,15 @@ const PROJECTS_SHAPE = {
   // F-005 Amendment A: a locally served model's recorded name -> the name the showcase's tables use.
   model_aliases: "aliases",
 };
+// Provider prefixes of the report's model ids (provider:model). An Ollama tag (gpt-oss:20b) is not one.
+// The providers LangChain's init_chat_model takes as a "provider:model" prefix (the keys of
+// _BUILTIN_PROVIDERS in langchain 1.5.0, the version research-agent's uv.lock pins), plus google and
+// claude-code, which report ids may also carry. Re-check when research-agent moves to a newer langchain.
+export const ALIAS_PROVIDERS = ["anthropic", "anthropic_bedrock", "azure_ai", "azure_openai", "baseten", "bedrock", "bedrock_converse",
+  "bedrock_mantle_anthropic", "bedrock_mantle_openai", "cohere", "deepseek", "fireworks", "google_anthropic_vertex", "google_genai", "google_vertexai",
+  "groq", "huggingface", "ibm", "langsmith", "litellm", "meta", "mistralai", "nvidia", "ollama", "openai", "openrouter", "perplexity", "together",
+  "upstage", "xai", "google", "claude-code"];
+const ALIAS_PROVIDER_PREFIX = new RegExp(`^(${ALIAS_PROVIDERS.join("|")}):`, "i");
 export function checkProjectsCopy(p) {
   const errors = [];
   const where = (path) => `content.json pages.projects${path ? "." + path : ""}`;
@@ -1091,7 +1100,11 @@ export function checkProjectsCopy(p) {
     if (shape === "s") { if (typeof v !== "string" || !v.trim()) errors.push(`${where(path)} must be a non-empty string`); return; }
     if (shape === "aliases") {
       if (!v || typeof v !== "object" || Array.isArray(v)) return errors.push(`${where(path)} must be an object`);
-      for (const [k, x] of Object.entries(v)) if (!/^[A-Za-z0-9._-]{1,100}$/.test(k) || typeof x !== "string" || !/^[A-Za-z0-9._:-]{1,100}$/.test(x)) errors.push(`${where(`${path}.${k}`)} must map a recorded model name to a model name`);
+      for (const [k, x] of Object.entries(v)) {
+        if (!/^[A-Za-z0-9._-]{1,100}$/.test(k) || typeof x !== "string" || !/^[A-Za-z0-9._:-]{1,100}$/.test(x)) errors.push(`${where(`${path}.${k}`)} must map a recorded model name to a model name`);
+        // The alias is the name shown for a locally served model; a provider prefix would say it ran on that provider's API.
+        else if (ALIAS_PROVIDER_PREFIX.test(x)) errors.push(`${where(`${path}.${k}`)} must be a model name without a provider prefix (such as openai:)`);
+      }
       return;
     }
     if (Array.isArray(shape)) {

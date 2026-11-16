@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.3.0",
+  "run_id": "20261116T103820Z-506968",
+  "status": "completed",
+  "question": "On synth-1m, do Tuesday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Tuesdays as the statistic `tuesday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.",
+  "dataset": {
+    "name": "synth-1m",
+    "source": "synthetic:research_agent.data.synth seed=20261111",
+    "visibility": "public",
+    "licence": "Synthetic data, no restrictions"
+  },
+  "created_at": "2026-11-16T10:38:20Z",
+  "finished_at": "2026-11-16T10:42:00Z",
+  "models": {
+    "harness": "langgraph",
+    "planner": "openai:gpt-oss-20b",
+    "analyst": "openai:gpt-oss-20b",
+    "critic": "openai:gpt-oss-20b",
+    "served": "local"
+  },
+  "plan": {
+    "hypothesis": "tuesday_mean_rth_return ≠ 0",
+    "dataset": "synth-1m",
+    "start": "2023-01-02",
+    "end": "2025-12-24",
+    "method": "The dataset contains minute‑bar data (`ts` is UTC).  For the analysis we\n1. Convert `ts` to America/New York (Eastern) time with `tz_convert('America/New_York')`. \n2. Define a trading day’s *regular hours* window as 09:30–16:00 Eastern, inclusive of the first bar at 09:30 and the last bar at 15:59.  Bars outside that window are dropped – they do not participate in the session return calculation.\n3. Identify every calendar Tuesday between the start date (2023‑01‑02) and the end date (2025‑12‑24).  For each Tuesday we:\n   * Select all bars whose converted timestamps fall inside the 09:30–16:00 window for that particular day.\n   * Compute the log return of the session as `ln(close_last / close_first)` where `close_first` is the closing price of the first bar in the window and `close_last` is the closing price of the final bar in the window.\n4. Compile a vector `r_tuesday` of all such daily returns – one element per Tuesday that has complete data for its regular‑hour session.\n5. Compute the sample mean \\\\(\bar r = \\frac{1}{N} \\sum_{i=1}^{N} r_i\\\\) and sample standard deviation `s`.  The statistic to report is `tuesday_mean_rth_return = \\bar r`.\n6. Test the null hypothesis that the true mean log return for Tuesdays over regular hours equals zero.  Because each Tuesday’s session return comes from a non‑overlapping period, we treat them as independent draws and run a one‑sample *student’s* t‑test:\n   \\\\[ \\text{t} = \\frac{\\bar r - 0}{s/\\sqrt{N}}\\\\]\n   The degrees of freedom are `df = N-1`.  A two–tailed test is performed at the 5 % significance level.  Equivalently, we construct a 95 % confidence interval \\\\(\bar r \\pm 1.96\\frac{s}{\\sqrt N}\\) and reject the null iff zero lies outside this interval.\n7. Report `tuesday_mean_rth_return`, its standard error, the 95 % CI, the t‑statistic, the p–value, and the decision about the hypothesis.",
+    "statistic": "tuesday_mean_rth_return",
+    "significance": "Reject H₀ if the two‑tailed 5 % p‑value < 0.05 (or zero not in the 95 % confidence interval)."
+  },
+  "passes": [
+    {
+      "pass": 1,
+      "answer": {
+        "statistic": "tuesday_mean_rth_return",
+        "value": 0.0031275688273886214,
+        "n": 156,
+        "conclusion": "supported",
+        "ci": {
+          "level": 0.95,
+          "low": 0.002755285798962095,
+          "high": 0.003499851855815148
+        }
+      },
+      "final_call": 2,
+      "critique": {
+        "verdict": "pass",
+        "issues": []
+      }
+    }
+  ],
+  "review": {
+    "outcome": "passed",
+    "critic_calls": 1,
+    "open_issues": []
+  },
+  "answer": {
+    "statistic": "tuesday_mean_rth_return",
+    "value": 0.0031275688273886214,
+    "n": 156,
+    "conclusion": "supported",
+    "ci": {
+      "level": 0.95,
+      "low": 0.002755285798962095,
+      "high": 0.003499851855815148
+    }
+  },
+  "summary": {
+    "text": "**Answer**\n\n`tuesday_mean_rth_return = 3.13 × 10⁻³` (mean log‑return).  \nWith 156 Tuesdays, the t‑statistic is **16.47**, giving a p‑value < 10⁻³⁵. The\n95 % CI is \\([2.76\\,× 10^{-3}, 3.50\\,× 10^{-3}]\\), which does not include 0.\n**Conclusion:** Supported – Tuesday regular‑hour returns are statistically different from zero at the 5 % level.\n\n**Review notes**\n\n- No changes required after review; the analysis already met all plan specifications and produced a result that satisfies the hypothesis test.",
+    "author": "model"
+  },
+  "figures": [],
+  "final_call": 2,
+  "usage": {
+    "tool_calls": 3,
+    "input_tokens": 19547,
+    "output_tokens": 2637
+  },
+  "eval_question": "tuesday_drift",
+  "harness": {
+    "version": "v1.5.1"
+  }
+}

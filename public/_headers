@@ -144,6 +144,48 @@
   Content-Type: text/markdown; charset=utf-8
   Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
+/projects/research-agent/runs/20261116T103820Z-506968/
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-eKbkF0tcYasPk2TLYrRMqWNbs4tEW1s6JKAI+sn1zDw='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/projects/research-agent/runs/20261116T103820Z-506968/index.html
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-eKbkF0tcYasPk2TLYrRMqWNbs4tEW1s6JKAI+sn1zDw='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/projects/research-agent/runs/20261116T103820Z-506968/report.json
+  Content-Type: application/json; charset=utf-8
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/projects/research-agent/runs/20261116T103820Z-506968/report.md
+  Content-Type: text/markdown; charset=utf-8
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/projects/research-agent/runs/20261116T122841Z-47d5a4/
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-eKbkF0tcYasPk2TLYrRMqWNbs4tEW1s6JKAI+sn1zDw='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/projects/research-agent/runs/20261116T122841Z-47d5a4/index.html
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-eKbkF0tcYasPk2TLYrRMqWNbs4tEW1s6JKAI+sn1zDw='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/projects/research-agent/runs/20261116T122841Z-47d5a4/report.json
+  Content-Type: application/json; charset=utf-8
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/projects/research-agent/runs/20261116T122841Z-47d5a4/report.md
+  Content-Type: text/markdown; charset=utf-8
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/projects/research-agent/runs/20261116T123459Z-9dbf08/
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-eKbkF0tcYasPk2TLYrRMqWNbs4tEW1s6JKAI+sn1zDw='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/projects/research-agent/runs/20261116T123459Z-9dbf08/index.html
+  Content-Security-Policy: default-src 'none'; img-src 'self'; font-src 'self'; style-src 'sha256-eKbkF0tcYasPk2TLYrRMqWNbs4tEW1s6JKAI+sn1zDw='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/projects/research-agent/runs/20261116T123459Z-9dbf08/report.json
+  Content-Type: application/json; charset=utf-8
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/projects/research-agent/runs/20261116T123459Z-9dbf08/report.md
+  Content-Type: text/markdown; charset=utf-8
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
 /cv.pdf
   Content-Type: application/pdf
   Cache-Control: public, max-age=3600

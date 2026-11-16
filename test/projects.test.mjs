@@ -614,6 +614,8 @@ test("F-005 (Amendment A): models.served and usage.cap_terminated are checked: t
     ["a hybrid analyst not openai:", (d) => { hybrid(d); d.models.analyst = "anthropic:analyst-model"; }, /models\.analyst must be an openai: model id when models\.served is hybrid/],
   ]) assert.ok(reportErrors(edit(graphReport(), f)).some((e) => want.test(e)), what);
   assert.deepEqual(reportErrors(edit(graphReport(), (d) => { hybrid(d); d.models.critic = "anthropic:critic-model"; })), [], "a hybrid critic is on its provider's API: any provider");
+  // LOCAL_ROLES is looked up by own key: an inherited name is an unknown value, not a crash.
+  for (const v of ["toString", "constructor", "__proto__", "hasOwnProperty"]) assert.deepEqual(reportErrors(edit(graphReport(), (d) => { d.models.served = v; })), ["report.json: models.served must be one of local, hybrid"], v);
 });
 
 test("F-005 (Amendment A, D6): the synthetic-only gate holds for a LangGraph run: a non-synthetic dataset is refused by --record, writing nothing", () => {
