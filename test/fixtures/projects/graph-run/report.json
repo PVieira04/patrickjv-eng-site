@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.3.0",
+  "run_id": "20261111T160000Z-9a8b7c",
+  "status": "completed",
+  "question": "Is volatility higher in the first 30 minutes after the open than later in the session?",
+  "dataset": {
+    "name": "synth-futures-1m",
+    "source": "synthetic:research_agent.data.synth seed=7",
+    "visibility": "public",
+    "licence": "Synthetic data, no restrictions"
+  },
+  "created_at": "2026-11-11T16:00:00Z",
+  "finished_at": "2026-11-11T16:10:00Z",
+  "models": {
+    "harness": "langgraph",
+    "planner": "openai:gpt-oss-20b",
+    "analyst": "openai:gpt-oss-20b",
+    "critic": "openai:gpt-oss-20b",
+    "served": "local"
+  },
+  "plan": {
+    "hypothesis": "The first 30 minutes are more volatile than the rest of the session.",
+    "dataset": "synth-futures-1m",
+    "start": "2025-01-02",
+    "end": "2025-06-30",
+    "method": "Compare realised volatility in the window with the rest, per session.",
+    "statistic": "open_vol_ratio",
+    "significance": "A one-sided t-test at the 5% level."
+  },
+  "passes": [
+    {
+      "pass": 1,
+      "answer": {
+        "statistic": "open_vol_ratio",
+        "value": 1.6,
+        "n": 100,
+        "conclusion": "supported",
+        "ci": {
+          "level": 0.95,
+          "low": 1.3,
+          "high": 1.7
+        }
+      },
+      "final_call": 1,
+      "critique": {
+        "verdict": "revise",
+        "issues": [
+          {
+            "tag": "contract_roll",
+            "explanation": "Drop the bars at each roll."
+          }
+        ]
+      }
+    },
+    {
+      "pass": 2,
+      "answer": {
+        "statistic": "open_vol_ratio",
+        "value": 1.5,
+        "n": 100,
+        "conclusion": "supported",
+        "ci": {
+          "level": 0.95,
+          "low": 1.3,
+          "high": 1.7
+        }
+      },
+      "final_call": 2,
+      "critique": {
+        "verdict": "pass",
+        "issues": []
+      }
+    }
+  ],
+  "review": {
+    "outcome": "passed",
+    "critic_calls": 2,
+    "open_issues": []
+  },
+  "answer": {
+    "statistic": "open_vol_ratio",
+    "value": 1.5,
+    "n": 100,
+    "conclusion": "supported",
+    "ci": {
+      "level": 0.95,
+      "low": 1.3,
+      "high": 1.7
+    }
+  },
+  "summary": {
+    "text": "On this synthetic dataset the first 30 minutes are about 1.5 times as volatile as the rest of the session.",
+    "author": "model"
+  },
+  "figures": [],
+  "final_call": 2,
+  "usage": {
+    "tool_calls": 2,
+    "input_tokens": 1000,
+    "output_tokens": 200
+  },
+  "eval_question": "open_vol_uplift",
+  "harness": {
+    "version": "v1.4.0"
+  }
+}

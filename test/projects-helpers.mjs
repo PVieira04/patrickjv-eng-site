@@ -106,6 +106,11 @@ export const runFiles = () => readTree(join(FIXTURES, "run"));
 export const scorecardFiles = () => readTree(join(FIXTURES, "scorecard"));
 export const report = () => JSON.parse(readFileSync(join(FIXTURES, "run/report.json"), "utf8"));
 export const scorecard = () => JSON.parse(readFileSync(join(FIXTURES, "scorecard/scorecard.json"), "utf8"));
+// A LangGraph run (report schema 1.3.0, models served locally): hand-written, in the shape the graph
+// writes; it validates against research-agent's report schema as local, hybrid and cap-terminated.
+export const GRAPH_RUN_ID = "20261111T160000Z-9a8b7c";
+export const graphRunFiles = () => readTree(join(FIXTURES, "graph-run"));
+export const graphReport = () => JSON.parse(readFileSync(join(FIXTURES, "graph-run/report.json"), "utf8"));
 export const copyFixture = (name, to) => cpSync(join(FIXTURES, name), to, { recursive: true });
 
 // A scratch copy of the site starts with no published run or scorecard, whatever the repository

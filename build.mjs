@@ -1080,6 +1080,8 @@ const PROJECTS_SHAPE = {
     card: keys("link", "harness", "status", "outcome", "role"),
   },
   empty: keys("runs", "issues"),
+  // F-005 Amendment A: a locally served model's recorded name -> the name the showcase's tables use.
+  model_aliases: "aliases",
 };
 export function checkProjectsCopy(p) {
   const errors = [];
@@ -1087,6 +1089,11 @@ export function checkProjectsCopy(p) {
   (function walk(v, shape, path) {
     if (shape === "boolean") { if (typeof v !== "boolean") errors.push(`${where(path)} must be true or false`); return; }
     if (shape === "s") { if (typeof v !== "string" || !v.trim()) errors.push(`${where(path)} must be a non-empty string`); return; }
+    if (shape === "aliases") {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return errors.push(`${where(path)} must be an object`);
+      for (const [k, x] of Object.entries(v)) if (!/^[A-Za-z0-9._-]{1,100}$/.test(k) || typeof x !== "string" || !/^[A-Za-z0-9._:-]{1,100}$/.test(x)) errors.push(`${where(`${path}.${k}`)} must map a recorded model name to a model name`);
+      return;
+    }
     if (Array.isArray(shape)) {
       if (!Array.isArray(v) || !v.length) return errors.push(`${where(path)} must be a non-empty list`);
       return v.forEach((x, i) => walk(x, shape[0], `${path}.${i}`));

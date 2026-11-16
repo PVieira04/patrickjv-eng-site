@@ -516,6 +516,9 @@
         "dataset": "{name} (synthetic)",
         "window": "{start} to {end}",
         "run_models": "planner {planner}, analyst {analyst}, critic {critic}",
+        "run_models_local": "planner {planner}, analyst {analyst}, critic {critic}, all served on a DGX Spark",
+        "run_models_hybrid": "planner {planner} and analyst {analyst} served on a DGX Spark, critic {critic} through its provider's API",
+        "cap_terminated": "The run reached its token cap after it had saved an answer, so it finished with that answer. Its last pass may not have been reviewed.",
         "scorecard_models": "analyst {analyst}, critic {critic}",
         "harness_count": "{harness} ({count})",
         "checked": "Read and published by Patrick Vieira on {date}.",
@@ -628,6 +631,9 @@
       "empty": {
         "runs": "No published runs yet.",
         "issues": "The critic left no open issues."
+      },
+      "model_aliases": {
+        "gpt-oss-20b": "gpt-oss:20b"
       }
     }
   },

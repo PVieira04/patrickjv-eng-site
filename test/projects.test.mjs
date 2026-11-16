@@ -255,6 +255,8 @@ test("F-005 (D3): the Enumerations table is the site's, and an unknown value in 
     tag: ["look_ahead", "overlap_autocorrelation", "sample_size", "return_definition", "contract_roll", "timezone_session", "multiple_comparisons"],
     stop_reason: ["pass_tool_calls", "run_tool_calls", "run_tokens", "sandbox_unavailable", "dataset_unavailable", "access_denied", "run_not_owned", "invalid_model_output", "model_error", "internal_error", "abandoned", "unsanctioned_call", "run_mismatch", "missing_critique"],
     harness: ["langgraph", "claude-code"],
+    served: ["local", "hybrid"],
+    cap_terminated: ["run_tokens"],
     author: ["model", "system"],
     role: ["trap_caught", "rejected_plan", "clean_pass"],
   });
@@ -565,9 +567,66 @@ test("F-005 (US-4, D2): --record fails, writing nothing, on each export.json con
 test("F-005 (D3): a report.json from the versioned harness (report schema 1.2.0: a top-level harness object, models.served) records unchanged", () => {
   const s = sandbox();
   try {
-    const expect = runExport(s.dir, { files: { "report.json": reportWith((d) => { d.harness = { version: "v1.3.0", resumed_version: "v1.3.0+dev" }; d.models.served = "hybrid"; }) } });
+    const expect = runExport(s.dir, { files: { "report.json": reportWith((d) => { d.harness = { version: "v1.3.0", resumed_version: "v1.3.0+dev" }; d.models.served = "hybrid"; d.models.planner = d.models.analyst = "openai:analyst-model"; }) } });
     const r = record({ root: s.root, dir: s.dir, expect, today: TODAY });
     assert.deepEqual(r.errors, []);
+  } finally { s.done(); }
+});
+
+// ---- LangGraph run pages (Amendment A): a graph run, served locally or hybrid, records like any other ----
+import { GRAPH_RUN_ID, graphRunFiles, graphReport } from "./projects-helpers.mjs";
+const graphExport = (dir, f) => writeExport(dir, { id: GRAPH_RUN_ID, files: { ...graphRunFiles(), ...(f ? { "report.json": dump(edit(graphReport(), f)) } : {}) } });
+const hybrid = (d) => { d.models.served = "hybrid"; d.models.critic = "openai:gpt-5.6-sol"; };
+const capTerminated = (d) => { d.usage.cap_terminated = "run_tokens"; };
+
+test("F-005 (Amendment A): a LangGraph run (report schema 1.3.0), served locally, hybrid or ended at its token cap, records byte for byte", () => {
+  for (const [what, f] of [["local", null], ["hybrid", hybrid], ["cap_terminated", capTerminated]]) {
+    const s = sandbox();
+    try {
+      const expect = graphExport(s.dir, f);
+      const exported = readTree(s.dir);
+      const r = record({ root: s.root, dir: s.dir, expect, today: TODAY });
+      assert.deepEqual(r.errors, [], what);
+      const base = join(s.root, "projects/research-agent/runs", GRAPH_RUN_ID);
+      for (const [file, b] of Object.entries(exported)) assert.ok(readFileSync(join(base, file)).equals(b), `${what}: ${file}`);
+      assert.equal(JSON.parse(readFileSync(join(base, "report.json"), "utf8")).models.harness, "langgraph", what);
+    } finally { s.done(); }
+  }
+});
+
+test("F-005 (Amendment A): models.served and usage.cap_terminated are checked: their values, served only on a LangGraph run, cap_terminated only on a completed one", () => {
+  assert.deepEqual(reportErrors(graphReport()), []);
+  assert.deepEqual(reportErrors(edit(graphReport(), hybrid)), []);
+  assert.deepEqual(reportErrors(edit(graphReport(), capTerminated)), []);
+  assert.deepEqual(reportErrors(edit(graphReport(), (d) => { delete d.models.served; })), [], "absent: served by the providers' APIs");
+  for (const [what, f, want] of [
+    ["an unknown served value", (d) => { d.models.served = "cloud"; }, /models\.served must be one of local, hybrid/],
+    ["served on a Claude Code run", (d) => { d.models.harness = "claude-code"; }, /models\.served must be absent unless models\.harness is langgraph/],
+    ["an unknown cap_terminated value", (d) => { d.usage.cap_terminated = "run_tool_calls"; }, /usage\.cap_terminated must be one of run_tokens/],
+    ["cap_terminated on a capped run", (d) => { capTerminated(d); d.status = "capped"; d.stop_reason = "run_tokens"; }, /usage\.cap_terminated must be absent unless the run completed/],
+    ["cap_terminated on a failed run", (d) => { capTerminated(d); d.status = "failed"; d.stop_reason = "model_error"; }, /usage\.cap_terminated must be absent unless the run completed/],
+    ["cap_terminated on a rejected run", (d) => { capTerminated(d); d.status = "rejected"; d.rejection = { reason: "Too short." }; }, /usage\.cap_terminated must be absent unless the run completed/],
+    ["cap_terminated on a Claude Code run", (d) => { capTerminated(d); delete d.models.served; d.models.harness = "claude-code"; }, /usage\.cap_terminated must be absent unless models\.harness is langgraph/],
+    ["served null", (d) => { d.models.served = null; }, /models\.served must be one of local, hybrid/],
+    ["served not a string", (d) => { d.models.served = 1; }, /models\.served must be one of local, hybrid/],
+    ["a local planner not openai:", (d) => { d.models.planner = "anthropic:planner-model"; }, /models\.planner must be an openai: model id when models\.served is local/],
+    ["a local critic not openai:", (d) => { d.models.critic = "ollama:gpt-oss-20b"; }, /models\.critic must be an openai: model id when models\.served is local/],
+    ["a hybrid analyst not openai:", (d) => { hybrid(d); d.models.analyst = "anthropic:analyst-model"; }, /models\.analyst must be an openai: model id when models\.served is hybrid/],
+  ]) assert.ok(reportErrors(edit(graphReport(), f)).some((e) => want.test(e)), what);
+  assert.deepEqual(reportErrors(edit(graphReport(), (d) => { hybrid(d); d.models.critic = "anthropic:critic-model"; })), [], "a hybrid critic is on its provider's API: any provider");
+});
+
+test("F-005 (Amendment A, D6): the synthetic-only gate holds for a LangGraph run: a non-synthetic dataset is refused by --record, writing nothing", () => {
+  const s = sandbox();
+  try {
+    for (const [what, f] of [
+      ["private", (d) => { d.dataset.visibility = "private"; }],
+      ["a real source", (d) => { d.dataset.source = "databento:GLBX.MDP3"; }],
+      ["another licence", (d) => { d.dataset.licence = "Licensed data"; }],
+    ]) {
+      const expect = graphExport(s.dir, f);
+      try { refuses(s, { dir: s.dir, expect }, /D6: synthetic data only/); } catch (e) { e.message = `${what}: ${e.message}`; throw e; }
+    }
   } finally { s.done(); }
 });
 
