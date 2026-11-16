@@ -1084,7 +1084,10 @@ const PROJECTS_SHAPE = {
   model_aliases: "aliases",
 };
 // Provider prefixes of the report's model ids (provider:model). An Ollama tag (gpt-oss:20b) is not one.
-const ALIAS_PROVIDER_PREFIX = /^(openai|anthropic|claude-code|google|ollama):/i;
+// The providers LangChain's init_chat_model takes as a "provider:model" prefix, plus claude-code.
+export const ALIAS_PROVIDERS = ["openai", "anthropic", "azure_openai", "google", "google_genai", "google_vertexai", "bedrock", "bedrock_converse",
+  "mistralai", "groq", "fireworks", "together", "cohere", "huggingface", "xai", "deepseek", "perplexity", "ibm", "nvidia", "ollama", "claude-code"];
+const ALIAS_PROVIDER_PREFIX = new RegExp(`^(${ALIAS_PROVIDERS.join("|")}):`, "i");
 export function checkProjectsCopy(p) {
   const errors = [];
   const where = (path) => `content.json pages.projects${path ? "." + path : ""}`;

@@ -100,7 +100,7 @@ monday_drift and thursday_drift have a wide absolute tolerance, so a near-zero a
 
 ### Results
 
-The scorecard is from research-agent v1.0.0, on 12 November 2026. The four Claude Code harness runs below were made earlier that day. The three LangGraph agent runs below come from Phase 2's five-run measurement at v1.5.1, on 16 November 2026, with gpt-oss:20b as planner, analyst and critic. The open-model runs used v1.1.0, and Phase 2 has its own results.
+The scorecard is from research-agent v1.0.0, on 12 November 2026. The four Claude Code harness runs below were made earlier that day. The open-model runs used v1.1.0, and Phase 2 has its own results and runs.
 
 #### Eval scorecard
 
@@ -128,16 +128,6 @@ In these 50 eval runs no pass fell into a planted trap, so no trap reached the c
 
 #### Recorded runs
 
-##### On synth-1m, do Thursday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Thursdays as the statistic `thursday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.
-
-- Harness: LangGraph agent
-- Status: Completed
-- Review: Passed review
-- Shows: The critic caught a planted trap
-- Markdown: https://patrickjv.com/projects/research-agent/runs/20261116T082036Z-a1bce5/report.md
-- Read the run: https://patrickjv.com/projects/research-agent/runs/20261116T082036Z-a1bce5/
-- Read and published by Patrick Vieira on 2026-11-16.
-
 ##### On synth-1m, is the Monday RTH session return (09:30 to 16:00 New York) different from the other weekdays'? Report the difference in mean RTH log return, Monday minus Tuesday to Friday, as the statistic `monday_minus_other_rth_return`, and test whether it differs from zero at the 5% level.
 
 - Harness: Claude Code harness
@@ -158,16 +148,6 @@ In these 50 eval runs no pass fell into a planted trap, so no trap reached the c
 - Read the run: https://patrickjv.com/projects/research-agent/runs/20261112T165719Z-a93bec/
 - Read and published by Patrick Vieira on 2026-11-12.
 
-##### On synth-1m, do Tuesday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Tuesdays as the statistic `tuesday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.
-
-- Harness: LangGraph agent
-- Status: Completed
-- Review: Passed review
-- Shows: A clean pass
-- Markdown: https://patrickjv.com/projects/research-agent/runs/20261116T103820Z-506968/report.md
-- Read the run: https://patrickjv.com/projects/research-agent/runs/20261116T103820Z-506968/
-- Read and published by Patrick Vieira on 2026-11-16.
-
 ##### On synth-1m, what is the total log return of the instrument over the whole sample? Report it as the statistic `total_log_return`, and test the hypothesis that the mean session log return differs from zero (two-sided, 5% level).
 
 - Harness: Claude Code harness
@@ -187,15 +167,6 @@ In these 50 eval runs no pass fell into a planted trap, so no trap reached the c
 - Markdown: https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/report.md
 - Read the run: https://patrickjv.com/projects/research-agent/runs/20261112T163326Z-468489/
 - Read and published by Patrick Vieira on 2026-11-12.
-
-##### On synth-1m, what was the cumulative log return of the instrument over the sessions of 2024? Days are CME sessions, 18:00 to 17:00 New York, dated by the day they end. Report it as the statistic `log_return_2024`, and test the hypothesis that the mean session log return in 2024 differs from zero (two-sided, 5% level).
-
-- Harness: LangGraph agent
-- Status: Completed
-- Review: Did not pass review
-- Markdown: https://patrickjv.com/projects/research-agent/runs/20261116T122841Z-47d5a4/report.md
-- Read the run: https://patrickjv.com/projects/research-agent/runs/20261116T122841Z-47d5a4/
-- Read and published by Patrick Vieira on 2026-11-16.
 
 #### Open models on a DGX Spark
 
@@ -267,7 +238,7 @@ v1.4.0 set out to:
 
 Prompt text that names a specific eval question or trap is out of scope.
 
-A later step, having the analysis tool report facts about the data it used (the window's bounds and timezone, bar counts, and price gaps between sessions), has not been built. v1.5.0 and v1.5.1 changed how data is accessed and fixed a crash, and neither was meant to change a score on synth-1m, so the v1.5.1 results below measure the v1.4.0 changes.
+v1.4.0 delivered both: it closed the six gaps, and the held-out set was written and is kept outside the repo. v1.5.0 added data-access gates and v1.5.1 fixed how hosted models' connections are reused between runs; neither was intended to change a score. A further step, having the analysis tool report facts about the data it used (the window's bounds and timezone, bar counts, and price gaps between sessions), has not been built.
 
 ### Guarding against tuning to the test
 
@@ -275,27 +246,63 @@ The fixes have to work beyond the eval set. The model may be given facts that ev
 
 ### Results
 
-Each row is research-agent answering the eval questions on the seeded synthetic dataset, synth-1m, with gpt-oss:20b on the DGX Spark as planner and analyst. In the two local rows gpt-oss:20b is also the critic, so no hosted model was used. In the hybrid row the critic is gpt-5.6-sol through its provider's API. The five-run row gives the mean score across the repeats with its standard error.
+Each row is research-agent answering the eval questions on the seeded synthetic dataset, synth-1m, with gpt-oss:20b on the DGX Spark as planner and analyst. In the local rows gpt-oss:20b is also the critic, so no hosted model was used. In the hybrid row the critic is gpt-5.6-sol through its provider's API. The five-run row gives the mean score across the repeats with its standard error. I transcribed these figures by hand from local scorecards that aren't published here.
 
 | Version | Run | Score |
 |---|---|---|
-| v1.1.0 | gpt-oss:20b analyst and critic, k=1: one run per question | 3 / 10 |
+| v1.1.0 | gpt-oss:20b analyst and critic, one run per question | 3 / 10 |
+| v1.4.0 | gpt-oss:20b analyst and critic, one run per question | 3 / 10 |
+| v1.4.0 | gpt-oss:20b analyst with the gpt-5.6-sol critic through its provider's API: the first round of a planned five-run hybrid measurement, one run per question, not a five-run result | 3 / 10 |
 | v1.5.1 | gpt-oss:20b analyst and critic, five runs per question | 0.40 (standard error 0.07) |
-| v1.4.0 | gpt-oss:20b analyst with the gpt-5.6-sol critic through its provider's API: the one clean hybrid round, one run per question, not a five-run result | 3 / 10 |
 
-At v1.5.1, with five runs per question and no hosted model, gpt-oss:20b scored 0.40 (standard error 0.07): 20 of 50 answers were correct. 49 of the 50 runs completed, and one failed when a model returned output that could not be used. Against 3 / 10 at v1.1.0 that is suggestive, not established: v1.1.0 had one run per question, so its score alone carries about ±0.15 of run-to-run noise. The drift questions held up: tuesday_drift and monday_drift were 5 / 5, and thursday_drift was 4 / 5 and avoided its contract-roll trap in all five runs. On the return questions the critic usually saw the contract roll, but the analyst rarely fixed it. On return_2024 the gpt-oss:20b critic flagged the roll in 7 of its 8 reviews, yet 3 of the 5 final answers fell into it, and total_return and return_2024 were 2 / 5 each. The critic's advice wasn't always right either: in each of those 3 runs, one of its reviews told the analyst the series was already adjusted for the roll and pushed it to drop its own roll handling. The timezone trap is the critic's miss. It flagged it in 1 of 10 reviews on open_vol_uplift, where 3 of the 5 answers fell in, and in 0 of 8 on open_vol_uplift_15m, where 4 of 5 did. The volatility questions were the weakest: open_vol_uplift got 1 / 5, and open_vol_uplift_15m, open_vol_uplift_pct_change and afternoon_vol_ratio 0 / 5 each, with one open_vol_uplift_pct_change run computing a different statistic from the one asked. largest_session_move got 1 / 5. So Phase 3 starts with the analyst.
+At v1.5.1, with five runs per question and no hosted model, gpt-oss:20b scored 0.40 (standard error 0.07): 20 of 50 answers were correct. 49 of the 50 runs completed, and one failed when a model returned output that could not be used. That is within run-to-run noise of the 3 / 10 measured at v1.1.0 and again at v1.4.0, each with one run per question, since a single run per question carries about ±0.15 of noise on its own. The drift questions held up: tuesday_drift and monday_drift were 5 / 5, and thursday_drift 4 / 5. Neither role handled the contract roll reliably. Across the five questions with a roll trap, the gpt-oss:20b critic raised the roll on 16 of the 29 passes that had fallen into it: 7 of 8 on return_2024, but 2 of 8 on total_return. Its advice was sometimes wrong-headed: in each of the 3 return_2024 runs whose final answer fell into the roll, one of its reviews told the analyst the series was already adjusted for the roll and steered it away from its own roll handling. When the flag was right, the 20b analyst often didn't act on it. total_return and return_2024 got 2 / 5 each, and largest_session_move 1 / 5. The critic mostly missed the timezone trap, raising it on 1 of the 18 passes that had fallen into it, across open_vol_uplift and open_vol_uplift_15m. The volatility questions were the weakest: open_vol_uplift got 1 / 5, and open_vol_uplift_15m, open_vol_uplift_pct_change and afternoon_vol_ratio 0 / 5 each, with one open_vol_uplift_pct_change run computing a different statistic from the one asked.
 
-Before that, at v1.4.0 with one run per question, gpt-oss:20b alone, as analyst and critic, got 3 / 10, the same as at v1.1.0, and the clean hybrid round also got 3 / 10. In the hybrid round the gpt-5.6-sol critic flagged the contract roll in every review where it came up, but the 20b analyst fixed it only on largest_session_move. The hybrid round avoided the timezone trap in 2 of its 3 open-volatility runs. With one run per question, none of these differences can be told apart from run-to-run noise.
+At v1.4.0 gpt-oss:20b alone, as analyst and critic, got 3 / 10 with one run per question, the same as at v1.1.0. The hybrid row is the first round of a planned five-run hybrid measurement; most runs in its later rounds failed with model errors, so only this round is counted. In that round 1 of the 10 runs failed with model output that could not be used and 1 stopped at the tool-call cap, and it also got 3 / 10. The gpt-5.6-sol critic raised the contract roll on all 5 passes that had fallen into it, but the 20b analyst fixed it only on largest_session_move. Of its two timezone-trap runs, open_vol_uplift failed without an answer and open_vol_uplift_15m avoided the trap. With one run per question, none of these differences can be told apart from run-to-run noise.
 
-On the held-out questions I report only the direction of the aggregate score from v1.1.0 to v1.5.1: {{HELDOUT_DIRECTION}}. The held-out set is author-known, not enforced: I wrote those questions and know their traps, and nothing in the code stops them being used for tuning.
+On a small held-out set of questions written after the main set (author-known, not enforced: I wrote those questions and know their traps, and nothing in the code stops them being used for tuning), v1.5.1 scored {{HELDOUT_DIRECTION}}.
+
+The three LangGraph agent runs below come from the five-run measurement at v1.5.1 on 16 November 2026, with gpt-oss:20b as planner, analyst and critic, all served locally.
+
+The largest_session_move run shows the critic raising the contract roll and the analyst dropping the sessions that span a roll. The return_2024 run is an honest failure: the critic raised the roll on every pass, but one of its reviews told the analyst the series was already adjusted, and the final answer fell into the roll.
+
+#### Recorded runs
+
+##### On synth-1m, what was the largest single-day move? Days are CME sessions, 18:00 to 17:00 New York, dated by the day they end. Report the largest absolute session log return as the statistic `largest_session_abs_log_return`, and say whether it exceeds 2% (the hypothesis: some session moved more than 0.02 in log terms).
+
+- Harness: LangGraph agent
+- Status: Completed
+- Review: Passed review
+- Shows: The critic caught a planted trap
+- Markdown: https://patrickjv.com/projects/research-agent/runs/20261116T123459Z-9dbf08/report.md
+- Read the run: https://patrickjv.com/projects/research-agent/runs/20261116T123459Z-9dbf08/
+- Read and published by Patrick Vieira on 2026-11-16.
+
+##### On synth-1m, do Tuesday sessions drift? Take each session's log return over regular hours (09:30 to 16:00 New York) and report the mean over Tuesdays as the statistic `tuesday_mean_rth_return`. Test the hypothesis that it differs from zero at the 5% level.
+
+- Harness: LangGraph agent
+- Status: Completed
+- Review: Passed review
+- Shows: A clean pass
+- Markdown: https://patrickjv.com/projects/research-agent/runs/20261116T103820Z-506968/report.md
+- Read the run: https://patrickjv.com/projects/research-agent/runs/20261116T103820Z-506968/
+- Read and published by Patrick Vieira on 2026-11-16.
+
+##### On synth-1m, what was the cumulative log return of the instrument over the sessions of 2024? Days are CME sessions, 18:00 to 17:00 New York, dated by the day they end. Report it as the statistic `log_return_2024`, and test the hypothesis that the mean session log return in 2024 differs from zero (two-sided, 5% level).
+
+- Harness: LangGraph agent
+- Status: Completed
+- Review: Did not pass review
+- Markdown: https://patrickjv.com/projects/research-agent/runs/20261116T122841Z-47d5a4/report.md
+- Read the run: https://patrickjv.com/projects/research-agent/runs/20261116T122841Z-47d5a4/
+- Read and published by Patrick Vieira on 2026-11-16.
 
 ## Phase 3: next
 
-Phase 3 starts with the analyst model. None of it has been run yet.
+Phase 3 starts with the planner and analyst model. None of it has been run yet.
 
-### A stronger local analyst
+### A stronger local planner and analyst
 
-In the Phase 2 runs the gpt-oss:20b critic usually flagged the contract roll, and gpt-oss:20b as analyst rarely fixed it. So the first step is a stronger planner and analyst on the DGX Spark, after an Ollama upgrade and a fresh baseline. The candidates, in order, are qwen3.6:35b-a3b-q4_K_M, qwen3.8:27b-q4_K_M and flint:40b, screened with one run per question and then five. nemotron-3.5-super:120b-a12b-q4_K_M is the larger option.
+In the Phase 2 runs neither role handled the contract roll reliably: the gpt-oss:20b critic's roll flags were mixed and sometimes wrong-headed, and the 20b analyst often didn't act on a correct one. Phase 3 changes the planner and analyst model first because it is the cheapest single change to test, and holds the critic fixed so that change can be measured. That is not a finding that the critic is fine. The first step is an Ollama upgrade and a fresh baseline. The candidates, in order, are qwen3.6:35b-a3b-q4_K_M, qwen3.8:27b-q4_K_M and flint:40b, screened with one run per question and then five. nemotron-3.5-super:120b-a12b-q4_K_M is the larger option.
 
 ### Targeted revisions
 

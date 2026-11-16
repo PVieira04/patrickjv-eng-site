@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";
 import { renderReportMd, reportHtmlErrors } from "../lib/project-pages.mjs";
-import { decodeEntities, SHOWCASE_TABLES, MODEL_CELL } from "../build.mjs";
+import { decodeEntities, SHOWCASE_TABLES, MODEL_CELL, ALIAS_PROVIDERS } from "../build.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -592,6 +592,16 @@ test("F-005 (Amendment A): a local model is shown by the tables' name when model
   for (const bad of [{ "gpt-oss-20b": "" }, { "gpt oss": "x" }, { "gpt-oss-20b": "a b" }, ["gpt-oss:20b"]]) assert.ok(checkProjectsCopy(edit(P, (x) => { x.model_aliases = bad; })).some((e) => /model_aliases/.test(e)), JSON.stringify(bad));
   for (const bad of ["openai:gpt-oss-20b", "OpenAI:gpt-oss:20b", "anthropic:x", "claude-code:x", "ollama:gpt-oss:20b"]) assert.ok(checkProjectsCopy(edit(P, (x) => { x.model_aliases = { "gpt-oss-20b": bad }; })).some((e) => /model_aliases\.gpt-oss-20b must be a model name without a provider prefix/.test(e)), `a provider-prefixed alias: ${bad}`);
   for (const good of ["gpt-oss:20b", "qwen3:30b-a3b", "openai-gpt-oss"]) assert.deepEqual(checkProjectsCopy(edit(P, (x) => { x.model_aliases = { "gpt-oss-20b": good }; })), [], `an Ollama name passes: ${good}`);
+});
+
+test("F-005 (Amendment A): an alias with any of init_chat_model's provider prefixes fails the copy check", () => {
+  const providers = ["azure_openai", "google_genai", "google_vertexai", "bedrock", "bedrock_converse", "mistralai", "groq", "fireworks", "together", "cohere",
+    "huggingface", "xai", "deepseek", "perplexity", "ibm", "nvidia", "anthropic", "openai", "ollama", "google", "claude-code"];
+  assert.deepEqual([...providers].sort(), [...ALIAS_PROVIDERS].sort(), "the listed providers");
+  for (const pr of providers) for (const v of [`${pr}:some-model`, `${pr.toUpperCase()}:some-model`]) {
+    assert.ok(checkProjectsCopy(edit(P, (x) => { x.model_aliases = { "gpt-oss-20b": v }; })).some((e) => /must be a model name without a provider prefix/.test(e)), v);
+  }
+  for (const good of ["deepseek-r1:8b", "mistral:7b", "groq-tool-use:8b"]) assert.deepEqual(checkProjectsCopy(edit(P, (x) => { x.model_aliases = { "gpt-oss-20b": good }; })), [], `an Ollama name passes: ${good}`);
 });
 
 test("F-005 (Amendment A): a completed run that ended at its token cap says so, after the plan", () => {
@@ -1386,7 +1396,7 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     assert.equal(p2.scope_heading, "Scope of v1.4.0");
     assert.doesNotMatch(p2.scope.text.join(" "), /v1\.5\.0 would have/, "v1.5.0 shipped without the tool facts");
     assert.match(p2.scope.text.join(" "), /has not been built/);
-    assert.deepEqual(p2.results.rows.map((r) => r[0]), ["v1.1.0", "v1.5.1", "v1.4.0"]);
+    assert.deepEqual(p2.results.rows.map((r) => r[0]), ["v1.1.0", "v1.4.0", "v1.4.0", "v1.5.1"], "oldest first; the v1.4.0 local row, then its hybrid round");
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v01.4.0"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a leading zero fails");
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v1.4.0+dev"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a +dev build is not a release");
   } finally { s.done(); }
@@ -1399,7 +1409,8 @@ test("F-005: the phases quote the published scorecard's score and k, so a re-rec
   // "research-agent v1.0.0" is hard-coded: if the scorecard is re-recorded under a new version, update the label here and in content.json.
   assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set (research-agent v1.0.0), but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
   // Every two-decimal score the phases quote is the scorecard's, except Phase 2's results: they quote
-  // the v1.5.1 local measurement's own scorecard (mean and standard error), which isn't published here.
+  // the v1.5.1 local measurement's own scorecard (projects/research-agent/phase2-summary.json), checked in
+  // the test below.
   const { results: _p2results, ...p2rest } = P.copy.showcase.phase2;
   const phases = strings({ copy: { p1: P.copy.showcase.phase1, p2: p2rest } }).map(([, v]) => v).join("\n");
   const quoted = [...phases.matchAll(/(?<![\d.])\d\.\d\d(?![\d])/g)].map((m) => m[0]);
@@ -1410,6 +1421,67 @@ test("F-005: the phases quote the published scorecard's score and k, so a re-rec
   // Inactive until scorecards carry the field (the published one predates harness versioning).
   if (hv !== undefined && hv !== null) assert.equal(hv, "v1.0.0", "the scorecard's harness_version matches the page's label");
   assert.match(P.copy.showcase.phase1.showed.join("\n"), new RegExp(`scored ${fixed2(card.aggregate.score).replace(".", "\\.")} at v1\\.0\\.0`));
+});
+
+test("F-005: Phase 2's results quote the v1.5.1 summary's score, standard error, k and completed runs, and no other two-decimal number", () => {
+  const sum = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/phase2-summary.json"), "utf8"));
+  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const res = P.copy.showcase.phase2.results, text = res.text.join("\n");
+  const quoted = new Set([...strings({ r: res }).map(([, v]) => v).join("\n").matchAll(/(?<![\d.])\d\.\d\d(?![\d])/g)].map((m) => m[0]));
+  // 0.15 is the run-to-run noise of a one-run-per-question score of about 0.3 (sqrt(0.3 × 0.7 / 10) ≈ 0.145).
+  const allowed = new Set([fixed2(sum.score), fixed2(sum.se), "0.15"]);
+  for (const q of quoted) assert.ok(allowed.has(q), `Phase 2's results quote ${q}`);
+  const row = res.rows.find((r) => r[0] === sum.version);
+  assert.ok(row, `a ${sum.version} row`);
+  assert.equal(row[2], `${fixed2(sum.score)} (standard error ${fixed2(sum.se)})`);
+  assert.match(row[1], new RegExp(`${words[sum.k]} runs per question`));
+  assert.ok(text.includes(`At ${sum.version}, with ${words[sum.k]} runs per question and no hosted model, ${sum.analyst} scored ${fixed2(sum.score)} (standard error ${fixed2(sum.se)}): ${sum.correct} of ${sum.runs} answers were correct. ${sum.completed} of the ${sum.runs} runs completed`), "the finding quotes the summary");
+  assert.equal(sum.correct / sum.runs, sum.score);
+  assert.equal(sum.runs, sum.k * sum.questions);
+  assert.ok(Object.keys(sum).every((k) => !/path|dir|host|url/i.test(k)) && !/\/|:\/\//.test(JSON.stringify(sum).replace(/"_note": "[^"]*"/, "")), "no paths or hosts in the summary");
+});
+
+test("F-005: Phase 2's results text states the published LangGraph runs' count, version, date and where they were served", () => {
+  const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const published = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/published.json"), "utf8"));
+  const docs = Object.keys(published.runs).map((id) => [id, JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8"))]).filter(([, d]) => d.models.harness === "langgraph");
+  assert.ok(docs.length > 0);
+  const versions = new Set(docs.map(([id, d]) => { assert.equal(`v${published.runs[id].tool_version}`, d.harness.version, `${id}: exported by the version that ran it`); return d.harness.version; }));
+  const days = new Set(docs.map(([, d]) => new Date(d.finished_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })));
+  assert.equal(versions.size, 1, "one version");
+  assert.equal(days.size, 1, "one day");
+  assert.ok(docs.every(([, d]) => d.models.served === "local"), "all served locally");
+  const intro = P.copy.showcase.phase2.results.text.join(" ");
+  assert.ok(intro.includes(`The ${words[docs.length] ?? docs.length} LangGraph agent runs below come from the five-run measurement at ${[...versions][0]} on ${[...days][0]}, with gpt-oss:20b as planner, analyst and critic, all served locally.`), intro);
+  assert.ok(docs.every(([, d]) => ["planner", "analyst", "critic"].every((r) => d.models[r] === "openai:gpt-oss-20b")), "the models the intro names");
+});
+
+test("F-005: runs served on the DGX Spark (models.served) are listed under Phase 2, after its results, and every other run under Phase 1; Phase 2's list is absent with none", () => {
+  const s = site();
+  try {
+    ok(publish(s, [run(1), graphRun()], { card: scorecard() }));
+    const page = body(out(s, SHOWCASE)), md = out(s, "projects/research-agent.md"), p2 = P.copy.showcase.phase2;
+    const sec = (id) => page.match(new RegExp(`<section aria-labelledby="${id}-h">[\\s\\S]*?</section>\\n(?=<section aria-labelledby="(phase2|next)-h">)`))[0];
+    const one = sec("phase1"), two = sec("phase2");
+    assert.ok(one.includes(`/runs/${runId(1)}/`) && !one.includes(`/runs/${GRAPH_RUN_ID}/`), "Phase 1 lists only the run with no models.served");
+    assert.ok(two.includes(`/runs/${GRAPH_RUN_ID}/`) && !two.includes(`/runs/${runId(1)}/`), "Phase 2 lists only the locally served run");
+    ok(publish(s, [graphRun((d) => { d.models.served = "hybrid"; d.models.critic = "openai:gpt-5.6-sol"; })], { card: scorecard() }));
+    const hybridPage = body(out(s, SHOWCASE));
+    assert.ok(hybridPage.indexOf(`/runs/${GRAPH_RUN_ID}/`) > hybridPage.indexOf('<section aria-labelledby="phase2-h">'), "a hybrid run is Phase 2's too");
+    const heading = P.copy.showcase.phase1.runs_heading, at = two.indexOf(`<h4 id="runs2-h">${heading}</h4>`);
+    assert.ok(at >= 0 && at > two.lastIndexOf(`<p>${p2.results.text.at(-1)}</p>`), "after the results' text");
+    const mdTwo = md.slice(md.indexOf(`## ${p2.heading}`), md.indexOf(`## ${P.copy.showcase.next_heading}`));
+    assert.ok(mdTwo.includes(`${p2.results.text.at(-1)}\n\n#### ${heading}\n\n#####`) && mdTwo.includes(`/runs/${GRAPH_RUN_ID}/`));
+    assert.ok(!md.slice(0, md.indexOf(`## ${p2.heading}`)).includes(`/runs/${GRAPH_RUN_ID}/`));
+    ok(publish(s, [run(1)], { card: scorecard() }));
+    const md1 = out(s, "projects/research-agent.md");
+    assert.ok(!out(s, SHOWCASE).includes('id="runs2-h"') && !md1.slice(md1.indexOf(`## ${p2.heading}`)).includes(`#### ${P.copy.showcase.phase1.runs_heading}`), "no Phase 2 list without LangGraph runs");
+  } finally { s.done(); }
+});
+
+test("F-005: no {{PLACEHOLDER}} is left in pages.projects (a content PR can't merge with one)", () => {
+  const left = strings({ p: P }).filter(([, v]) => /\{\{[A-Z0-9_]+\}\}/.test(v)).map(([k, v]) => `${k}: ${v.match(/\{\{[A-Z0-9_]+\}\}/g).join(", ")}`);
+  assert.deepEqual(left, [], "placeholders left in content.json");
 });
 
 test("F-005: Phase 1's results name the Claude Code harness runs' count, and they come before the scorecard", () => {

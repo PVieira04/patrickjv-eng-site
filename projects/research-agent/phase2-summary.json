@@ -1,0 +1,16 @@
+{
+  "_note": "Copied by hand from the v1.5.1 local measurement's scorecard (not published). Phase 2's results quote these figures; a test checks the copy against them.",
+  "version": "v1.5.1",
+  "date": "2026-11-16",
+  "dataset": "synth-1m",
+  "analyst": "gpt-oss:20b",
+  "critic": "gpt-oss:20b",
+  "served": "local",
+  "k": 5,
+  "questions": 10,
+  "runs": 50,
+  "completed": 49,
+  "correct": 20,
+  "score": 0.4,
+  "se": 0.06546536707079773
+}
