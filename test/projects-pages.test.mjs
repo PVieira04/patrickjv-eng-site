@@ -595,8 +595,10 @@ test("F-005 (Amendment A): a local model is shown by the tables' name when model
 });
 
 test("F-005 (Amendment A): an alias with any of init_chat_model's provider prefixes fails the copy check", () => {
-  const providers = ["azure_openai", "google_genai", "google_vertexai", "bedrock", "bedrock_converse", "mistralai", "groq", "fireworks", "together", "cohere",
-    "huggingface", "xai", "deepseek", "perplexity", "ibm", "nvidia", "anthropic", "openai", "ollama", "google", "claude-code"];
+  // langchain 1.5.0's _BUILTIN_PROVIDERS keys (research-agent's uv.lock), plus google and claude-code.
+  const providers = ["anthropic", "anthropic_bedrock", "azure_ai", "azure_openai", "baseten", "bedrock", "bedrock_converse", "bedrock_mantle_anthropic",
+    "bedrock_mantle_openai", "cohere", "deepseek", "fireworks", "google_anthropic_vertex", "google_genai", "google_vertexai", "groq", "huggingface", "ibm",
+    "langsmith", "litellm", "meta", "mistralai", "nvidia", "ollama", "openai", "openrouter", "perplexity", "together", "upstage", "xai", "google", "claude-code"];
   assert.deepEqual([...providers].sort(), [...ALIAS_PROVIDERS].sort(), "the listed providers");
   for (const pr of providers) for (const v of [`${pr}:some-model`, `${pr.toUpperCase()}:some-model`]) {
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.model_aliases = { "gpt-oss-20b": v }; })).some((e) => /must be a model name without a provider prefix/.test(e)), v);
@@ -1468,7 +1470,7 @@ test("F-005: runs served on the DGX Spark (models.served) are listed under Phase
     ok(publish(s, [graphRun((d) => { d.models.served = "hybrid"; d.models.critic = "openai:gpt-5.6-sol"; })], { card: scorecard() }));
     const hybridPage = body(out(s, SHOWCASE));
     assert.ok(hybridPage.indexOf(`/runs/${GRAPH_RUN_ID}/`) > hybridPage.indexOf('<section aria-labelledby="phase2-h">'), "a hybrid run is Phase 2's too");
-    const heading = P.copy.showcase.phase1.runs_heading, at = two.indexOf(`<h4 id="runs2-h">${heading}</h4>`);
+    const heading = `${P.copy.showcase.phase1.runs_heading} (${graphReport().harness.version})`, at = two.indexOf(`<h4 id="runs2-h">${heading}</h4>`);
     assert.ok(at >= 0 && at > two.lastIndexOf(`<p>${p2.results.text.at(-1)}</p>`), "after the results' text");
     const mdTwo = md.slice(md.indexOf(`## ${p2.heading}`), md.indexOf(`## ${P.copy.showcase.next_heading}`));
     assert.ok(mdTwo.includes(`${p2.results.text.at(-1)}\n\n#### ${heading}\n\n#####`) && mdTwo.includes(`/runs/${GRAPH_RUN_ID}/`));
