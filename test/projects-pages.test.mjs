@@ -1374,8 +1374,8 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     assert.match(res.rows[2][1], /one run per question, not a five-run result/, "the hybrid round is not a five-run result");
     assert.match(res.text.join(" "), /author-known, not enforced/, "the held-out line says the split isn't enforced");
     // The research-agent versions (renumbered 13 Nov 2026): Phase 1 is v1.0.0 to v1.2.0, the hosted
-    // critic ran on an early build of v1.3.0, the harness comparison read v1.2.0, the parity fixes are
-    // v1.4.0 and the tool facts v1.5.0; Phase 2's results compare v1.1.0 with v1.5.1, plus the v1.4.0 hybrid round.
+    // critic ran on an early build of v1.3.0, the harness comparison read v1.2.0 and the parity fixes are
+    // v1.4.0; the tool facts were never built. Phase 2's results compare v1.1.0 with v1.5.1, plus the v1.4.0 hybrid round.
     const p2 = P.copy.showcase.phase2;
     assert.match(P.copy.showcase.phase1.intro.join(" "), /v1\.0\.0 to v1\.2\.0/);
     assert.ok(lm.rows.every((r) => r[1] === "v1.1.0"), "the overnight local runs are v1.1.0");
@@ -1384,7 +1384,8 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     assert.match(hybrid.intro, /on an early build of v1\.3\.0, before its review fixes/, "the hybrid run predates v1.3.0's review fixes");
     assert.match(p2.harness.intro, /at v1\.2\.0, before per-role routing merged/);
     assert.equal(p2.scope_heading, "Scope of v1.4.0");
-    assert.match(p2.scope.text.join(" "), /v1\.5\.0 would have the analysis tool report facts/);
+    assert.doesNotMatch(p2.scope.text.join(" "), /v1\.5\.0 would have/, "v1.5.0 shipped without the tool facts");
+    assert.match(p2.scope.text.join(" "), /has not been built/);
     assert.deepEqual(p2.results.rows.map((r) => r[0]), ["v1.1.0", "v1.5.1", "v1.4.0"]);
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v01.4.0"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a leading zero fails");
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v1.4.0+dev"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a +dev build is not a release");
@@ -1397,8 +1398,10 @@ test("F-005: the phases quote the published scorecard's score and k, so a re-rec
   const text = P.copy.showcase.phase1.local_models.text.join("\n");
   // "research-agent v1.0.0" is hard-coded: if the scorecard is re-recorded under a new version, update the label here and in content.json.
   assert.ok(text.includes(`The Claude Code harness scored ${fixed2(card.aggregate.score)} on this set (research-agent v1.0.0), but with ${words[card.k] ?? card.k} runs per question`), "score and k match the scorecard");
-  // Every two-decimal score the phases quote is the scorecard's.
-  const phases = strings({ copy: { p1: P.copy.showcase.phase1, p2: P.copy.showcase.phase2 } }).map(([, v]) => v).join("\n");
+  // Every two-decimal score the phases quote is the scorecard's, except Phase 2's results: they quote
+  // the v1.5.1 local measurement's own scorecard (mean and standard error), which isn't published here.
+  const { results: _p2results, ...p2rest } = P.copy.showcase.phase2;
+  const phases = strings({ copy: { p1: P.copy.showcase.phase1, p2: p2rest } }).map(([, v]) => v).join("\n");
   const quoted = [...phases.matchAll(/(?<![\d.])\d\.\d\d(?![\d])/g)].map((m) => m[0]);
   assert.ok(quoted.length >= 3);
   for (const q of quoted) assert.equal(q, fixed2(card.aggregate.score), `a quoted score ${q}`);

@@ -48,6 +48,41 @@
         "report.md": "5e8f23668328bf8ad9c4a7c8a12ed70024ec7f30a0525afd93273888baf37c6e"
       },
       "alt": {}
+    },
+    "20261116T082036Z-a1bce5": {
+      "checked": "2026-11-16",
+      "export_digest": "07e5a67aa47bc46af91a571ea549dc7a880dfb5e25a4a06ff14b04ef474c96a1",
+      "tool_version": "1.5.1",
+      "exported_at": "2026-11-16T17:36:09Z",
+      "role": "trap_caught",
+      "files": {
+        "report.json": "764f3b31977d87d62ff874b6d181206c5dbeaa30f153f42250c6b2aa40682de9",
+        "report.md": "6d67570837f53117c168434c5ab0bf95d5a3614a0ca85545039985cc87971e86"
+      },
+      "alt": {}
+    },
+    "20261116T103820Z-506968": {
+      "checked": "2026-11-16",
+      "export_digest": "804d9eb4c8de1199af91a387699575c27b94a40f0ecd5fabe159e8ceafc6c484",
+      "tool_version": "1.5.1",
+      "exported_at": "2026-11-16T17:36:27Z",
+      "role": "clean_pass",
+      "files": {
+        "report.json": "9dd0d361d60c203c56de8c8b67157237b7ecf49f1fe880c97025618dd67bd19e",
+        "report.md": "bbe38e346ef62ef39c9e483be0dee0d43513da0777108f9a59898eb8ce6519ce"
+      },
+      "alt": {}
+    },
+    "20261116T122841Z-47d5a4": {
+      "checked": "2026-11-16",
+      "export_digest": "5a7e5c747ec777e66e71cca42f26744ee5e0ac2551212a0bf877b1f9932318e7",
+      "tool_version": "1.5.1",
+      "exported_at": "2026-11-16T17:36:10Z",
+      "files": {
+        "report.json": "5cbc0f62bf6fa6349d9f82a193de53a383da9785ad501e7f2e17559f8df44753",
+        "report.md": "9a22e2dd4f22edb672e36e166c4fbfac6111c74acd33a8b69873131b2e3a7ac7"
+      },
+      "alt": {}
     }
   },
   "scorecard": {

@@ -379,7 +379,7 @@
             ],
             "results_heading": "Results",
             "results": [
-              "The scorecard is from research-agent v1.0.0, on 12 November 2026. The four Claude Code harness runs below were made earlier that day. The open-model runs used v1.1.0, and Phase 2 has its own results."
+              "The scorecard is from research-agent v1.0.0, on 12 November 2026. The four Claude Code harness runs below were made earlier that day. The three LangGraph agent runs below come from Phase 2's five-run measurement at v1.5.1, on 16 November 2026, with gpt-oss:20b as planner, analyst and critic. The open-model runs used v1.1.0, and Phase 2 has its own results."
             ],
             "runs_heading": "Recorded runs",
             "local_models": {
@@ -451,7 +451,7 @@
               ],
               "text": [
                 "Prompt text that names a specific eval question or trap is out of scope.",
-                "If that isn't enough, v1.5.0 would have the analysis tool report facts about the data it used: the window's bounds and timezone, bar counts, and price gaps between sessions."
+                "A later step, having the analysis tool report facts about the data it used (the window's bounds and timezone, bar counts, and price gaps between sessions), has not been built. v1.5.0 and v1.5.1 changed how data is accessed and fixed a crash, and neither was meant to change a score on synth-1m, so the v1.5.1 results below measure the v1.4.0 changes."
               ]
             },
             "guard_heading": "Guarding against tuning to the test",
@@ -460,16 +460,16 @@
             ],
             "results_heading": "Results",
             "results": {
-              "intro": "Each row is research-agent answering the eval questions on the seeded synthetic dataset, synth-1m, with gpt-oss:20b on the DGX Spark as the analyst. The five-run rows give the mean score across the repeats, ± its standard deviation.",
+              "intro": "Each row is research-agent answering the eval questions on the seeded synthetic dataset, synth-1m, with gpt-oss:20b on the DGX Spark as planner and analyst. In the two local rows gpt-oss:20b is also the critic, so no hosted model was used. In the hybrid row the critic is gpt-5.6-sol through its provider's API. The five-run row gives the mean score across the repeats with its standard error.",
               "columns": ["Version", "Run", "Score"],
               "rows": [
-                ["v1.1.0", "gpt-oss:20b analyst, five runs per question", "{{V110_MAIN}}"],
-                ["v1.5.1", "gpt-oss:20b analyst, five runs per question", "{{V151_MAIN}}"],
-                ["v1.4.0", "gpt-oss:20b analyst with the gpt-5.6-sol critic through its provider's API: the one clean hybrid round, one run per question, not a five-run result", "{{V140_HYBRID}}"]
+                ["v1.1.0", "gpt-oss:20b analyst and critic, k=1: one run per question", "3 / 10"],
+                ["v1.5.1", "gpt-oss:20b analyst and critic, five runs per question", "0.40 (standard error 0.07)"],
+                ["v1.4.0", "gpt-oss:20b analyst with the gpt-5.6-sol critic through its provider's API: the one clean hybrid round, one run per question, not a five-run result", "3 / 10"]
               ],
               "text": [
-                "{{V151_FINDING}}",
-                "Before that, at v1.4.0 with one run per question, gpt-oss:20b alone got 3 / 10, the same as at v1.1.0, and the clean hybrid round also got 3 / 10. The critic flagged the contract roll consistently, but the 20b analyst rarely fixed it. The hybrid round usually avoided the timezone trap. With one run per question, none of these differences can be told apart from run-to-run noise.",
+                "At v1.5.1, with five runs per question and no hosted model, gpt-oss:20b scored 0.40 (standard error 0.07): 20 of 50 answers were correct. 49 of the 50 runs completed, and one failed when a model returned output that could not be used. Against 3 / 10 at v1.1.0 that is suggestive, not established: v1.1.0 had one run per question, so its score alone carries about ±0.15 of run-to-run noise. The drift questions held up: tuesday_drift and monday_drift were 5 / 5, and thursday_drift was 4 / 5 and avoided its contract-roll trap in all five runs. On the return questions the critic usually saw the contract roll, but the analyst rarely fixed it. On return_2024 the gpt-oss:20b critic flagged the roll in 7 of its 8 reviews, yet 3 of the 5 final answers fell into it, and total_return and return_2024 were 2 / 5 each. The critic's advice wasn't always right either: in each of those 3 runs, one of its reviews told the analyst the series was already adjusted for the roll and pushed it to drop its own roll handling. The timezone trap is the critic's miss. It flagged it in 1 of 10 reviews on open_vol_uplift, where 3 of the 5 answers fell in, and in 0 of 8 on open_vol_uplift_15m, where 4 of 5 did. The volatility questions were the weakest: open_vol_uplift got 1 / 5, and open_vol_uplift_15m, open_vol_uplift_pct_change and afternoon_vol_ratio 0 / 5 each, with one open_vol_uplift_pct_change run computing a different statistic from the one asked. largest_session_move got 1 / 5. So Phase 3 starts with the analyst.",
+                "Before that, at v1.4.0 with one run per question, gpt-oss:20b alone, as analyst and critic, got 3 / 10, the same as at v1.1.0, and the clean hybrid round also got 3 / 10. In the hybrid round the gpt-5.6-sol critic flagged the contract roll in every review where it came up, but the 20b analyst fixed it only on largest_session_move. The hybrid round avoided the timezone trap in 2 of its 3 open-volatility runs. With one run per question, none of these differences can be told apart from run-to-run noise.",
                 "On the held-out questions I report only the direction of the aggregate score from v1.1.0 to v1.5.1: {{HELDOUT_DIRECTION}}. The held-out set is author-known, not enforced: I wrote those questions and know their traps, and nothing in the code stops them being used for tuning."
               ]
             }
@@ -479,7 +479,7 @@
           "next": [
             {
               "heading": "A stronger local analyst",
-              "text": "In the Phase 2 runs the critic kept flagging the contract roll, and gpt-oss:20b as analyst rarely fixed it. So the first step is a stronger analyst on the DGX Spark, after an Ollama upgrade. The candidates are qwen3.6:35b-a3b-q8_0 and qwen3.8:27b, screened with one run per question and then five. nemotron-3.5-super is the larger option. gpt-oss:120b stays as the critic."
+              "text": "In the Phase 2 runs the gpt-oss:20b critic usually flagged the contract roll, and gpt-oss:20b as analyst rarely fixed it. So the first step is a stronger planner and analyst on the DGX Spark, after an Ollama upgrade and a fresh baseline. The candidates, in order, are qwen3.6:35b-a3b-q4_K_M, qwen3.8:27b-q4_K_M and flint:40b, screened with one run per question and then five. nemotron-3.5-super:120b-a12b-q4_K_M is the larger option."
             },
             {
               "heading": "Targeted revisions",
