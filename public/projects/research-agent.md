@@ -100,7 +100,7 @@ monday_drift and thursday_drift have a wide absolute tolerance, so a near-zero a
 
 ### Results
 
-The scorecard is from research-agent v1.0.0, on 12 November 2026. The four recorded runs, also through the Claude Code harness, were made earlier that day. The open-model runs used v1.1.0.
+The scorecard is from research-agent v1.0.0, on 12 November 2026. The four Claude Code harness runs below were made earlier that day. The open-model runs used v1.1.0, and Phase 2 has its own results.
 
 #### Eval scorecard
 
@@ -231,7 +231,7 @@ So the timezone miss is a harness gap as well as a model gap. The LangGraph crit
 
 ### Scope of v1.4.0
 
-v1.4.0 is planned and not built yet. It will:
+v1.4.0 set out to:
 
 - close the six gaps above, so the LangGraph pipeline gives the model what the Claude Code harness already does
 - add held-out questions with fresh traps, on a different session and a different instrument, never used for tuning and reported separately
@@ -246,50 +246,39 @@ The fixes have to work beyond the eval set. The model may be given facts that ev
 
 ### Results
 
-To come. I'll rerun gpt-oss:20b alone and with the hosted critic at v1.4.0, then give gpt-oss:20b with the hosted critic the same five runs per question as the 0.90.
+Each row is research-agent answering the eval questions on the seeded synthetic dataset, synth-1m, with gpt-oss:20b on the DGX Spark as the analyst. The five-run rows give the mean score across the repeats, ± its standard deviation.
 
-| Version | Run | Result |
+| Version | Run | Score |
 |---|---|---|
-| v1.4.0 | gpt-oss:20b alone, one run per question | to come |
-| v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, one run per question | to come |
-| v1.4.0 | gpt-oss:20b with the gpt-5.6-sol critic, five runs per question | to come |
-| v1.5.0 | the analysis tool reporting facts about the data it used | only if needed |
+| v1.1.0 | gpt-oss:20b analyst, five runs per question | {{V110_MAIN}} |
+| v1.5.1 | gpt-oss:20b analyst, five runs per question | {{V151_MAIN}} |
+| v1.4.0 | gpt-oss:20b analyst with the gpt-5.6-sol critic through its provider's API: the one clean hybrid round, one run per question, not a five-run result | {{V140_HYBRID}} |
 
-## With more time
+{{V151_FINDING}}
 
-In several places I stopped where doing more would have cost more than it was worth at this stage, and wrote down why in the specs. All but one of the steps below come from there; the overfitting checks are a new idea. Most add checks, so the system catches more of its own mistakes.
+Before that, at v1.4.0 with one run per question, gpt-oss:20b alone got 3 / 10, the same as at v1.1.0, and the clean hybrid round also got 3 / 10. The critic flagged the contract roll consistently, but the 20b analyst rarely fixed it. The hybrid round usually avoided the timezone trap. With one run per question, none of these differences can be told apart from run-to-run noise.
 
-### Run the red-team probes on every push
+On the held-out questions I report only the direction of the aggregate score from v1.1.0 to v1.5.1: {{HELDOUT_DIRECTION}}. The held-out set is author-known, not enforced: I wrote those questions and know their traps, and nothing in the code stops them being used for tuning.
 
-The 22 probe scripts from the sandbox's red-team are kept in the repository, but CI doesn't run them yet. Running them on every push would make a one-off review a standing check, so a dependency or kernel change that weakened the sandbox would fail the build. So far the probe catalogue has only been run on my WSL2 machine, not yet on the CI runner.
+## Phase 3: next
 
-### Finish the simpler verification plan
+Phase 3 starts with the analyst model. None of it has been run yet.
 
-I designed an unattended verification runner for my own machine and dropped it after eight review rounds. Each round still found serious problems, and the cost was out of proportion to the two small checks it was for. The simpler plan runs the market-data canary on GitHub's hosted runners, away from the keys and sign-ins on my own machine, with only the Databento key as a repository secret, and makes the Claude Code behaviour probes a command I run and watch.
+### A stronger local analyst
 
-### Run the full LangGraph eval with hosted models
+In the Phase 2 runs the critic kept flagging the contract roll, and gpt-oss:20b as analyst rarely fixed it. So the first step is a stronger analyst on the DGX Spark, after an Ollama upgrade. The candidates are qwen3.6:35b-a3b-q8_0 and qwen3.8:27b, screened with one run per question and then five. nemotron-3.5-super is the larger option. gpt-oss:120b stays as the critic.
 
-The graph is tested with fake models, and Phase 2 will run gpt-oss:20b alone and with a hosted critic. The ten hosted-critic runs so far had a one-off spend guard set for that experiment, a guard on the whole experiment rather than a cap on each critic call: it would have stopped the experiment if OpenAI usage passed 3 million input or 300,000 output tokens. They used about 68,000 input and 38,000 output OpenAI tokens. The step that remains is the full eval through the graph with hosted models in every role, five runs per question. Unlike the Claude Code harness, which runs on a subscription, it needs a spend ceiling built into the harness first. A dry run that estimates tokens and cost from the caps and the number of repeats would come with it.
+### Targeted revisions
 
-### Add a canary on real market data
+When the critic flags a specific defect, such as a futures contract roll handled wrongly, the analyst would get a short pass focused on fixing that defect.
 
-Real futures data stays on my machine. The vendor's licence doesn't allow showing anything derived from it without a redistribution plan, which is why everything here is synthetic. A weekly canary is specified that fetches one fixed week, checks the bar count and the contract roll, and deletes the data. It stays off until the vendor confirms in writing that processing on a hosted CI runner is allowed.
+### Budget tuning
 
-### Give the Claude Code harness a token budget and resume
+The caps on tool calls and tokens will be tuned for the new analyst, so a run has room for a fix-up pass and a stuck run still stops.
 
-The graph caps tokens and resumes from its checkpoint. The Claude Code harness does neither yet. A subscription gives it no per-call token counts it can rely on, and an interrupted run is closed rather than resumed. Closing both gaps would bring the harness level with the graph.
+### Tracking the held-out questions
 
-### Let formatting back into reports
-
-Model-written text goes into a report as plain text, with every punctuation character escaped. That came after several rounds of trying to contain Markdown inside it by tracking its block structure, and plain text was the safer choice. Formatting could come back through a renderer with an explicit allow-list, checked against more than one Markdown parser, the way this site renders the reports it shows.
-
-### Add overfitting checks from López de Prado
-
-The agent already fixes its test in a plan before any analysis runs, and the critic already checks that multiple comparisons are corrected for (Bonferroni, Holm or a joint test) or at least disclosed. Unlike the other steps, this one isn't in the specs yet. It would take the same discipline to strategy-style questions, following López de Prado's Advances in Financial Machine Learning (2018). The critic's checklist would gain the deflated Sharpe ratio and the probability of backtest overfitting, and both the checklist and the analyst's guidance would call for purged and embargoed cross-validation, so overlapping labels can't leak across folds.
-
-### Widen CI
-
-The verification plan is sized to fit the free CI minutes. It uses one job instead of one per stage, runs on pushes only, and has a scheduled run twice a week instead of nightly. With more budget I would split the stages into jobs and run them nightly. After each Claude Code upgrade, the harness's behaviour probes would re-run on their own, and branch protection would require a green check before a merge, in place of a written procedure.
+The held-out questions stay out of tuning, and I'll report them separately at each step, to see whether a change helps beyond the eval set.
 
 ---
 

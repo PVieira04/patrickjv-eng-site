@@ -590,6 +590,8 @@ test("F-005 (Amendment A): a local model is shown by the tables' name when model
   } finally { s.done(); }
   assert.deepEqual(P.model_aliases, { "gpt-oss-20b": "gpt-oss:20b" });
   for (const bad of [{ "gpt-oss-20b": "" }, { "gpt oss": "x" }, { "gpt-oss-20b": "a b" }, ["gpt-oss:20b"]]) assert.ok(checkProjectsCopy(edit(P, (x) => { x.model_aliases = bad; })).some((e) => /model_aliases/.test(e)), JSON.stringify(bad));
+  for (const bad of ["openai:gpt-oss-20b", "OpenAI:gpt-oss:20b", "anthropic:x", "claude-code:x", "ollama:gpt-oss:20b"]) assert.ok(checkProjectsCopy(edit(P, (x) => { x.model_aliases = { "gpt-oss-20b": bad }; })).some((e) => /model_aliases\.gpt-oss-20b must be a model name without a provider prefix/.test(e)), `a provider-prefixed alias: ${bad}`);
+  for (const good of ["gpt-oss:20b", "qwen3:30b-a3b", "openai-gpt-oss"]) assert.deepEqual(checkProjectsCopy(edit(P, (x) => { x.model_aliases = { "gpt-oss-20b": good }; })), [], `an Ollama name passes: ${good}`);
 });
 
 test("F-005 (Amendment A): a completed run that ended at its token cap says so, after the plan", () => {
@@ -1242,7 +1244,7 @@ test("F-005 (D1, D10): a run recorded with --record and built gets its exact CSP
   } finally { s.done(); }
 });
 
-// ---- The architecture diagrams and the "With more time" section ----
+// ---- The architecture diagrams and the "Phase 3: next" section ----
 const SVG_FILES = ["projects/research-agent/components.svg", "projects/research-agent/architecture.svg", "projects/research-agent/sandbox.svg"];
 const svgText = (svg, tag) => decodeEntities(svg.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))[1].trim());
 
@@ -1299,7 +1301,7 @@ test("F-005: each diagram is inlined in its place on the showcase, ids are uniqu
     for (const a of sh.architecture) { assert.ok(md.includes(`### ${a.heading}`)); for (const t of a.text) assert.ok(md.includes(t), t); }
     assert.ok(md.includes(`## ${sh.next_heading}\n\n${sh.next_intro}`));
     for (const n of sh.next) assert.ok(md.includes(`### ${n.heading}\n\n${n.text}`), n.heading);
-    assert.ok(md.indexOf(`## ${sh.phase1.heading}`) < md.indexOf(`## ${sh.phase2.heading}`) && md.indexOf(`## ${sh.phase2.heading}`) < md.indexOf(`## ${sh.next_heading}`), "the phases, then 'With more time'");
+    assert.ok(md.indexOf(`## ${sh.phase1.heading}`) < md.indexOf(`## ${sh.phase2.heading}`) && md.indexOf(`## ${sh.phase2.heading}`) < md.indexOf(`## ${sh.next_heading}`), "Phases 1 and 2, then Phase 3");
   } finally { s.done(); }
 });
 
@@ -1315,11 +1317,11 @@ test("F-005: a duplicate id across the inlined diagrams fails the build", () => 
   } finally { s.done(); }
 });
 
-test("F-005: the next steps in 'With more time' claim no results and quote no scores (results belong to the phases)", () => {
+test("F-005: the next steps in 'Phase 3: next' claim no results and quote no scores (results belong to Phases 1 and 2)", () => {
   const sh = P.copy.showcase;
   const text = [sh.next_intro, ...sh.next.flatMap((n) => [n.heading, n.text])].join("\n");
   assert.doesNotMatch(text, /\d+\s*%|\d+\s*\/\s*\d+|scored? \d/, "no scorecard numbers");
-  assert.ok(sh.next.length >= 5);
+  assert.ok(sh.next.length >= 4);
 });
 
 test("F-005: the phases' hand-written tables: each a stacking table in the scroll wrapper after its heading and intro, then its text, and the same in the Markdown twin", () => {
@@ -1367,10 +1369,13 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     assert.match(lm.intro, /not directly comparable across versions/);
     assert.match(lm.intro, /transcribed the figures below by hand/);
     assert.match(hybrid.intro, /transcribed these figures by hand/);
-    assert.deepEqual(P.copy.showcase.phase2.results.rows.map((r) => r.at(-1)), ["to come", "to come", "to come", "only if needed"], "Phase 2 has no results yet");
+    // Phase 2's results: the k=5 comparison, then the one hybrid round, labelled as a single run per question.
+    const res = P.copy.showcase.phase2.results;
+    assert.match(res.rows[2][1], /one run per question, not a five-run result/, "the hybrid round is not a five-run result");
+    assert.match(res.text.join(" "), /author-known, not enforced/, "the held-out line says the split isn't enforced");
     // The research-agent versions (renumbered 13 Nov 2026): Phase 1 is v1.0.0 to v1.2.0, the hosted
-    // critic ran on an early build of v1.3.0, the harness comparison read v1.2.0, the planned parity
-    // fixes are v1.4.0 and the tool facts v1.5.0.
+    // critic ran on an early build of v1.3.0, the harness comparison read v1.2.0, the parity fixes are
+    // v1.4.0 and the tool facts v1.5.0; Phase 2's results compare v1.1.0 with v1.5.1, plus the v1.4.0 hybrid round.
     const p2 = P.copy.showcase.phase2;
     assert.match(P.copy.showcase.phase1.intro.join(" "), /v1\.0\.0 to v1\.2\.0/);
     assert.ok(lm.rows.every((r) => r[1] === "v1.1.0"), "the overnight local runs are v1.1.0");
@@ -1380,7 +1385,7 @@ test("F-005: the phases' hand-written tables: each a stacking table in the scrol
     assert.match(p2.harness.intro, /at v1\.2\.0, before per-role routing merged/);
     assert.equal(p2.scope_heading, "Scope of v1.4.0");
     assert.match(p2.scope.text.join(" "), /v1\.5\.0 would have the analysis tool report facts/);
-    assert.deepEqual(p2.results.rows.map((r) => r[0]), ["v1.4.0", "v1.4.0", "v1.4.0", "v1.5.0"]);
+    assert.deepEqual(p2.results.rows.map((r) => r[0]), ["v1.1.0", "v1.5.1", "v1.4.0"]);
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v01.4.0"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a leading zero fails");
     assert.ok(checkProjectsCopy(edit(P, (x) => { x.copy.showcase.phase2.results.rows[0][0] = "v1.4.0+dev"; })).some((e) => e.includes("phase2.results.rows.0.0 must be a version")), "a +dev build is not a release");
   } finally { s.done(); }
@@ -1404,17 +1409,18 @@ test("F-005: the phases quote the published scorecard's score and k, so a re-rec
   assert.match(P.copy.showcase.phase1.showed.join("\n"), new RegExp(`scored ${fixed2(card.aggregate.score).replace(".", "\\.")} at v1\\.0\\.0`));
 });
 
-test("F-005: Phase 1's results name the recorded runs' count and harness, and they come before the scorecard", () => {
+test("F-005: Phase 1's results name the Claude Code harness runs' count, and they come before the scorecard", () => {
   const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
   const published = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/published.json"), "utf8"));
   const card = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/scorecard/scorecard.json"), "utf8"));
-  const ids = Object.keys(published.runs);
+  // Phase 1's runs are the Claude Code harness runs; LangGraph runs published later belong to Phase 2.
+  const ids = Object.keys(published.runs).filter((id) => JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8")).models.harness === "claude-code");
+  assert.ok(ids.length > 0);
   const day = new Date(card.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
   assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The scorecard is from research-agent v1.0.0, on ${day}.`), "the scorecard's date");
-  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[ids.length] ?? ids.length} recorded runs, also through the Claude Code harness, were made earlier that day.`), "the count word is the number of published runs");
+  assert.ok(P.copy.showcase.phase1.results.join(" ").includes(`The ${words[ids.length] ?? ids.length} Claude Code harness runs below were made earlier that day.`), "the count word is the number of published Claude Code harness runs");
   for (const id of ids) {
     const r = JSON.parse(readFileSync(join(ROOT, "projects/research-agent/runs", id, "report.json"), "utf8"));
-    assert.equal(r.models.harness, "claude-code", `${id}: through the Claude Code harness`);
     assert.ok(Date.parse(r.finished_at) < Date.parse(card.created_at), `${id}: finished before the scorecard`);
     assert.equal(r.finished_at.slice(0, 10), card.created_at.slice(0, 10), `${id}: the same day`);
   }
@@ -1422,7 +1428,7 @@ test("F-005: Phase 1's results name the recorded runs' count and harness, and th
 
 // F-005 Amendment A: the copy that says every recorded run is a Claude Code harness run. Errors when
 // any published run (in `root`) is not one while `p` (pages.projects) still says so.
-const CLAUDE_CODE_ONLY = /recorded runs[^.]*Claude Code harness/;
+const CLAUDE_CODE_ONLY = /recorded runs[^.]*Claude Code harness/i;
 function claudeCodeOnlyCopyErrors(root, p) {
   const runs = join(root, "projects/research-agent/runs");
   const other = existsSync(runs) ? readdirSync(runs).filter((id) => JSON.parse(readFileSync(join(runs, id, "report.json"), "utf8")).models.harness !== "claude-code") : [];
@@ -1433,16 +1439,24 @@ function claudeCodeOnlyCopyErrors(root, p) {
 
 test("F-005 (Amendment A): the copy may not say every recorded run is a Claude Code harness run once a LangGraph run is published", () => {
   assert.deepEqual(claudeCodeOnlyCopyErrors(ROOT, P), [], "the committed site");
-  assert.ok(CLAUDE_CODE_ONLY.test(P.copy.showcase.phase1.results.join(" ")) && CLAUDE_CODE_ONLY.test(P.head.showcase.description), "both claims are there today, so the check has something to catch");
+  assert.ok(!CLAUDE_CODE_ONLY.test(P.copy.showcase.phase1.results.join(" ")) && !CLAUDE_CODE_ONLY.test(P.head.showcase.description), "the committed copy makes neither claim");
+  // The launch copy, which made both claims.
+  const claimed = edit(P, (x) => {
+    x.copy.showcase.phase1.results = ["The scorecard is from research-agent v1.0.0, on 12 November 2026. The four recorded runs, also through the Claude Code harness, were made earlier that day."];
+    x.head.showcase.description = "A LangGraph and LangChain research agent. With recorded runs on synthetic data from its Claude Code harness.";
+  });
   const s = site();
   try {
     ok(publish(s, [graphRun()]));
-    const errs = claudeCodeOnlyCopyErrors(s.root, P);
+    const errs = claudeCodeOnlyCopyErrors(s.root, claimed);
     assert.deepEqual(errs.map((x) => x.split(" ")[0]), ["pages.projects.copy.showcase.phase1.results", "pages.projects.head.showcase.description"], errs.join("\n"));
     const revised = edit(P, (x) => { x.copy.showcase.phase1.results = ["The four Claude Code harness runs were made that day; the LangGraph runs later."]; x.head.showcase.description = "A LangGraph and LangChain research agent, with recorded runs on synthetic data."; });
     assert.deepEqual(claudeCodeOnlyCopyErrors(s.root, revised), [], "revised copy passes");
+    assert.deepEqual(claudeCodeOnlyCopyErrors(s.root, P), [], "the committed copy passes");
+    const recased = edit(revised, (x) => { x.head.showcase.description = "Recorded Runs on synthetic data from its claude code harness."; });
+    assert.deepEqual(claudeCodeOnlyCopyErrors(s.root, recased).map((x) => x.split(" ")[0]), ["pages.projects.head.showcase.description"], "the claim in another case still fails");
     ok(publish(s, [run(1, { edit: (d) => { d.models.harness = "claude-code"; } })]));
-    assert.deepEqual(claudeCodeOnlyCopyErrors(s.root, P), [], "only Claude Code runs: the claim holds");
+    assert.deepEqual(claudeCodeOnlyCopyErrors(s.root, claimed), [], "only Claude Code runs: the claim holds");
   } finally { s.done(); }
 });
 
