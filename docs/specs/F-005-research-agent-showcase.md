@@ -594,7 +594,7 @@ private_key        -----BEGIN [A-Z ]*PRIVATE KEY-----
 - [x] **(B)** Phase 2's results table and text as above; the v1.5.1 row and finding match `phase2-summary.json`; `phase2.results` quotes no other two-decimal number than the summary's score, its standard error and 0.15. Tests.
 - [x] **(B)** Runs with `models.served` render under Phase 2 after its results, in the page and its Markdown copy, and every other run under Phase 1; Phase 2's list is absent with none. Test, on a fixture site.
 - [x] **(B)** The results' sentence about the recorded runs matches `published.json` and the runs' reports. Test.
-- [ ] **(B)** No `{{NAME}}` placeholder is left under `pages.projects`. Test; it fails until the held-out line is supplied.
+- [x] **(B)** No `{{NAME}}` placeholder is left under `pages.projects`. Test; it failed until the held-out line was supplied on 16 Nov 2026, and passes now.
 - [x] **(B)** An alias with any `init_chat_model` provider prefix fails the copy check. Test.
 
 ---

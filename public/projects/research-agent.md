@@ -259,7 +259,7 @@ At v1.5.1, with five runs per question and no hosted model, gpt-oss:20b scored 0
 
 At v1.4.0 gpt-oss:20b alone, as analyst and critic, got 3 / 10 with one run per question, the same as at v1.1.0. The hybrid row is the first round of a planned five-run hybrid measurement; every run after the first three of its second round failed, first on a connection bug since fixed in v1.5.1, then when the hosted API's prepaid credit ran out, so only this round is counted. In that round 1 of the 10 runs failed with model output that could not be used and 1 stopped at the tool-call cap, and it also got 3 / 10. The gpt-5.6-sol critic raised the contract roll on all 5 reviewed passes that had fallen into it, but the 20b analyst fixed it only on largest_session_move. Of its two timezone-trap runs, open_vol_uplift failed without an answer and open_vol_uplift_15m avoided the trap. With one run per question, none of these differences can be told apart from run-to-run noise.
 
-On a small held-out set of questions written after the main set (author-known, not enforced: I wrote those questions and know their traps, and nothing in the code stops them being used for tuning), v1.5.1 scored {{HELDOUT_DIRECTION}}.
+On a small held-out set of questions written after the main set (author-known, not enforced: I wrote those questions and know their traps, and nothing in the code stops them being used for tuning), v1.5.1 scored 12 / 35 (seven questions, five runs each), close to its 20 / 50 on the main set; the gap is within run-to-run noise, and there is no earlier held-out score to compare against.
 
 The three LangGraph agent runs below come from the five-run measurement at v1.5.1 on 16 November 2026, with gpt-oss:20b as planner, analyst and critic, all served locally.
 
