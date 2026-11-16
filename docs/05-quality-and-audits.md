@@ -94,7 +94,19 @@ The page CSP allows exactly the page's single inline `<style>` and single inline
 
   Earlier the same day, check 4 failed on production (showcase mobile Performance 90 with CLS 0.21 and the run page's mobile CLS 0.03, both from the body font's late swap without a preload; axe `landmark-unique` from the scorecard's region sharing its section's name); fixed in PR #38.
 
-The post-launch SEO re-run is recorded here when it happens.
+**Post-launch checks, 2026-11-14** (production at `4985b59`, the launch PR #39, `launched: true`; [runbook](06-operations.md#projects-runbooks)):
+
+- **Production state:** no `<meta name="robots">` and no `X-Robots-Tag` on `/projects/`, the showcase, its Markdown or any of the four run pages; `sitemap.xml` lists `/projects/`, the showcase and the four runs; the homepage's S-03 card links to `/projects/research-agent`.
+- **Smoke (check 1): passed.** `node smoke.mjs https://patrickjv.com --strict-https` from `4985b59`: 43 passed, 0 warned, 0 failed, including "no X-Robots-Tag (launched)" on the showcase and its Markdown (no run has a figure yet).
+- **Lighthouse SEO (check 2): passed**, with the full Lighthouse and axe run repeated (mobile / desktop, axe dark and light):
+
+  | Page | Perf | A11y | Best practices | SEO | LCP | CLS |
+  |---|---|---|---|---|---|---|
+  | `/projects/` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.3 s | 0.0005 / 0.0001 |
+  | `/projects/research-agent` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 1.2 s / 0.3 s | 0.00002 / 0.000003 |
+  | `/projects/research-agent/runs/20261112T163326Z-468489/` | 100 / 100 | 100 / 100 | 100 / 100 | 92 / 92 | 0.8 s / 0.3 s | 0.00002 / 0.0005 |
+
+  axe-core: **0 violations on all three pages**, dark and light. `is-crawlable` now passes; the only failing SEO audit is `robots-txt`, the accepted measurement artefact on pages whose CSP has no `connect-src` (as on `/writing/`, SEO 92 there too; see the 24 Oct re-run above).
 
 ## Privacy
 
